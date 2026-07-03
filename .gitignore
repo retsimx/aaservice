@@ -1,6 +1,7 @@
 reference/
 .agents/
-docs/
+docs/plans/work/
+docs/references/
 *.iml
 .gradle
 /local.properties
