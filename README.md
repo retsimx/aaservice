@@ -83,7 +83,8 @@ com.air.advantage.aaservice/
 |-----------|--------|
 | Language | Kotlin 1.9.20 |
 | Minimum SDK | 19 (Android 4.4 KitKat) |
-| Target SDK | 34 (Android 14) |
+| Compile SDK | 34 |
+| Target SDK | 30 (Android 11) |
 | Build | Gradle 8.5 + Android Gradle Plugin 8.2.0 |
 | Async | Kotlin Coroutines 1.7.3 + Flow |
 | DI | Dagger Hilt 2.48 |

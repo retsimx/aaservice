@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <uses-sdk android:minSdkVersion="19" android:targetSdkVersion="34"/>
+    <uses-sdk android:minSdkVersion="19" android:targetSdkVersion="30"/>
 
     <permission android:name="com.air.android.secure_comms"
         android:protectionLevel="signature"
