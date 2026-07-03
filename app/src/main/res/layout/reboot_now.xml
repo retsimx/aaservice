@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android" xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:orientation="vertical"
+    android:background="@color/background"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent">
+    <TextView
+        android:textSize="54sp"
+        android:gravity="center"
+        android:layout_gravity="center"
+        android:id="@+id/title_text"
+        android:layout_width="match_parent"
+        android:layout_height="75dp"
+        android:text="Reboot Touch Screen"
+        style="@style/ButtonSmallText"/>
+    <androidx.cardview.widget.CardView
+        android:layout_gravity="center"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_margin="8dp"
+        android:layout_weight="0.1"
+        app:cardCornerRadius="22dp">
+        <LinearLayout
+            android:gravity="center"
+            android:layout_gravity="center"
+            android:orientation="horizontal"
+            android:padding="8dp"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content">
+            <TextView
+                android:gravity="center"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:text="@string/reboot_string"
+                android:layout_weight="1"
+                style="@style/ButtonSmallText"/>
+        </LinearLayout>
+    </androidx.cardview.widget.CardView>
+    <androidx.cardview.widget.CardView
+        android:layout_gravity="left"
+        android:id="@+id/version_number_card"
+        android:padding="8dp"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_margin="8dp"
+        android:layout_weight="0.05"
+        app:cardCornerRadius="22dp">
+        <TextView
+            android:gravity="center"
+            android:id="@+id/version_number"
+            android:padding="8dp"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:text="@string/version_number"
+            style="@style/ButtonSmallText"/>
+    </androidx.cardview.widget.CardView>
+</LinearLayout>
