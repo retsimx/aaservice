@@ -12,7 +12,7 @@ android {
     defaultConfig {
         applicationId = "com.air.advantage.aaservice"
         minSdk = 19
-        targetSdk = 34
+        targetSdk = 30
         versionCode = 1
         versionName = "1.0.0"
     }
