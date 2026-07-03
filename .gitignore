@@ -1,5 +1,6 @@
 reference/
 .agents/
+docs/
 *.iml
 .gradle
 /local.properties
@@ -7,9 +8,13 @@ reference/
 /.classpath
 /.idea
 .DS_Store
-/build
-/captures
+build/
+captures
 .externalNativeBuild
 .cxx
-app/build/
-docs/
+*.apk
+*.aab
+*.ap_
+*.hprof
+*.log
+*.orig
