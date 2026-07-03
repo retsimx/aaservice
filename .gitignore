@@ -1,7 +1,5 @@
 reference/
 .agents/
-docs/plans/work/
-docs/references/
 *.iml
 .gradle
 /local.properties
@@ -19,3 +17,4 @@ captures
 *.hprof
 *.log
 *.orig
+docs/
