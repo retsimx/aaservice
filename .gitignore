@@ -1,2 +1,15 @@
 reference/
 .agents/
+*.iml
+.gradle
+/local.properties
+/.project
+/.classpath
+/.idea
+.DS_Store
+/build
+/captures
+.externalNativeBuild
+.cxx
+app/build/
+docs/

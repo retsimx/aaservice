@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">AA Service</string>
+    <string name="service_name">AAService</string>
+    <string name="back_to_myplace">Email Backup Data</string>
+    <string name="device_admin_description">Keep AAService running, even if the screen is off and locked for a long time.</string>
+    <string name="device_admin_explain_disable">This app uses the Device Administration permission.\nAAService requires the \'Lock Screen\' permission to keep the Advantage Air Control System active all the time.</string>
+    <string name="device_admin_explain_enable">This app uses the Device Administration permission.\nAAService requires the \'Lock Screen\' permission to keep the Advantage Air Control System active all the time.</string>
+    <string name="device_admin_warning">Google asked us to provide you with an easy method to remove the Device Administration permission.\n\nPressing \'Disable\' will stop your Advantage Air Control System from working.\n</string>
+    <string name="not_on_aa_hardware_error">Not on AA Hardware</string>
+    <string name="parse_block_tag" formatted="false">&lt;U&gt;%s&lt;/U=%s&gt;</string>
+    <string name="parse_block_tag_end_one">&lt;/U=</string>
+    <string name="parse_block_tag_ping">&lt;U&gt;Ping&lt;/U=db&gt;</string>
+    <string name="parse_block_tag_startu">&lt;U&gt;</string>
+    <string name="permission_desc">Description of permission</string>
+    <string name="permission_label">Label of permission</string>
+    <string name="reboot_string">AA40 - This app has recently been updated. You need to restart this touch screen now.\n\nLong press the power button on the side of this touch screen and select Power off or Restart (this will restart your tablet).</string>
+    <string name="setup_correctly">Permission set correctly.</string>
+    <string name="setup_incorrectly">Control System\nis not working.</string>
+    <string name="version_number">Version %2$s : %1$s</string>
+</resources>
