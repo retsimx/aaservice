@@ -19,7 +19,7 @@ class MockUartDataSource : UartDataSource {
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     @Volatile
     private var connected = false
-    private val _readFlow = MutableSharedFlow<ByteArray>(extraBufferCapacity = 16)
+    private val _readFlow = MutableSharedFlow<ByteArray>(replay = 1, extraBufferCapacity = 16)
     private val readFlow: Flow<ByteArray> = _readFlow.asSharedFlow()
 
     override val isConnected: Boolean
