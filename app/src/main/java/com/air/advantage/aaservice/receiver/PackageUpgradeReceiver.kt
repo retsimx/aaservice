@@ -1,0 +1,32 @@
+package com.air.advantage.aaservice.receiver
+
+import android.content.BroadcastReceiver
+import android.content.Context
+import android.content.Intent
+import android.os.Build
+import com.air.advantage.aaservice.service.RebootNotificationService
+import com.air.advantage.aaservice.ui.main.MainActivity
+
+class PackageUpgradeReceiver : BroadcastReceiver() {
+
+    override fun onReceive(context: Context, intent: Intent) {
+        val dataUri = intent.data ?: return
+        if (dataUri.toString() != "package:${context.packageName}") return
+
+        val rebootIntent = Intent(context, RebootNotificationService::class.java)
+        if (Build.VERSION.SDK_INT >= 26) {
+            context.startForegroundService(rebootIntent)
+        } else {
+            context.startService(rebootIntent)
+        }
+
+        Thread.sleep(1000)
+
+        val mainIntent = Intent(context, MainActivity::class.java).apply {
+            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or
+                    Intent.FLAG_ACTIVITY_CLEAR_TASK or
+                    Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED)
+        }
+        context.startActivity(mainIntent)
+    }
+}
