@@ -41,6 +41,10 @@ android {
     }
 }
 
+tasks.withType<Test> {
+    maxParallelForks = 1
+}
+
 dependencies {
     implementation(platform("org.jetbrains.kotlin:kotlin-bom:1.9.20"))
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
