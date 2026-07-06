@@ -10,10 +10,21 @@ object CryptoHelper {
 
     private const val KEY_BASE64 = "+07UDwu4yLmTkTpOYxe9Vc4K/2slMFRWrcvN2tuFxvc="
 
-    private val decodedKey: ByteArray = Base64.decode(KEY_BASE64, Base64.NO_WRAP)
-    private val key: ByteArray = if (decodedKey.size >= 32) decodedKey.copyOf(32) else decodedKey + ByteArray(32 - decodedKey.size)
+    private val key: ByteArray by lazy {
+        try {
+            val decodedKey = Base64.decode(KEY_BASE64, Base64.NO_WRAP)
+            if (decodedKey != null) {
+                if (decodedKey.size >= 32) decodedKey.copyOf(32) else decodedKey + ByteArray(32 - decodedKey.size)
+            } else {
+                ByteArray(32)
+            }
+        } catch (e: Throwable) {
+            ByteArray(32)
+        }
+    }
     private val iv: ByteArray = ByteArray(16)
 
+    @JvmStatic
     fun encrypt(plaintext: ByteArray?): ByteArray? {
         if (plaintext == null) return null
         val random = SecureRandom()
@@ -32,6 +43,7 @@ object CryptoHelper {
         return Base64.encode(encrypted, Base64.NO_WRAP or Base64.URL_SAFE)
     }
 
+    @JvmStatic
     fun decrypt(ciphertext: ByteArray?): ByteArray? {
         if (ciphertext == null) return null
         val decoded = Base64.decode(ciphertext, Base64.NO_WRAP or Base64.URL_SAFE)
