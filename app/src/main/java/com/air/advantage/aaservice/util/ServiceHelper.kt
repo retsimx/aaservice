@@ -27,6 +27,7 @@ object ServiceHelper {
         )
     }
 
+    @JvmStatic
     fun scheduleServiceStart(context: Context, action: String, delayMs: Int) {
         val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
         val intent = Intent().setAction(action)
