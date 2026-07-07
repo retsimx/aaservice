@@ -3,96 +3,88 @@ package com.air.advantage.aaservice.receiver
 import android.content.Context
 import android.content.Intent
 import android.net.Uri
-import org.junit.After
+import androidx.test.core.app.ApplicationProvider
+import com.air.advantage.aaservice.service.RebootNotificationService
+import com.air.advantage.aaservice.ui.main.MainActivity
 import org.junit.Assert.*
 import org.junit.Before
 import org.junit.Test
-import org.mockito.Mockito.*
-import org.mockito.kotlin.any
-import org.mockito.kotlin.never
-import org.mockito.kotlin.verify
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.Shadows.shadowOf
+import org.robolectric.annotation.Config
 
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [33], manifest = Config.NONE)
 class PackageUpgradeReceiverTest {
 
-    private lateinit var receiver: PackageUpgradeReceiver
     private lateinit var context: Context
+    private lateinit var receiver: PackageUpgradeReceiver
 
     @Before
     fun setUp() {
+        context = ApplicationProvider.getApplicationContext()
         receiver = PackageUpgradeReceiver()
-        context = mock(Context::class.java)
-        `when`(context.packageName).thenReturn("com.air.advantage.aaservice")
     }
 
     @Test
     fun receiver_can_be_instantiated() {
-        assertNotNull(PackageUpgradeReceiver())
+        assertNotNull(receiver)
     }
 
     @Test
-    fun receiver_is_BroadcastReceiver() {
-        val receiver: Any = PackageUpgradeReceiver()
-        assertTrue(receiver is android.content.BroadcastReceiver)
+    fun `onReceive with matching package starts RebootNotificationService and MainActivity`() {
+        val app = context as android.app.Application
+        shadowOf(app).clearStartedServices()
+
+        val intent = Intent(Intent.ACTION_MY_PACKAGE_REPLACED).apply {
+            data = Uri.parse("package:${context.packageName}")
+        }
+
+        receiver.onReceive(context, intent)
+
+        // Verify RebootNotificationService started
+        val startedService = shadowOf(app).nextStartedService
+        assertNotNull("Service should be started", startedService)
+        assertEquals(RebootNotificationService::class.java.name, startedService.component?.className)
+
+        // Verify MainActivity started
+        val startedActivity = shadowOf(app).nextStartedActivity
+        assertNotNull("MainActivity should be started", startedActivity)
+        assertEquals(MainActivity::class.java.name, startedActivity.component?.className)
+        assertEquals(
+            Intent.FLAG_ACTIVITY_NEW_TASK or
+                    Intent.FLAG_ACTIVITY_CLEAR_TASK or
+                    Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED,
+            startedActivity.flags
+        )
     }
 
     @Test
-    fun onReceive_with_matching_package_starts_service() {
-        val intent = mock(Intent::class.java)
-        val data = mock(Uri::class.java)
-        `when`(data.toString()).thenReturn("package:com.air.advantage.aaservice")
-        `when`(intent.data).thenReturn(data)
+    fun `onReceive with non matching package returns early`() {
+        val app = context as android.app.Application
+        shadowOf(app).clearStartedServices()
+
+        val intent = Intent(Intent.ACTION_MY_PACKAGE_REPLACED).apply {
+            data = Uri.parse("package:com.other.app")
+        }
 
         receiver.onReceive(context, intent)
 
-        verify(context).startService(any<Intent>())
+        val startedService = shadowOf(app).nextStartedService
+        assertNull("Service should not be started", startedService)
     }
 
     @Test
-    fun onReceive_with_non_matching_package_returns_early() {
-        val intent = mock(Intent::class.java)
-        val data = mock(Uri::class.java)
-        `when`(data.toString()).thenReturn("package:com.other.app")
-        `when`(intent.data).thenReturn(data)
+    fun `onReceive with null data returns early`() {
+        val app = context as android.app.Application
+        shadowOf(app).clearStartedServices()
+
+        val intent = Intent(Intent.ACTION_MY_PACKAGE_REPLACED)
 
         receiver.onReceive(context, intent)
 
-        verify(context, never()).startService(any<Intent>())
-    }
-
-    @Test
-    fun onReceive_with_null_data_returns_early() {
-        val intent = mock(Intent::class.java)
-        `when`(intent.data).thenReturn(null)
-
-        receiver.onReceive(context, intent)
-
-        verify(context, never()).startService(any<Intent>())
-    }
-
-    @Test
-    fun onReceive_sleeps_before_showing_activity() {
-        val intent = mock(Intent::class.java)
-        val data = mock(Uri::class.java)
-        `when`(data.toString()).thenReturn("package:com.air.advantage.aaservice")
-        `when`(intent.data).thenReturn(data)
-
-        val startTime = System.currentTimeMillis()
-        receiver.onReceive(context, intent)
-        val elapsed = System.currentTimeMillis() - startTime
-
-        assertTrue("Expected ~1000ms sleep, got ${elapsed}ms", elapsed >= 900)
-    }
-
-    @Test
-    fun multiple_onReceive_calls_start_service_each_time() {
-        val intent = mock(Intent::class.java)
-        val data = mock(Uri::class.java)
-        `when`(data.toString()).thenReturn("package:com.air.advantage.aaservice")
-        `when`(intent.data).thenReturn(data)
-
-        receiver.onReceive(context, intent)
-        receiver.onReceive(context, intent)
-
-        verify(context, times(2)).startService(any<Intent>())
+        val startedService = shadowOf(app).nextStartedService
+        assertNull("Service should not be started", startedService)
     }
 }
