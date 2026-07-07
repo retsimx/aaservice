@@ -1,7 +1,10 @@
 package com.air.advantage.aaservice.service
 
+import android.app.NotificationManager
 import android.content.Context
 import android.content.Intent
+import android.hardware.usb.UsbAccessory
+import android.hardware.usb.UsbManager
 import android.os.ParcelFileDescriptor
 import com.air.advantage.aaservice.data.protocol.CrcCalculator
 import com.air.advantage.aaservice.data.repository.CanStateRepository
@@ -12,6 +15,9 @@ import com.air.advantage.aaservice.domain.model.CanMessage
 import com.air.advantage.aaservice.domain.state.CanMessageQueue
 import com.air.advantage.aaservice.domain.state.UartState
 import com.air.advantage.aaservice.domain.state.UartStateMachine
+import com.air.advantage.aaservice.util.CryptoHelper
+import com.air.advantage.aaservice.util.FujitsuDetector
+import com.air.advantage.aaservice.util.ServiceHelper
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
@@ -21,22 +27,27 @@ import org.junit.After
 import org.junit.Assert.*
 import org.junit.Before
 import org.junit.Test
+import org.junit.runner.RunWith
 import org.mockito.kotlin.*
+import org.mockito.ArgumentMatchers
+import org.mockito.Mockito.mockStatic
+import org.robolectric.Robolectric
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.Shadows.shadowOf
+import org.robolectric.annotation.Config
 
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [33], manifest = Config.NONE)
 class UartForegroundServiceTest {
 
-    private lateinit var service: UartForegroundService
-    private lateinit var context: Context
+private lateinit var service: UartForegroundService
+
+    private lateinit var controller: org.robolectric.android.controller.ServiceController<UartForegroundService>
 
     @Before
     fun setUp() {
-        service = spy(UartForegroundService())
-        context = mock()
-
-        whenever(service.packageName).thenReturn("com.air.advantage.aaservice")
-        whenever(service.registerReceiver(any(), any())).thenReturn(null)
-        whenever(service.registerReceiver(any(), any(), anyOrNull(), anyOrNull())).thenReturn(null)
-        doNothing().whenever(service).unregisterReceiver(any())
+        controller = Robolectric.buildService(UartForegroundService::class.java)
+        service = spy(controller.get())
 
         UartForegroundService.instance = service
     }
@@ -347,4 +358,257 @@ class UartForegroundServiceTest {
         assertNull(service.onBind(null))
     }
 
-}
+    // ── openAccessory ────────────────────────────────────────────
+
+    @Test
+    fun `openAccessory with crash count below threshold opens accessory`() {
+        val manager = mock<UsbManager>()
+        val accessory = mock<UsbAccessory>()
+        val pfd = mock<ParcelFileDescriptor>()
+        whenever(manager.openAccessory(accessory)).thenReturn(pfd)
+        doReturn(manager).whenever(service).getSystemService(Context.USB_SERVICE)
+
+        val result = service.openAccessory(accessory)
+
+        assertTrue(result)
+        verify(manager).openAccessory(accessory)
+        assertNotNull(service.uartDataSource)
+    }
+
+    @Test
+    fun `openAccessory with crash count above threshold sends reboot broadcast`() {
+        val manager = mock<UsbManager>()
+        val accessory = mock<UsbAccessory>()
+        doReturn(manager).whenever(service).getSystemService(Context.USB_SERVICE)
+
+        service.crashCount = 6
+
+        val result = service.openAccessory(accessory)
+
+        assertTrue(result)
+        verify(service).sendBroadcast(argThat<Intent> {
+            action == "com.air.advantage.REBOOT_REQUIRED"
+        })
+    }
+
+    @Test
+    fun `openAccessory with null UsbManager returns false`() {
+        val accessory = mock<UsbAccessory>()
+        doReturn(null).whenever(service).getSystemService(Context.USB_SERVICE)
+
+        val result = service.openAccessory(accessory)
+
+        assertFalse(result)
+    }
+
+    // ── showNotification ─────────────────────────────────────────
+
+    @Test
+    fun `showNotification with connected true shows Connected title`() {
+        service.showNotification(connected = true)
+
+        val shadowNm = shadowOf(
+            service.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        )
+        val notification = shadowNm.getNotification(1)
+        assertNotNull(notification)
+        assertEquals("Connected", notification?.extras?.getString("android.title"))
+    }
+
+    @Test
+    fun `showNotification with connected false shows Not connected title`() {
+        service.showNotification(connected = false)
+
+        val shadowNm = shadowOf(
+            service.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        )
+        val notification = shadowNm.getNotification(1)
+        assertNotNull(notification)
+        assertEquals("Not connected", notification?.extras?.getString("android.title"))
+    }
+
+    @Test
+    fun `showNotification with reboot required shows Reboot Required title`() {
+        RebootNotificationService.rebootRequired.set(true)
+        service.showNotification(connected = true)
+
+        val shadowNm = shadowOf(
+            service.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        )
+        val notification = shadowNm.getNotification(1)
+        assertNotNull(notification)
+        assertEquals("Reboot Required", notification?.extras?.getString("android.title"))
+
+        RebootNotificationService.rebootRequired.set(false)
+    }
+
+    @Test
+    fun `showNotification duplicate call does not show second notification`() {
+        service.showNotification(connected = true)
+        service.showNotification(connected = true)
+
+        val shadowNm = shadowOf(
+            service.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        )
+        assertEquals(1, shadowNm.allNotifications.size)
+    }
+
+    @Test
+    fun `showNotification with different titles shows new notification`() {
+        service.showNotification(connected = true)
+        service.showNotification(connected = false)
+
+        val shadowNm = shadowOf(
+            service.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        )
+        val notification = shadowNm.getNotification(1)
+        assertNotNull(notification)
+        assertEquals("Not connected", notification?.extras?.getString("android.title"))
+    }
+
+    // ── broadcastData ──────────────────────────────────────────
+
+    @Test
+    fun `broadcastData with tag not in cache sends no broadcasts`() {
+        service.broadcastData("nonExistentTag")
+        verify(service, never()).sendBroadcast(any<Intent>())
+    }
+
+    @Test
+    fun `broadcastData with tag in cache sends two broadcasts`() {
+        val tag = "getSystemData"
+        val data = "systemData".toByteArray()
+        service.dataCache.put(tag, data)
+
+        service.broadcastData(tag)
+
+        verify(service, times(1)).sendBroadcast(any<Intent>(), anyOrNull())
+        verify(service, times(1)).sendBroadcast(any<Intent>())
+    }
+
+    @Test
+    fun `broadcastData sends correct secure action for non-Fujitsu`() {
+        val tag = "getClock"
+        val data = "12:00".toByteArray()
+        service.dataCache.put(tag, data)
+
+        service.broadcastData(tag)
+
+        verify(service).sendBroadcast(argThat<Intent> {
+            action == "com.air.advantage.MESSAGE_FROM_CB_SECURE"
+        }, anyOrNull())
+    }
+
+    @Test
+    fun `broadcastData sends correct extras on secure intent`() {
+        val tag = "getZoneData"
+        val data = "zone1=22".toByteArray()
+        service.dataCache.put(tag, data)
+
+        service.broadcastData(tag)
+
+        verify(service).sendBroadcast(argThat<Intent> {
+            action == "com.air.advantage.MESSAGE_FROM_CB_SECURE" &&
+            getStringExtra("com.air.advantage.GET_DATA_REQUEST") == tag &&
+            getStringExtra("com.air.advantage.MESSAGE_FROM_CB_SECURE") == "zone1=22"
+        }, anyOrNull())
+    }
+
+    @Test
+    fun `broadcastData sends correct extras on regular intent`() {
+        val tag = "getTimers"
+        val data = "timer1=on".toByteArray()
+        service.dataCache.put(tag, data)
+
+        service.broadcastData(tag)
+
+        verify(service).sendBroadcast(argThat<Intent> {
+            action == "com.air.advantage.MESSAGE_FROM_CB" &&
+            getStringExtra("com.air.advantage.GET_DATA_REQUEST") == tag &&
+            getStringExtra("com.air.advantage.MESSAGE_FROM_CB") == "timer1=on"
+        })
+    }
+
+    @Test
+    fun `broadcastData with Fujitsu sends Fujitsu-specific secure action`() {
+        val tag = "getSchedules"
+        val data = "schedule1".toByteArray()
+        service.dataCache.put(tag, data)
+
+        service.broadcastData(tag)
+
+        verify(service).sendBroadcast(argThat<Intent> {
+            action == "com.air.advantage.MESSAGE_FROM_CB_SECURE" ||
+            action == "com.air.advantage.MESSAGE_FROM_CB_SECURE_FUJITSU"
+        }, anyOrNull())
+    }
+
+    // ── periodicInfoBroadcast ──────────────────────────────────
+
+    @Test
+    fun `periodicInfoBroadcast sends broadcast after 5 second delay`() = runBlocking {
+        val job = launch {
+            service.periodicInfoBroadcast()
+        }
+        delay(5500)
+        job.cancel()
+
+        verify(service, atLeastOnce()).sendBroadcast(any<Intent>(), anyOrNull())
+    }
+
+    @Test
+    fun `periodicInfoBroadcast sends correct GET_DATA_REQUEST extra`() = runBlocking {
+        val job = launch {
+            service.periodicInfoBroadcast()
+        }
+        delay(5500)
+        job.cancel()
+
+        verify(service).sendBroadcast(argThat<Intent> {
+            getStringExtra("com.air.advantage.GET_DATA_REQUEST") == "periodicInfo"
+        }, anyOrNull())
+    }
+
+    @Test
+    fun `periodicInfoBroadcast includes version in JSON`() = runBlocking {
+        val job = launch {
+            service.periodicInfoBroadcast()
+        }
+        delay(5500)
+        job.cancel()
+
+        verify(service).sendBroadcast(argThat<Intent> {
+            val json = getStringExtra("com.air.advantage.MESSAGE_FROM_CB_SECURE")
+            json?.contains("\"version\"") == true
+        }, anyOrNull())
+    }
+
+    @Test
+    fun `periodicInfoBroadcast includes enabled field in JSON`() = runBlocking {
+        val job = launch {
+            service.periodicInfoBroadcast()
+        }
+        delay(5500)
+        job.cancel()
+
+        verify(service).sendBroadcast(argThat<Intent> {
+            val json = getStringExtra("com.air.advantage.MESSAGE_FROM_CB_SECURE")
+            json?.contains("\"enabled\"") == true
+        }, anyOrNull())
+    }
+
+    @Test
+    fun `periodicInfoBroadcast sends encrypted no-permission broadcast`() = runBlocking {
+        val job = launch {
+            service.periodicInfoBroadcast()
+        }
+        delay(5500)
+        job.cancel()
+
+        verify(service).sendBroadcast(argThat<Intent> {
+            action == "com.air.advantage.MESSAGE_FROM_CB_NO_PERMISSION" ||
+            action == "com.air.advantage.MESSAGE_FROM_CB_NO_PERMISSION_FUJITSU"
+        })
+    }
+
+    }
