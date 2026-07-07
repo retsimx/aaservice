@@ -2,25 +2,30 @@ package com.air.advantage.aaservice.receiver
 
 import android.app.AlarmManager
 import android.content.Context
+import android.content.Intent
+import androidx.test.core.app.ApplicationProvider
+import com.air.advantage.aaservice.ui.alert.AlertActivity
 import org.junit.After
 import org.junit.Assert.*
 import org.junit.Before
 import org.junit.Test
-import org.mockito.Mockito.*
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.Shadows.shadowOf
+import org.robolectric.annotation.Config
 
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [33], manifest = Config.NONE)
 class AlertDialogReceiverTest {
 
-    private lateinit var receiver: AlertDialogReceiver
     private lateinit var context: Context
-    private lateinit var alarmManager: AlarmManager
+    private lateinit var receiver: AlertDialogReceiver
 
     @Before
     fun setUp() {
+        context = ApplicationProvider.getApplicationContext()
         receiver = AlertDialogReceiver()
-        context = mock(Context::class.java)
-        alarmManager = mock(AlarmManager::class.java)
-
-        `when`(context.getSystemService(Context.ALARM_SERVICE)).thenReturn(alarmManager)
+        AlertDialogReceiver.alertActive.set(false)
     }
 
     @After
@@ -29,56 +34,58 @@ class AlertDialogReceiverTest {
     }
 
     @Test
-    fun alertActive_is_initially_false() {
+    fun `onReceive when alert is not active sends HIDE_WARNING broadcast`() {
         AlertDialogReceiver.alertActive.set(false)
-        assertFalse(AlertDialogReceiver.alertActive.get())
+        val app = context as android.app.Application
+        val shadowApp = shadowOf(app)
+
+        receiver.onReceive(context, Intent())
+
+        val sentBroadcasts = shadowApp.broadcastIntents
+        assertTrue(sentBroadcasts.any { it.action == "com.air.advantage.HIDE_WARNING" })
     }
 
     @Test
-    fun alertActive_is_AtomicBoolean() {
-        assertNotNull(AlertDialogReceiver.alertActive)
-        assertTrue(AlertDialogReceiver.alertActive is java.util.concurrent.atomic.AtomicBoolean)
+    fun `onReceive when alert is active launches AlertActivity`() {
+        AlertDialogReceiver.alertActive.set(true)
+        val app = context as android.app.Application
+        val shadowApp = shadowOf(app)
+
+        receiver.onReceive(context, Intent())
+
+        val startedIntent = shadowApp.nextStartedActivity
+        assertNotNull("AlertActivity should be started", startedIntent)
+        assertEquals(AlertActivity::class.java.name, startedIntent.component?.className)
+        assertEquals(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP, startedIntent.flags)
+        assertEquals("com.air.advantage.SHOW_ALERT", startedIntent.action)
     }
 
     @Test
-    fun ALERT_REQUEST_CODE_is_43678() {
-        val field = AlertDialogReceiver::class.java.getDeclaredField("ALERT_REQUEST_CODE")
-        field.isAccessible = true
-        assertEquals(43678, field.get(null))
-    }
+    fun `setAlert with active true sets active and schedules alarm`() {
+        val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+        val shadowAlarm = shadowOf(alarmManager)
 
-    @Test
-    fun receiver_can_be_instantiated() {
-        assertNotNull(AlertDialogReceiver())
-    }
-
-    @Test
-    fun receiver_is_BroadcastReceiver() {
-        val receiver: Any = AlertDialogReceiver()
-        assertTrue(receiver is android.content.BroadcastReceiver)
-    }
-
-    @Test
-    fun setAlert_with_active_true_sets_true() {
         receiver.setAlert(context, true, 5000)
+
         assertTrue(AlertDialogReceiver.alertActive.get())
+        val alarm = shadowAlarm.nextScheduledAlarm
+        assertNotNull("Alarm should be scheduled", alarm)
+        assertEquals(AlarmManager.ELAPSED_REALTIME, alarm!!.type)
     }
 
     @Test
-    fun setAlert_with_active_false_sets_false() {
+    fun `setAlert with active false sets inactive and cancels alarm and sends HIDE_WARNING`() {
+        val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
+        val shadowAlarm = shadowOf(alarmManager)
+        val shadowApp = shadowOf(context as android.app.Application)
+
+        receiver.setAlert(context, true, 5000)
+        assertNotNull(shadowAlarm.nextScheduledAlarm)
+
         receiver.setAlert(context, false, 5000)
+
         assertFalse(AlertDialogReceiver.alertActive.get())
-    }
-
-    @Test
-    fun multiple_setAlert_calls_update_state_correctly() {
-        receiver.setAlert(context, true, 5000)
-        assertTrue(AlertDialogReceiver.alertActive.get())
-
-        receiver.setAlert(context, false, 5000)
-        assertFalse(AlertDialogReceiver.alertActive.get())
-
-        receiver.setAlert(context, true, 5000)
-        assertTrue(AlertDialogReceiver.alertActive.get())
+        assertNull(shadowAlarm.nextScheduledAlarm)
+        assertTrue(shadowApp.broadcastIntents.any { it.action == "com.air.advantage.HIDE_WARNING" })
     }
 }

@@ -10,13 +10,14 @@ import android.hardware.usb.UsbManager
 import android.os.Build
 import android.widget.TextView
 import com.air.advantage.aaservice.R
+import com.air.advantage.aaservice.service.UartForegroundService
 
 object ServiceHelper {
 
     fun getUsbAccessory(context: Context): UsbAccessory? {
         val usbManager = context.getSystemService(Context.USB_SERVICE) as UsbManager
         val accessories = usbManager.accessoryList
-        return accessories.firstOrNull()
+        return accessories?.firstOrNull()
     }
 
     fun isDeviceAdminActive(context: Context): Boolean {
@@ -57,7 +58,7 @@ object ServiceHelper {
     }
 
     fun startUartService(context: Context, action: String? = null) {
-        val intent = Intent().apply {
+        val intent = Intent(context, UartForegroundService::class.java).apply {
             if (action != null) setAction(action)
         }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
@@ -69,7 +70,7 @@ object ServiceHelper {
     }
 
     fun stopUartService(context: Context, action: String? = null) {
-        val intent = Intent().apply {
+        val intent = Intent(context, UartForegroundService::class.java).apply {
             if (action != null) setAction(action)
         }
         context.stopService(intent)

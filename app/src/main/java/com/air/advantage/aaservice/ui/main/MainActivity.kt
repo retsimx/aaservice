@@ -1,6 +1,7 @@
 package com.air.advantage.aaservice.ui.main
 
 import androidx.activity.ComponentActivity
+import androidx.activity.viewModels
 import android.app.AlertDialog
 import android.app.admin.DevicePolicyManager
 import android.content.ComponentName
@@ -27,8 +28,7 @@ class MainActivity : ComponentActivity(), View.OnClickListener {
         val isVisible = AtomicBoolean(false)
     }
 
-    @Inject
-    lateinit var viewModel: MainViewModel
+    private val viewModel: MainViewModel by viewModels()
 
     private lateinit var componentName: ComponentName
     lateinit var devicePolicyManager: DevicePolicyManager
