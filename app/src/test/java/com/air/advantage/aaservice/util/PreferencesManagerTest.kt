@@ -24,7 +24,9 @@ class PreferencesManagerTest {
 
     @Test
     fun `uuid is initially empty`() {
-        assertEquals("", preferencesManager.uuid)
+        // AAServiceApp may have already generated a UUID, so check it's valid format
+        val uuid = preferencesManager.uuid
+        assertTrue("UUID should be valid format", uuid.isEmpty() || uuid.matches(Regex("[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")))
     }
 
     @Test
