@@ -37,7 +37,10 @@ android {
     }
 
     testOptions {
-        unitTests.isReturnDefaultValues = true
+        unitTests {
+            isIncludeAndroidResources = true
+            isReturnDefaultValues = true
+        }
     }
 }
 
@@ -62,6 +65,11 @@ dependencies {
     testImplementation("org.mockito:mockito-core:5.8.0")
     testImplementation("org.mockito:mockito-inline:5.2.0")
     testImplementation("org.mockito.kotlin:mockito-kotlin:5.2.1")
+    testImplementation("org.robolectric:robolectric:4.11.1")
+    testImplementation("androidx.test:core-ktx:1.5.0")
+    testImplementation("androidx.test.ext:junit-ktx:1.1.5")
+    testImplementation("androidx.test:rules:1.5.0")
+    testImplementation("androidx.test:runner:1.5.2")
     androidTestImplementation("androidx.test.ext:junit:1.1.5")
     androidTestImplementation("androidx.test:runner:1.5.2")
     androidTestImplementation("androidx.test:rules:1.5.0")

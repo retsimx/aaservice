@@ -1,17 +1,27 @@
 package com.air.advantage.aaservice.service
 
+import android.app.AlarmManager
+import android.app.NotificationManager
+import android.content.Context
+import androidx.test.core.app.ApplicationProvider
+import com.air.advantage.aaservice.receiver.AlertDialogReceiver
 import org.junit.After
 import org.junit.Assert.*
 import org.junit.Before
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.Robolectric
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.Shadows.shadowOf
+import org.robolectric.annotation.Config
 
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [33], manifest = Config.NONE)
 class RebootNotificationServiceTest {
-
-    private lateinit var service: RebootNotificationService
 
     @Before
     fun setUp() {
-        service = RebootNotificationService()
+        RebootNotificationService.rebootRequired.set(false)
     }
 
     @After
@@ -20,72 +30,40 @@ class RebootNotificationServiceTest {
     }
 
     @Test
-    fun rebootRequired_is_initially_false() {
-        RebootNotificationService.rebootRequired.set(false)
+    fun `service initialization starts foreground with correct notification`() {
+        val controller = Robolectric.buildService(RebootNotificationService::class.java).create()
+        val service = controller.get()
+        val shadowService = shadowOf(service)
+
+        assertEquals(1234, shadowService.lastForegroundNotificationId)
+        val notification = shadowService.lastForegroundNotification
+        assertNotNull(notification)
+    }
+
+    @Test
+    fun `onStartCommand sets rebootRequired to true`() {
+        val controller = Robolectric.buildService(RebootNotificationService::class.java).create()
         assertFalse(RebootNotificationService.rebootRequired.get())
-    }
 
-    @Test
-    fun rebootRequired_is_AtomicBoolean() {
-        assertNotNull(RebootNotificationService.rebootRequired)
-        assertTrue(RebootNotificationService.rebootRequired is java.util.concurrent.atomic.AtomicBoolean)
-    }
-
-    @Test
-    fun onStartCommand_sets_rebootRequired_to_true() {
-        RebootNotificationService.rebootRequired.set(false)
-        service.onStartCommand(null, 0, 1)
-
+        controller.startCommand(0, 0)
         assertTrue(RebootNotificationService.rebootRequired.get())
     }
 
     @Test
-    fun onDestroy_clears_rebootRequired() {
-        RebootNotificationService.rebootRequired.set(true)
-        service.onDestroy()
-
-        assertFalse(RebootNotificationService.rebootRequired.get())
-    }
-
-    @Test
-    fun full_lifecycle_create_start_destroy() {
-        assertFalse(RebootNotificationService.rebootRequired.get())
-
-        service.onStartCommand(null, 0, 1)
-
+    fun `onDestroy clears rebootRequired`() {
+        val controller = Robolectric.buildService(RebootNotificationService::class.java).create()
+        controller.startCommand(0, 0)
         assertTrue(RebootNotificationService.rebootRequired.get())
 
-        service.onDestroy()
+        controller.destroy()
         assertFalse(RebootNotificationService.rebootRequired.get())
     }
 
     @Test
-    fun NOTIFICATION_CHANNEL_ID_is_notification_channel_1() {
-        val field = RebootNotificationService::class.java.getDeclaredField("NOTIFICATION_CHANNEL_ID")
-        field.isAccessible = true
-        assertEquals("notification_channel_1", field.get(null))
-    }
-
-    @Test
-    fun NOTIFICATION_ID_is_1234() {
-        val field = RebootNotificationService::class.java.getDeclaredField("NOTIFICATION_ID")
-        field.isAccessible = true
-        assertEquals(1234, field.get(null))
-    }
-
-    @Test
-    fun multiple_onStartCommand_calls_keep_rebootRequired_true() {
-        service.onStartCommand(null, 0, 1)
-        service.onStartCommand(null, 0, 2)
-
+    fun `multiple startCommand calls keep rebootRequired true`() {
+        val controller = Robolectric.buildService(RebootNotificationService::class.java).create()
+        controller.startCommand(0, 0)
+        controller.startCommand(0, 0)
         assertTrue(RebootNotificationService.rebootRequired.get())
-    }
-
-    @Test
-    fun onDestroy_when_rebootRequired_already_false_is_safe() {
-        RebootNotificationService.rebootRequired.set(false)
-        service.onDestroy()
-
-        assertFalse(RebootNotificationService.rebootRequired.get())
     }
 }

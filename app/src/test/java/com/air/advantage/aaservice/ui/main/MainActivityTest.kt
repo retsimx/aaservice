@@ -3,42 +3,33 @@ package com.air.advantage.aaservice.ui.main
 import android.app.Activity
 import android.app.admin.DevicePolicyManager
 import android.content.ComponentName
+import android.content.Context
 import android.content.Intent
 import android.view.View
+import android.widget.TextView
+import androidx.test.core.app.ApplicationProvider
 import com.air.advantage.aaservice.R
-import com.air.advantage.aaservice.application.AAServiceApp
 import com.air.advantage.aaservice.receiver.DeviceAdminReceiver
 import com.air.advantage.aaservice.service.RebootNotificationService
+import com.air.advantage.aaservice.service.UartForegroundService
 import org.junit.After
 import org.junit.Assert.*
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
-import org.mockito.Mockito.*
-import org.mockito.kotlin.any
-import org.mockito.kotlin.argThat
-import org.mockito.kotlin.eq
-import org.mockito.kotlin.never
-import org.mockito.kotlin.verify
-import org.mockito.kotlin.whenever
 import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
-@Config(sdk = [33], application = AAServiceApp::class, manifest = Config.NONE)
+@Config(sdk = [33], manifest = Config.NONE)
 class MainActivityTest {
-
-    private lateinit var activity: MainActivity
-    private lateinit var devicePolicyManager: DevicePolicyManager
-
-    private val componentName = ComponentName("com.air.advantage.aaservice", DeviceAdminReceiver::class.java.name)
 
     @Before
     fun setUp() {
-        devicePolicyManager = mock(DevicePolicyManager::class.java)
-        activity = spy(Robolectric.buildActivity(MainActivity::class.java).create().get())
-        activity.devicePolicyManager = devicePolicyManager
+        RebootNotificationService.rebootRequired.set(false)
+        MainActivity.isVisible.set(false)
     }
 
     @After
@@ -46,112 +37,104 @@ class MainActivityTest {
         RebootNotificationService.rebootRequired.set(false)
         MainActivity.isVisible.set(false)
     }
-
-    // ── Instantiation ────────────────────────────────────────────
-
-    @Test
-    fun activity_can_be_instantiated() {
-        assertNotNull(MainActivity())
-    }
-
-    @Test
-    fun activity_is_an_Activity() {
-        val a: Any = MainActivity()
-        assertTrue(a is Activity)
-    }
-
-    @Test
-    fun isVisible_is_AtomicBoolean() {
-        assertNotNull(MainActivity.isVisible)
-        assertTrue(MainActivity.isVisible is java.util.concurrent.atomic.AtomicBoolean)
-    }
-
-    // ── Device admin state ───────────────────────────────────────
-
     @Test
     fun `onResume with admin active shows correct UI`() {
-        whenever(devicePolicyManager.isAdminActive(componentName)).thenReturn(true)
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val dpm = context.getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
+        val componentName = ComponentName(context, DeviceAdminReceiver::class.java)
+        shadowOf(dpm).setActiveAdmin(componentName)
 
-        activity.onResume()
+        val controller = Robolectric.buildActivity(MainActivity::class.java).setup()
+        val activity = controller.get()
 
-        verify(devicePolicyManager).isAdminActive(componentName)
+        assertEquals(View.GONE, activity.findViewById<View>(R.id.enable_device_admin).visibility)
+        assertEquals(View.VISIBLE, activity.findViewById<View>(R.id.disable_device_admin).visibility)
+        assertEquals(activity.getString(R.string.setup_correctly), activity.findViewById<TextView>(R.id.status_text).text.toString())
     }
 
     @Test
     fun `onResume with admin inactive shows correct UI`() {
-        whenever(devicePolicyManager.isAdminActive(componentName)).thenReturn(false)
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val dpm = context.getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
+        val componentName = ComponentName(context, DeviceAdminReceiver::class.java)
+        dpm.removeActiveAdmin(componentName)
 
-        activity.onResume()
+        val controller = Robolectric.buildActivity(MainActivity::class.java).setup()
+        val activity = controller.get()
 
-        verify(devicePolicyManager).isAdminActive(componentName)
+        assertEquals(View.VISIBLE, activity.findViewById<View>(R.id.enable_device_admin).visibility)
+        assertEquals(View.GONE, activity.findViewById<View>(R.id.disable_device_admin).visibility)
+        assertEquals(activity.getString(R.string.setup_incorrectly), activity.findViewById<TextView>(R.id.status_text).text.toString())
     }
 
     @Test
     fun `isVisible toggles on onResume and onPause`() {
+        val controller = Robolectric.buildActivity(MainActivity::class.java)
         assertFalse(MainActivity.isVisible.get())
 
-        activity.onResume()
+        controller.setup()
         assertTrue(MainActivity.isVisible.get())
 
-        activity.onPause()
+        controller.pause()
         assertFalse(MainActivity.isVisible.get())
     }
-
-    // ── Enable button click ──────────────────────────────────────
 
     @Test
     fun `click enable_device_admin starts device admin intent`() {
-        val view = mock(View::class.java)
-        whenever(view.id).thenReturn(R.id.enable_device_admin)
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val dpm = context.getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
+        val componentName = ComponentName(context, DeviceAdminReceiver::class.java)
+        dpm.removeActiveAdmin(componentName)
 
-        activity.onClick(view)
+        val controller = Robolectric.buildActivity(MainActivity::class.java).setup()
+        val activity = controller.get()
 
-        verify(activity).startActivityForResult(any(Intent::class.java), eq(12345))
+        val enableBtn = activity.findViewById<View>(R.id.enable_device_admin)
+        enableBtn.performClick()
+
+        val shadowActivity = shadowOf(activity)
+        val intent = shadowActivity.nextStartedActivityForResult?.intent
+        assertNotNull(intent)
+        assertEquals("android.app.action.ADD_DEVICE_ADMIN", intent?.action)
+        assertEquals(componentName, intent?.getParcelableExtra("android.app.extra.DEVICE_ADMIN"))
     }
-
-    @Test
-    fun `click enable_device_admin passes correct action`() {
-        val view = mock(View::class.java)
-        whenever(view.id).thenReturn(R.id.enable_device_admin)
-
-        activity.onClick(view)
-
-        verify(activity).startActivityForResult(
-            argThat<Intent> { action == "android.app.action.ADD_DEVICE_ADMIN" },
-            eq(12345)
-        )
-    }
-
-    // ── Disable button click ─────────────────────────────────────
 
     @Test
     fun `click disable_device_admin triggers dialog`() {
-        val view = mock(View::class.java)
-        whenever(view.id).thenReturn(R.id.disable_device_admin)
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val dpm = context.getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
+        val componentName = ComponentName(context, DeviceAdminReceiver::class.java)
+        shadowOf(dpm).setActiveAdmin(componentName)
 
-        activity.onClick(view)
+        val controller = Robolectric.buildActivity(MainActivity::class.java).setup()
+        val activity = controller.get()
 
-        verify(devicePolicyManager).removeActiveAdmin(componentName)
+        val disableBtn = activity.findViewById<View>(R.id.disable_device_admin)
+        disableBtn.performClick()
+
+        val dialog = org.robolectric.shadows.ShadowAlertDialog.getLatestAlertDialog()
+        assertNotNull(dialog)
+        dialog.getButton(android.content.DialogInterface.BUTTON_POSITIVE).performClick()
+        org.robolectric.shadows.ShadowLooper.idleMainLooper()
+        assertFalse(activity.devicePolicyManager.isAdminActive(componentName))
     }
-
-    // ── Reboot screen scenario ───────────────────────────────────
 
     @Test
     fun `onResume with reboot required shows reboot layout`() {
         RebootNotificationService.rebootRequired.set(true)
+        val controller = Robolectric.buildActivity(MainActivity::class.java).setup()
+        val activity = controller.get()
 
-        activity.onResume()
-
-        verify(activity).setContentView(R.layout.reboot_now)
+        assertNotNull(activity.findViewById(R.id.version_number))
     }
 
     @Test
     fun `onResume without reboot required shows main layout`() {
         RebootNotificationService.rebootRequired.set(false)
+        val controller = Robolectric.buildActivity(MainActivity::class.java).setup()
+        val activity = controller.get()
 
-        activity.onResume()
-
-        verify(activity).setContentView(R.layout.activity_main)
+        assertNotNull(activity.findViewById(R.id.enable_device_admin))
     }
 
     @Test
@@ -163,30 +146,48 @@ class MainActivityTest {
         assertFalse(RebootNotificationService.rebootRequired.get())
     }
 
-    // ── onActivityResult ─────────────────────────────────────────
-
     @Test
     fun `onActivityResult with RESULT_OK starts UART service`() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val controller = Robolectric.buildActivity(MainActivity::class.java).setup()
+        val activity = controller.get()
+
+        shadowOf(context as android.app.Application).clearStartedServices()
+
         activity.onActivityResult(12345, Activity.RESULT_OK, null)
 
-        verify(activity).startActivity(any(Intent::class.java))
+        val serviceIntent = shadowOf(context).nextStartedService
+        assertNotNull("Service should be started", serviceIntent)
+        assertEquals(UartForegroundService::class.java.name, serviceIntent.component?.className)
     }
 
     @Test
     fun `onActivityResult with RESULT_CANCELED does not start service`() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val controller = Robolectric.buildActivity(MainActivity::class.java).setup()
+        val activity = controller.get()
+
+        shadowOf(context as android.app.Application).clearStartedServices()
+
         activity.onActivityResult(12345, Activity.RESULT_CANCELED, null)
 
-        verify(activity, never()).startActivity(any(Intent::class.java))
+        val serviceIntent = shadowOf(context).nextStartedService
+        assertNull("Service should not be started", serviceIntent)
     }
 
     @Test
     fun `onActivityResult with wrong requestCode is ignored`() {
+        val context = ApplicationProvider.getApplicationContext<Context>()
+        val controller = Robolectric.buildActivity(MainActivity::class.java).setup()
+        val activity = controller.get()
+
+        shadowOf(context as android.app.Application).clearStartedServices()
+
         activity.onActivityResult(99999, Activity.RESULT_OK, null)
 
-        verify(activity, never()).startActivity(any(Intent::class.java))
+        val serviceIntent = shadowOf(context).nextStartedService
+        assertNull("Service should not be started", serviceIntent)
     }
-
-    // ── Companion state ──────────────────────────────────────────
 
     @Test
     fun `isVisible starts false and toggles correctly`() {
@@ -199,8 +200,6 @@ class MainActivityTest {
         MainActivity.isVisible.set(false)
         assertFalse(MainActivity.isVisible.get())
     }
-
-    // ── Layout resource IDs ──────────────────────────────────────
 
     @Test
     fun `R layout resource IDs are valid`() {

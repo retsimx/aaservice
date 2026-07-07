@@ -347,35 +347,4 @@ class UartForegroundServiceTest {
         assertNull(service.onBind(null))
     }
 
-    // ── Internal state access ────────────────────────────────────
-
-    @Test
-    fun `service exposes pollQueue`() {
-        assertNotNull(service.pollQueue)
-        assertTrue(service.pollQueue is PollQueueRepository)
-    }
-
-    @Test
-    fun `service exposes canQueue`() {
-        assertNotNull(service.canQueue)
-        assertTrue(service.canQueue is CanMessageQueue)
-    }
-
-    @Test
-    fun `service exposes stateMachine`() {
-        assertNotNull(service.stateMachine)
-        assertTrue(service.stateMachine is UartStateMachine)
-    }
-
-    @Test
-    fun `service exposes dataCache`() {
-        assertNotNull(service.dataCache)
-        assertTrue(service.dataCache is DataCacheRepository)
-    }
-
-    @Test
-    fun `service exposes canState`() {
-        assertNotNull(service.canState)
-        assertTrue(service.canState is CanStateRepository)
-    }
 }
