@@ -62,7 +62,7 @@ class UartForegroundServiceProcessPollTest {
             whenever(dataSource.isConnected).thenReturn(true)
             whenever(dataSource.read()).thenReturn(flowOf(ByteArray(0)))
 
-            service.pollQueue.initialize(isMyAir5 = false)
+            // Don't initialize poll queue - leave it empty
 
             service.handlePollCycle(dataSource)
             delay(120)

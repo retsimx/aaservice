@@ -1,0 +1,18 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "username": "vllmproxy",
+  "instructions": ["AGENTS.md"],
+  "model": "openai/gpt-4o",
+  "agent": {
+    "general": {
+      "permission": {
+        "task": "allow"
+      }
+    },
+    "explore": {
+      "permission": {
+        "task": "allow"
+      }
+    }
+  }
+}

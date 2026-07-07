@@ -24,7 +24,7 @@ object ServiceHelper {
         val devicePolicyManager =
             context.getSystemService(Context.DEVICE_POLICY_SERVICE) as android.app.admin.DevicePolicyManager
         return devicePolicyManager.isAdminActive(
-            android.content.ComponentName(context, context::class.java)
+            android.content.ComponentName(context, com.air.advantage.aaservice.receiver.DeviceAdminReceiver::class.java)
         )
     }
 

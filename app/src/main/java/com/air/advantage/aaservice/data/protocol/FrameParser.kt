@@ -60,7 +60,7 @@ class FrameParser {
         val closePos = indexOf(openPos + openTag.size, data, closeTag)
         if (closePos < 0) throw IllegalArgumentException("XML tag not found")
         val startContent = openPos + openTag.size
-        val result = ByteArray((data.size - closePos) + openPos + content.size)
+        val result = ByteArray(startContent + content.size + (data.size - closePos))
         System.arraycopy(data, 0, result, 0, startContent)
         System.arraycopy(content, 0, result, startContent, content.size)
         System.arraycopy(data, closePos, result, startContent + content.size, data.size - closePos)
