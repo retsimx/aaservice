@@ -89,4 +89,13 @@ class MessageToCbReceiverTest {
         `when`(intent.getStringExtra("com.air.advantage.MESSAGE_TO_CB")).thenReturn("Temperature")
         receiver.onReceive(context, intent)
     }
+
+    @Test
+    fun `onReceive with system command containing parameter values like Light is NOT filtered`() {
+        UartForegroundService.instance = service
+        val intent = mock(Intent::class.java)
+        `when`(intent.getStringExtra("com.air.advantage.MESSAGE_TO_CB")).thenReturn("setSystemData?Light=on")
+        receiver.onReceive(context, intent)
+        verify(service).enqueueUartMessage("setSystemData?Light=on")
+    }
 }

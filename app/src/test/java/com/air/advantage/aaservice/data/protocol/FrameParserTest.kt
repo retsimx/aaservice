@@ -233,4 +233,44 @@ class FrameParserTest {
         val data = byteArrayOf(0x00, 0x00, 'G'.code.toByte(), '0'.code.toByte(), 0x00)
         assertEquals(-1, parser.parseHexByte(4, data))
     }
+
+    // --- replaceTagContent ---
+
+    @Test
+    fun `replaceTagContent replaces tag content at start`() {
+        val xml = "<tag>old</tag><other>val</other>".toByteArray()
+        val result = parser.replaceTagContent(xml, "tag".toByteArray(), "new".toByteArray())
+        assertEquals("<tag>new</tag><other>val</other>", String(result))
+    }
+
+    @Test
+    fun `replaceTagContent replaces tag content in middle`() {
+        val xml = "<first>1</first><tag>old</tag><last>2</last>".toByteArray()
+        val result = parser.replaceTagContent(xml, "tag".toByteArray(), "new".toByteArray())
+        assertEquals("<first>1</first><tag>new</tag><last>2</last>", String(result))
+    }
+
+    @Test(expected = IllegalArgumentException::class)
+    fun `replaceTagContent throws when tag not found`() {
+        val xml = "<other>val</other>".toByteArray()
+        parser.replaceTagContent(xml, "tag".toByteArray(), "new".toByteArray())
+    }
+
+    // --- removeTag ---
+
+    @Test
+    fun `removeTag removes tag range`() {
+        val xml = "<first>1</first><start>val</start><mid>2</mid><end>3</end><last>4</last>".toByteArray()
+        // removeTag(data, tag, replacement): tag=start, replacement=end
+        // should remove from <start> to </end> inclusive
+        val result = parser.removeTag(xml, "start".toByteArray(), "end".toByteArray())
+        assertEquals("<first>1</first><last>4</last>", String(result))
+    }
+
+    @Test
+    fun `removeTag returns same data when tag not found`() {
+        val xml = "<first>1</first>".toByteArray()
+        val result = parser.removeTag(xml, "nonexistent".toByteArray(), "nonexistent".toByteArray())
+        assertEquals("<first>1</first>", String(result))
+    }
 }

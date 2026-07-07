@@ -79,9 +79,7 @@ class UartForegroundService : Service() {
         "getZoneData?zone=7",
         "getZoneData?zone=8",
         "getZoneData?zone=9",
-        "getZoneData?zone=10",
-        "getTimers",
-        "getSchedules"
+        "getZoneData?zone=10"
     )
 
     override fun onCreate() {
@@ -168,9 +166,17 @@ class UartForegroundService : Service() {
     }
 
     fun processPollResponse(tag: String) {
-        val data = when (tag) {
-            "getSystemData" -> "type=17".toByteArray(Charsets.UTF_8)
-            else -> tag.toByteArray(Charsets.UTF_8)
+        val data = if (tag == "getSystemData") {
+            val parser = FrameParser()
+            var result = "<type>17</type><AppStore>MyAir5</AppStore><dhcp>auto</dhcp><gateway>192.168.1.1</gateway><MyAppRev>14.150</MyAppRev>".toByteArray(Charsets.UTF_8)
+            result = parser.replaceTagContent(result, "type".toByteArray(Charsets.UTF_8), "17".toByteArray(Charsets.UTF_8))
+            result = parser.replaceTagContent(result, "AppStore".toByteArray(Charsets.UTF_8), "MyAir5".toByteArray(Charsets.UTF_8))
+            result = parser.removeTag(result, "dhcp".toByteArray(Charsets.UTF_8), "dhcp".toByteArray(Charsets.UTF_8))
+            result = parser.removeTag(result, "gateway".toByteArray(Charsets.UTF_8), "gateway".toByteArray(Charsets.UTF_8))
+            result = parser.replaceTagContent(result, "MyAppRev".toByteArray(Charsets.UTF_8), "14.150".toByteArray(Charsets.UTF_8))
+            result
+        } else {
+            tag.toByteArray(Charsets.UTF_8)
         }
 
         dataCache.put(tag, data)
@@ -238,14 +244,14 @@ class UartForegroundService : Service() {
             val json = """{"name":"$packageName","version":"$versionCode","enabled":$isAdmin}"""
 
             val secureIntent = Intent(secureAction).apply {
-                putExtra("com.air.advantage.GET_DATA_REQUEST", "periodicInfo")
+                putExtra("com.air.advantage.GET_DATA_REQUEST", "aaServiceInfo")
                 putExtra(secureAction, json)
             }
             sendBroadcast(secureIntent, permission)
 
             val encrypted = CryptoHelper.encrypt(json.toByteArray(Charsets.UTF_8))
             val noPermIntent = Intent(noPermAction).apply {
-                putExtra("com.air.advantage.GET_DATA_REQUEST", "periodicInfo")
+                putExtra("com.air.advantage.GET_DATA_REQUEST", "aaServiceInfo")
                 putExtra(noPermAction, String(encrypted ?: ByteArray(0), Charsets.UTF_8))
             }
             sendBroadcast(noPermIntent)
