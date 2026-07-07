@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
-    <uses-sdk android:minSdkVersion="19" android:targetSdkVersion="30"/>
+    <uses-sdk android:minSdkVersion="19" android:targetSdkVersion="34"/>
 
     <permission android:name="com.air.android.secure_comms"
         android:protectionLevel="signature"
@@ -20,13 +20,13 @@
     <uses-feature android:name="android.hardware.usb.accessory"/>
 
     <application
-        android:name="com.air.advantage.aaservice.application.AAServiceApp"
+        android:name=".AAServiceApp"
         android:label="@string/app_name"
         android:icon="@mipmap/ic_launcher"
         android:allowBackup="true"
         android:appComponentFactory="androidx.core.app.CoreComponentFactory">
 
-        <activity android:name="com.air.advantage.aaservice.ui.main.MainActivity"
+        <activity android:name=".ui.main.MainActivity"
             android:theme="@style/Default"
             android:exported="true"
             android:excludeFromRecents="true"
@@ -39,7 +39,7 @@
             </intent-filter>
         </activity>
 
-        <activity android:name="com.air.advantage.aaservice.ui.usb.UsbConnectActivity"
+        <activity android:name=".ui.usb.UsbConnectActivity"
             android:theme="@style/Theme.Transparent"
             android:exported="true"
             android:excludeFromRecents="true"
@@ -51,12 +51,12 @@
                 android:resource="@xml/accessory_filter"/>
         </activity>
 
-        <activity android:name="com.air.advantage.aaservice.ui.alert.AlertActivity"
+        <activity android:name=".ui.alert.AlertActivity"
             android:excludeFromRecents="true"
             android:launchMode="singleInstance"
             android:noHistory="false"/>
 
-        <service android:name="com.air.advantage.aaservice.service.UartForegroundService"
+        <service android:name=".service.UartForegroundService"
             android:label="@string/app_name"
             android:exported="true">
             <intent-filter>
@@ -64,10 +64,10 @@
             </intent-filter>
         </service>
 
-        <service android:name="com.air.advantage.aaservice.service.RebootNotificationService"
+        <service android:name=".service.RebootNotificationService"
             android:label="ServicePleaseReboot"/>
 
-        <receiver android:name="com.air.advantage.aaservice.receiver.PackageUpgradeReceiver"
+        <receiver android:name=".receiver.PackageUpgradeReceiver"
             android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.PACKAGE_REPLACED"/>
@@ -75,7 +75,7 @@
             </intent-filter>
         </receiver>
 
-        <receiver android:name="com.air.advantage.aaservice.receiver.DeviceAdminReceiver"
+        <receiver android:name=".receiver.DeviceAdminReceiver"
             android:permission="android.permission.BIND_DEVICE_ADMIN"
             android:exported="true"
             android:description="@string/device_admin_description">
@@ -86,7 +86,8 @@
             </intent-filter>
         </receiver>
 
-        <receiver android:name="com.air.advantage.aaservice.receiver.AlertDialogReceiver"/>
+        <receiver android:name=".receiver.AlertDialogReceiver"/>
+        <receiver android:name=".receiver.UsbPermissionReceiver"/>
 
         <uses-library android:name="androidx.window.extensions" android:required="false"/>
         <uses-library android:name="androidx.window.sidecar" android:required="false"/>
