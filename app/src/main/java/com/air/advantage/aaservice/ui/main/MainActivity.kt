@@ -1,6 +1,6 @@
 package com.air.advantage.aaservice.ui.main
 
-import android.app.Activity
+import androidx.activity.ComponentActivity
 import android.app.AlertDialog
 import android.app.admin.DevicePolicyManager
 import android.content.ComponentName
@@ -15,17 +15,23 @@ import com.air.advantage.aaservice.R
 import com.air.advantage.aaservice.receiver.DeviceAdminReceiver
 import com.air.advantage.aaservice.service.RebootNotificationService
 import com.air.advantage.aaservice.util.ServiceHelper
+import dagger.hilt.android.AndroidEntryPoint
 import java.util.concurrent.atomic.AtomicBoolean
+import javax.inject.Inject
 
-class MainActivity : Activity(), View.OnClickListener {
+@AndroidEntryPoint
+class MainActivity : ComponentActivity(), View.OnClickListener {
 
     companion object {
         private const val TAG = "MainActivity"
-        val isActive = AtomicBoolean(false)
+        val isVisible = AtomicBoolean(false)
     }
 
+    @Inject
+    lateinit var viewModel: MainViewModel
+
     private lateinit var componentName: ComponentName
-    private lateinit var devicePolicyManager: DevicePolicyManager
+    lateinit var devicePolicyManager: DevicePolicyManager
 
     override fun onCreate(bundle: Bundle?) {
         super.onCreate(bundle)
@@ -34,9 +40,9 @@ class MainActivity : Activity(), View.OnClickListener {
         Log.d(TAG, "onCreate")
     }
 
-    override fun onResume() {
+    public override fun onResume() {
         super.onResume()
-        isActive.set(true)
+        isVisible.set(true)
         if (RebootNotificationService.rebootRequired.get()) {
             setContentView(R.layout.reboot_now)
             ServiceHelper.setVersionText(this)
@@ -52,9 +58,9 @@ class MainActivity : Activity(), View.OnClickListener {
         }
     }
 
-    override fun onPause() {
+    public override fun onPause() {
         super.onPause()
-        isActive.set(false)
+        isVisible.set(false)
     }
 
     private fun updateUI() {
@@ -111,7 +117,7 @@ class MainActivity : Activity(), View.OnClickListener {
         }
     }
 
-    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+    public override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
         if (requestCode == 12345) {
             if (resultCode != RESULT_OK) {
@@ -119,7 +125,7 @@ class MainActivity : Activity(), View.OnClickListener {
                 updateUI()
             } else {
                 Log.d(TAG, "Admin enabled")
-                ServiceHelper.startUartService(this)
+                ServiceHelper.startUartService(this, null)
                 updateUI()
             }
         }
