@@ -137,10 +137,13 @@ class PollQueueRepositoryTest {
     }
 
     @Test
-    fun `initialize with non-MyAir5 leaves queue empty`() {
+    fun `initialize with non-MyAir5 adds schedule items`() {
         repository.initialize(isMyAir5 = false)
-        assertEquals(0, repository.queueSize())
-        assertNull(repository.currentPoll())
+        // 12 base + 6 schedule = 18
+        assertEquals(18, repository.queueSize())
+        val entry = repository.currentPoll()
+        assertNotNull(entry)
+        assertEquals("getSystemData", entry?.tag)
     }
 
     @Test
@@ -153,6 +156,6 @@ class PollQueueRepositoryTest {
         repository.initialize(isMyAir5 = true)
         assertEquals(12, repository.queueSize())
         repository.initialize(isMyAir5 = false)
-        assertEquals(0, repository.queueSize())
+        assertEquals(18, repository.queueSize())
     }
 }

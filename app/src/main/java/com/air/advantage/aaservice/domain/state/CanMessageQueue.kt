@@ -6,6 +6,18 @@ class CanMessageQueue {
     private val queue = ArrayDeque<CanMessage>()
 
     fun enqueue(message: CanMessage) {
+        if (message.id != 0) {
+            val messageStr = "setCAN ${message.id}"
+            val prefix = messageStr.take(13)
+            val iterator = queue.iterator()
+            while (iterator.hasNext()) {
+                val existing = iterator.next()
+                if (existing.id != 0 && "setCAN ${existing.id}".take(13) == prefix) {
+                    iterator.remove()
+                    break
+                }
+            }
+        }
         queue.addLast(message)
     }
 
