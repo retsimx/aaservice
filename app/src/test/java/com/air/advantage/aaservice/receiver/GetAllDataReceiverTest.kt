@@ -29,11 +29,32 @@ class GetAllDataReceiverTest {
     }
 
     @Test
-    fun `onReceive calls requestFullPoll`() {
+    fun `onReceive broadcasts data`() {
         UartForegroundService.instance = service
+        val pollQueue = mock(com.air.advantage.aaservice.data.repository.PollQueueRepository::class.java)
+        `when`(service.pollQueue).thenReturn(pollQueue)
+        `when`(pollQueue.queueSize()).thenReturn(12)
+
         val intent = Intent("com.air.advantage.GET_ALL_DATA")
         receiver.onReceive(context, intent)
-        verify(service).requestFullPoll()
+
+        verify(service).broadcastData("getSystemData")
+        verify(service).broadcastData("getClock")
+        verify(service, never()).requestSinglePoll(anyString())
+    }
+
+    @Test
+    fun `onReceive enqueues schedule tags when queue size is 18`() {
+        UartForegroundService.instance = service
+        val pollQueue = mock(com.air.advantage.aaservice.data.repository.PollQueueRepository::class.java)
+        `when`(service.pollQueue).thenReturn(pollQueue)
+        `when`(pollQueue.queueSize()).thenReturn(18)
+
+        val intent = Intent("com.air.advantage.GET_ALL_DATA")
+        receiver.onReceive(context, intent)
+
+        verify(service).broadcastData("getSystemData")
+        verify(service).requestSinglePoll("getZoneTimer")
     }
 
     @Test

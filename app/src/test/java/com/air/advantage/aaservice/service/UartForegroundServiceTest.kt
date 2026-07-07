@@ -233,10 +233,10 @@ private lateinit var service: UartForegroundService
     // ── requestFullPoll ──────────────────────────────────────────
 
     @Test
-    fun `requestFullPoll iterates all 14 POLL_TAGS`() {
+    fun `requestFullPoll iterates all 12 POLL_TAGS`() {
         service.requestFullPoll()
-        assertEquals(14, service.canQueue.size())
-        verify(service, times(14)).requestSinglePoll(any())
+        assertEquals(12, service.canQueue.size())
+        verify(service, times(12)).requestSinglePoll(any())
     }
 
     @Test
@@ -565,7 +565,7 @@ private lateinit var service: UartForegroundService
         job.cancel()
 
         verify(service).sendBroadcast(argThat<Intent> {
-            getStringExtra("com.air.advantage.GET_DATA_REQUEST") == "periodicInfo"
+            getStringExtra("com.air.advantage.GET_DATA_REQUEST") == "aaServiceInfo"
         }, anyOrNull())
     }
 

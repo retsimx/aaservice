@@ -29,12 +29,12 @@ class GetDataReceiverTest {
     }
 
     @Test
-    fun `onReceive with valid tag calls requestSinglePoll`() {
+    fun `onReceive with valid tag calls broadcastData`() {
         UartForegroundService.instance = service
         val intent = mock(Intent::class.java)
         `when`(intent.getStringExtra("com.air.advantage.GET_DATA")).thenReturn("getSystemData")
         receiver.onReceive(context, intent)
-        verify(service).requestSinglePoll("getSystemData")
+        verify(service).broadcastData("getSystemData")
     }
 
     @Test
@@ -52,7 +52,7 @@ class GetDataReceiverTest {
         val intent = mock(Intent::class.java)
         `when`(intent.getStringExtra("com.air.advantage.GET_DATA")).thenReturn("getZoneData?zone=1")
         receiver.onReceive(context, intent)
-        verify(service).requestSinglePoll("getZoneData?zone=1")
+        verify(service).broadcastData("getZoneData?zone=1")
     }
 
     @Test

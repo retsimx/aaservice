@@ -58,7 +58,10 @@ class UartForegroundServiceProcessPollResponseTest {
 
         val cached = service.dataCache.get(tag)
         assertNotNull(cached)
-        assertArrayEquals("type=17".toByteArray(Charsets.UTF_8), cached)
+        val cachedStr = String(cached!!, Charsets.UTF_8)
+        assertTrue("Should contain <type>17</type>", cachedStr.contains("<type>17</type>"))
+        assertTrue("Should contain <AppStore>MyAir5</AppStore>", cachedStr.contains("<AppStore>MyAir5</AppStore>"))
+        assertTrue("Should contain <MyAppRev>14.150</MyAppRev>", cachedStr.contains("<MyAppRev>14.150</MyAppRev>"))
     }
 
     @Test
@@ -74,24 +77,25 @@ class UartForegroundServiceProcessPollResponseTest {
     @Test
     fun `processPollResponse getSystemData produces correct bytes`() {
         val tag = "getSystemData"
-        val expectedBytes = "type=17".toByteArray(Charsets.UTF_8)
-
         service.processPollResponse(tag)
 
         val cached = service.dataCache.get(tag)
-        assertArrayEquals(expectedBytes, cached)
+        assertNotNull(cached)
+        val cachedStr = String(cached!!, Charsets.UTF_8)
+        assertTrue("Should contain <type>17</type>", cachedStr.contains("<type>17</type>"))
+        assertTrue("Should contain <AppStore>MyAir5</AppStore>", cachedStr.contains("<AppStore>MyAir5</AppStore>"))
+        assertTrue("Should contain <MyAppRev>14.150</MyAppRev>", cachedStr.contains("<MyAppRev>14.150</MyAppRev>"))
     }
 
     @Test
     fun `processPollResponse caches data via DataCacheRepository`() {
         val tag = "getSystemData"
-        val data = DataCacheRepository()
-
         service.processPollResponse(tag)
 
         val cached = service.dataCache.get(tag)
         assertNotNull(cached)
-        assertArrayEquals("type=17".toByteArray(Charsets.UTF_8), cached)
+        val cachedStr = String(cached!!, Charsets.UTF_8)
+        assertTrue("Should contain <type>17</type>", cachedStr.contains("<type>17</type>"))
     }
 
     @Test
@@ -173,8 +177,7 @@ class UartForegroundServiceProcessPollResponseTest {
             whenever(dataSource.isConnected).thenReturn(true)
             whenever(dataSource.read()).thenReturn(flowOf(ByteArray(0)))
 
-            service.pollQueue.initialize(isMyAir5 = false)
-
+            // Don't initialize poll queue - leave it empty
             service.handlePollCycle(dataSource)
             delay(120)
 
