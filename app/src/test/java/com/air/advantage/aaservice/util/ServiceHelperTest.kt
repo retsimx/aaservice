@@ -2,6 +2,7 @@ package com.air.advantage.aaservice.util
 
 import android.app.Activity
 import android.app.AlarmManager
+import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
 import android.hardware.usb.UsbAccessory
@@ -51,17 +52,21 @@ class ServiceHelperTest {
     @Test
     fun scheduleServiceStart_schedulesAlarm() {
         val action = "com.test.ACTION"
-        val delayMs = 5000
+        val delayMs = 5000L
         ServiceHelper.scheduleServiceStart(context, action, delayMs)
 
         val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
         val shadowAlarm = shadowOf(alarmManager)
         val alarm = shadowAlarm.nextScheduledAlarm
         assertNotNull("Alarm should be scheduled", alarm)
-        assertEquals(AlarmManager.ELAPSED_REALTIME, alarm!!.type)
+        assertEquals(AlarmManager.ELAPSED_REALTIME_WAKEUP, alarm!!.type)
 
         val shadowPendingIntent = shadowOf(alarm.operation)
+        assertEquals(UartForegroundService::class.java.name, shadowPendingIntent.savedIntent.component?.className)
         assertEquals(action, shadowPendingIntent.savedIntent.action)
+        assertEquals(R.string.app_name, shadowPendingIntent.requestCode)
+        assertTrue((shadowPendingIntent.flags and PendingIntent.FLAG_IMMUTABLE) != 0)
+        assertEquals(0, shadowPendingIntent.flags and PendingIntent.FLAG_UPDATE_CURRENT)
     }
 
     @Test
