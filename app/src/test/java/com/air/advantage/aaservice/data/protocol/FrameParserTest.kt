@@ -273,4 +273,18 @@ class FrameParserTest {
         val result = parser.removeTag(xml, "nonexistent".toByteArray(), "nonexistent".toByteArray())
         assertEquals("<first>1</first>", String(result))
     }
+
+    @Test
+    fun `removeTag returns same data when close tag absent`() {
+        val xml = "<first>1</first><start>val</start><mid>2</mid><last>4</last>".toByteArray()
+        val result = parser.removeTag(xml, "start".toByteArray(), "end".toByteArray())
+        assertEquals("<first>1</first><start>val</start><mid>2</mid><last>4</last>", String(result))
+    }
+
+    @Test
+    fun `removeTag returns same data when open tag absent`() {
+        val xml = "<first>1</first>".toByteArray()
+        val result = parser.removeTag(xml, "start".toByteArray(), "start".toByteArray())
+        assertEquals("<first>1</first>", String(result))
+    }
 }

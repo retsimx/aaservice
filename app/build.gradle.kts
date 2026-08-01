@@ -15,6 +15,9 @@ android {
         targetSdk = 30
         versionCode = 1
         versionName = "1.0.0"
+        vectorDrawables {
+            useSupportLibrary = true
+        }
     }
 
     buildFeatures {
@@ -25,6 +28,10 @@ android {
         release {
             isMinifyEnabled = false
         }
+    }
+
+    lint {
+        disable += "ExpiredTargetSdkVersion"
     }
 
     compileOptions {

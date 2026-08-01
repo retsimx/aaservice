@@ -72,11 +72,13 @@ class FrameParser {
         val openPos = indexOf(0, data, openTag)
         if (openPos <= 0) return data
         val closeTag = closeTag(replacement)
-        val closePos = indexOf(openPos, data, closeTag) + closeTag.size
-        if (openTag.size + openPos < closePos) {
-            val result = ByteArray((data.size - closePos) + openPos)
+        val closePos = indexOf(openPos, data, closeTag)
+        if (closePos < 0) return data
+        val closeEnd = closePos + closeTag.size
+        if (openTag.size + openPos < closeEnd) {
+            val result = ByteArray((data.size - closeEnd) + openPos)
             System.arraycopy(data, 0, result, 0, openPos)
-            System.arraycopy(data, closePos, result, openPos, data.size - closePos)
+            System.arraycopy(data, closeEnd, result, openPos, data.size - closeEnd)
             return result
         }
         return data
