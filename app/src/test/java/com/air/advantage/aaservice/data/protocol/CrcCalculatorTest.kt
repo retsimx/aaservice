@@ -27,16 +27,16 @@ class CrcCalculatorTest {
 
     @Test
     fun `compute with valid range returns correct CRC`() {
-        // 4-byte array, end=3 processes bytes 0,1,2 (end must be < data.size)
+        // 4-byte array, end=3 processes bytes 0,1,2
         val data = byteArrayOf(0x41, 0x42, 0x43, 0x44)
         assertEquals(103, CrcCalculator.compute(data, 0, 3))
     }
 
     @Test
-    fun `compute with default end returns 255 since end equals data size`() {
-        // Default end = data.size triggers the end >= data.size guard
+    fun `compute with default end returns correct CRC over all bytes`() {
+        // Default end = data.size is a valid exclusive upper bound and must iterate every byte
         val data = byteArrayOf(0x41, 0x42, 0x43)
-        assertEquals(255, CrcCalculator.compute(data))
+        assertEquals(103, CrcCalculator.compute(data))
     }
 
     @Test
@@ -46,13 +46,20 @@ class CrcCalculatorTest {
     }
 
     @Test
-    fun `compute with end equal to data size returns 255`() {
+    fun `compute with explicit end equal to data size matches default`() {
         val data = byteArrayOf(0x41, 0x42, 0x43, 0x44)
-        assertEquals(255, CrcCalculator.compute(data, 0, 4))
+        assertEquals(CrcCalculator.compute(data), CrcCalculator.compute(data, 0, data.size))
+        assertEquals(54, CrcCalculator.compute(data, 0, 4))
     }
 
     @Test
-    fun `compute with empty array returns 255 via guard clause`() {
+    fun `compute with out-of-bounds end returns 255`() {
+        val data = byteArrayOf(0x41, 0x42, 0x43, 0x44)
+        assertEquals(255, CrcCalculator.compute(data, 0, data.size + 1))
+    }
+
+    @Test
+    fun `compute with empty array returns 255`() {
         assertEquals(255, CrcCalculator.compute(byteArrayOf()))
     }
 
