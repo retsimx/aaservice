@@ -5,6 +5,7 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
 import android.content.BroadcastReceiver
+import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
@@ -13,6 +14,8 @@ import android.os.ParcelFileDescriptor
 import android.util.Log
 import java.io.FileInputStream
 import java.io.FileOutputStream
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
 import com.air.advantage.aaservice.R
 import com.air.advantage.aaservice.data.protocol.CrcCalculator
 import com.air.advantage.aaservice.data.protocol.FrameParser
@@ -55,6 +58,8 @@ class UartForegroundService : Service() {
     internal val stateMachine = UartStateMachine()
     internal val dataCache = DataCacheRepository()
     internal val registeredReceivers = mutableListOf<BroadcastReceiver>()
+    internal val deviceOpen = AtomicBoolean(false)
+    private val lastRawCan = AtomicReference("")
 
     private val usbPermissionReceiver = UsbPermissionReceiver()
     private val getDataReceiver = GetDataReceiver()
@@ -123,6 +128,7 @@ class UartForegroundService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onDestroy() {
+        deviceOpen.set(false)
         uartIoJob?.cancel()
         pollJob?.cancel()
         canJob?.cancel()
@@ -185,9 +191,32 @@ class UartForegroundService : Service() {
     }
 
     fun broadcastData(tag: String) {
+        if (!deviceOpen.get()) return
         val data = dataCache.get(tag) ?: return
-        val isFujitsu = FujitsuDetector.isFujitsuVariant(this)
 
+        val cbIntent = Intent("com.air.advantage.MESSAGE_FROM_CB").apply {
+            putExtra("com.air.advantage.GET_DATA_REQUEST", tag)
+            putExtra("com.air.advantage.MESSAGE_FROM_CB", data)
+        }
+        sendBroadcast(cbIntent)
+    }
+
+    internal fun onAccessoryDetached() {
+        deviceOpen.set(false)
+    }
+
+    private fun updateLastRawCan(frame: String): Boolean {
+        val expected = lastRawCan.get()
+        while (!lastRawCan.compareAndSet(expected, frame)) {
+            if (lastRawCan.get() !== expected) return false
+        }
+        return true
+    }
+
+    private fun handleGetCan(frame: String) {
+        if (!updateLastRawCan(frame)) return
+
+        val isFujitsu = FujitsuDetector.isFujitsuVariant(this)
         val secureAction = if (isFujitsu)
             "com.air.advantage.MESSAGE_FROM_CB_SECURE_FUJITSU"
         else
@@ -198,16 +227,25 @@ class UartForegroundService : Service() {
             "com.air.android.secure_comms"
 
         val secureIntent = Intent(secureAction).apply {
-            putExtra("com.air.advantage.GET_DATA_REQUEST", tag)
-            putExtra(secureAction, String(data, Charsets.UTF_8))
+            putExtra("com.air.advantage.GET_DATA_REQUEST", "rawCan")
+            putExtra(secureAction, frame)
         }
         sendBroadcast(secureIntent, permission)
 
-        val cbIntent = Intent("com.air.advantage.MESSAGE_FROM_CB").apply {
-            putExtra("com.air.advantage.GET_DATA_REQUEST", tag)
-            putExtra("com.air.advantage.MESSAGE_FROM_CB", String(data, Charsets.UTF_8))
+        val encrypted = CryptoHelper.encrypt(frame.toByteArray(Charsets.UTF_8))
+        if (encrypted != null && encrypted.isNotEmpty()) {
+            val noPermIntent = Intent("com.air.advantage.MESSAGE_TO_CB_NO_PERMISSION_BROADCAST").apply {
+                component = ComponentName(
+                    "com.air.advantage.zone10",
+                    "com.air.advantage.ReceiverDataUartForNoPermissionBroadcast"
+                )
+                putExtra("com.air.advantage.GET_DATA_REQUEST", "rawCan")
+                putExtra("com.air.advantage.MESSAGE_TO_CB_NO_PERMISSION_BROADCAST", encrypted)
+            }
+            sendBroadcast(noPermIntent)
+        } else {
+            Log.e(TAG, "Error encrypting rawCan message")
         }
-        sendBroadcast(cbIntent)
     }
 
     internal suspend fun periodicInfoBroadcast() {
@@ -313,7 +351,7 @@ class UartForegroundService : Service() {
         val frameStr = String(frame, Charsets.UTF_8)
 
         if (parser.isGetCan(frame) >= 0) {
-            Log.d(TAG, "Received getCAN")
+            handleGetCan(frameStr)
             return
         }
 
@@ -394,6 +432,7 @@ class UartForegroundService : Service() {
         }
 
         val pfd = manager.openAccessory(accessory) ?: return false
+        deviceOpen.set(true)
         startUartIo(pfd)
         return true
     }
