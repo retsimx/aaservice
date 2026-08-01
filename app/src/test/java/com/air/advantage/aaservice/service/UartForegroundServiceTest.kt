@@ -340,8 +340,10 @@ private lateinit var service: UartForegroundService
     @Test
     fun `onDestroy clears instance`() {
         UartForegroundService.instance = service
+        service.deviceOpen.set(true)
         service.onDestroy()
         assertNull(UartForegroundService.instance)
+        assertFalse(service.deviceOpen.get())
     }
 
     @Test
@@ -373,6 +375,29 @@ private lateinit var service: UartForegroundService
         assertTrue(result)
         verify(manager).openAccessory(accessory)
         assertNotNull(service.uartDataSource)
+        assertTrue(service.deviceOpen.get())
+    }
+
+    @Test
+    fun `openAccessory with null pfd returns false and device stays closed`() {
+        val manager = mock<UsbManager>()
+        val accessory = mock<UsbAccessory>()
+        whenever(manager.openAccessory(accessory)).thenReturn(null)
+        doReturn(manager).whenever(service).getSystemService(Context.USB_SERVICE)
+
+        val result = service.openAccessory(accessory)
+
+        assertFalse(result)
+        assertFalse(service.deviceOpen.get())
+    }
+
+    @Test
+    fun `onAccessoryDetached closes device`() {
+        service.deviceOpen.set(true)
+
+        service.onAccessoryDetached()
+
+        assertFalse(service.deviceOpen.get())
     }
 
     @Test
@@ -470,74 +495,90 @@ private lateinit var service: UartForegroundService
 
     @Test
     fun `broadcastData with tag not in cache sends no broadcasts`() {
+        service.deviceOpen.set(true)
         service.broadcastData("nonExistentTag")
         verify(service, never()).sendBroadcast(any<Intent>())
     }
 
     @Test
-    fun `broadcastData with tag in cache sends two broadcasts`() {
+    fun `broadcastData with device not open sends no broadcasts`() {
         val tag = "getSystemData"
-        val data = "systemData".toByteArray()
-        service.dataCache.put(tag, data)
+        service.dataCache.put(tag, "systemData".toByteArray())
 
         service.broadcastData(tag)
 
-        verify(service, times(1)).sendBroadcast(any<Intent>(), anyOrNull())
-        verify(service, times(1)).sendBroadcast(any<Intent>())
+        verify(service, never()).sendBroadcast(any<Intent>())
+        verify(service, never()).sendBroadcast(any<Intent>(), anyOrNull())
     }
 
     @Test
-    fun `broadcastData sends correct secure action for non-Fujitsu`() {
-        val tag = "getClock"
-        val data = "12:00".toByteArray()
+    fun `broadcastData with open device and tag in cache sends one plain broadcast`() {
+        val tag = "getSystemData"
+        val data = "systemData".toByteArray()
         service.dataCache.put(tag, data)
+        service.deviceOpen.set(true)
 
         service.broadcastData(tag)
 
-        verify(service).sendBroadcast(argThat<Intent> {
+        verify(service, times(1)).sendBroadcast(any<Intent>())
+        verify(service, never()).sendBroadcast(any<Intent>(), anyOrNull())
+    }
+
+    @Test
+    fun `broadcastData never sends secure broadcast`() {
+        val tag = "getClock"
+        val data = "12:00".toByteArray()
+        service.dataCache.put(tag, data)
+        service.deviceOpen.set(true)
+
+        service.broadcastData(tag)
+
+        verify(service, never()).sendBroadcast(argThat<Intent> {
+            action == "com.air.advantage.MESSAGE_FROM_CB_SECURE" ||
+            action == "com.air.advantage.MESSAGE_FROM_CB_SECURE_FUJITSU"
+        }, anyOrNull())
+    }
+
+    @Test
+    fun `broadcastData never sends MESSAGE_FROM_CB_SECURE intent`() {
+        val tag = "getZoneData"
+        val data = "zone1=22".toByteArray()
+        service.dataCache.put(tag, data)
+        service.deviceOpen.set(true)
+
+        service.broadcastData(tag)
+
+        verify(service, never()).sendBroadcast(argThat<Intent> {
             action == "com.air.advantage.MESSAGE_FROM_CB_SECURE"
         }, anyOrNull())
     }
 
     @Test
-    fun `broadcastData sends correct extras on secure intent`() {
-        val tag = "getZoneData"
-        val data = "zone1=22".toByteArray()
-        service.dataCache.put(tag, data)
-
-        service.broadcastData(tag)
-
-        verify(service).sendBroadcast(argThat<Intent> {
-            action == "com.air.advantage.MESSAGE_FROM_CB_SECURE" &&
-            getStringExtra("com.air.advantage.GET_DATA_REQUEST") == tag &&
-            getStringExtra("com.air.advantage.MESSAGE_FROM_CB_SECURE") == "zone1=22"
-        }, anyOrNull())
-    }
-
-    @Test
-    fun `broadcastData sends correct extras on regular intent`() {
+    fun `broadcastData sends ByteArray extra on regular intent`() {
         val tag = "getTimers"
         val data = "timer1=on".toByteArray()
         service.dataCache.put(tag, data)
+        service.deviceOpen.set(true)
 
         service.broadcastData(tag)
 
         verify(service).sendBroadcast(argThat<Intent> {
             action == "com.air.advantage.MESSAGE_FROM_CB" &&
             getStringExtra("com.air.advantage.GET_DATA_REQUEST") == tag &&
-            getStringExtra("com.air.advantage.MESSAGE_FROM_CB") == "timer1=on"
+            getByteArrayExtra("com.air.advantage.MESSAGE_FROM_CB")?.contentEquals(data) == true
         })
     }
 
     @Test
-    fun `broadcastData with Fujitsu sends Fujitsu-specific secure action`() {
+    fun `broadcastData never sends Fujitsu secure broadcast`() {
         val tag = "getSchedules"
         val data = "schedule1".toByteArray()
         service.dataCache.put(tag, data)
+        service.deviceOpen.set(true)
 
         service.broadcastData(tag)
 
-        verify(service).sendBroadcast(argThat<Intent> {
+        verify(service, never()).sendBroadcast(argThat<Intent> {
             action == "com.air.advantage.MESSAGE_FROM_CB_SECURE" ||
             action == "com.air.advantage.MESSAGE_FROM_CB_SECURE_FUJITSU"
         }, anyOrNull())
