@@ -25,7 +25,7 @@ object CrcCalculator {
     )
 
     fun compute(data: ByteArray?, start: Int = 0, end: Int = data?.size ?: 0): Int {
-        if (data == null || start > end || end >= data.size) {
+        if (data == null || start > end || end > data.size) {
             return 255
         }
         var crc = 0
