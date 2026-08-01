@@ -389,7 +389,7 @@ class UartForegroundService : Service() {
         val manager = getSystemService(Context.USB_SERVICE) as? UsbManager ?: return false
 
         if (crashCount > maxRetries) {
-            sendBroadcast(Intent("com.air.advantage.REBOOT_REQUIRED"))
+            sendBroadcast(Intent(ServiceHelper.ACTION_REBOOT_DEVICE))
             return true
         }
 

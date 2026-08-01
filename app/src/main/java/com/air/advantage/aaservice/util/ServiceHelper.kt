@@ -14,6 +14,8 @@ import com.air.advantage.aaservice.service.UartForegroundService
 
 object ServiceHelper {
 
+    const val ACTION_REBOOT_DEVICE = "com.air.advantage.REBOOT_DEVICE"
+
     fun getUsbAccessory(context: Context): UsbAccessory? {
         val usbManager = context.getSystemService(Context.USB_SERVICE) as UsbManager
         val accessories = usbManager.accessoryList
@@ -29,17 +31,17 @@ object ServiceHelper {
     }
 
     @JvmStatic
-    fun scheduleServiceStart(context: Context, action: String, delayMs: Int) {
+    fun scheduleServiceStart(context: Context, action: String, delayMs: Long) {
         val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
-        val intent = Intent().setAction(action)
+        val intent = Intent(context, UartForegroundService::class.java).apply { setAction(action) }
         val pendingIntent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            PendingIntent.getForegroundService(context, action.hashCode(), intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+            PendingIntent.getForegroundService(context, R.string.app_name, intent, PendingIntent.FLAG_IMMUTABLE)
         } else {
             @Suppress("DEPRECATION")
-            PendingIntent.getService(context, action.hashCode(), intent, PendingIntent.FLAG_UPDATE_CURRENT)
+            PendingIntent.getService(context, R.string.app_name, intent, PendingIntent.FLAG_IMMUTABLE)
         }
         alarmManager.set(
-            AlarmManager.ELAPSED_REALTIME,
+            AlarmManager.ELAPSED_REALTIME_WAKEUP,
             android.os.SystemClock.elapsedRealtime() + delayMs,
             pendingIntent
         )
@@ -47,12 +49,12 @@ object ServiceHelper {
 
     fun cancelScheduledServiceStart(context: Context, action: String) {
         val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
-        val intent = Intent().setAction(action)
+        val intent = Intent(context, UartForegroundService::class.java).apply { setAction(action) }
         val pendingIntent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            PendingIntent.getForegroundService(context, action.hashCode(), intent, PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
+            PendingIntent.getForegroundService(context, R.string.app_name, intent, PendingIntent.FLAG_IMMUTABLE)
         } else {
             @Suppress("DEPRECATION")
-            PendingIntent.getService(context, action.hashCode(), intent, PendingIntent.FLAG_UPDATE_CURRENT)
+            PendingIntent.getService(context, R.string.app_name, intent, PendingIntent.FLAG_IMMUTABLE)
         }
         alarmManager.cancel(pendingIntent)
     }

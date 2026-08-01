@@ -387,7 +387,7 @@ private lateinit var service: UartForegroundService
 
         assertTrue(result)
         verify(service).sendBroadcast(argThat<Intent> {
-            action == "com.air.advantage.REBOOT_REQUIRED"
+            action == ServiceHelper.ACTION_REBOOT_DEVICE
         })
     }
 
