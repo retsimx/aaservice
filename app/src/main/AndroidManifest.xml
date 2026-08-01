@@ -20,7 +20,7 @@
     <uses-feature android:name="android.hardware.usb.accessory"/>
 
     <application
-        android:name=".AAServiceApp"
+        android:name=".application.AAServiceApp"
         android:label="@string/app_name"
         android:icon="@mipmap/ic_launcher"
         android:allowBackup="true"
