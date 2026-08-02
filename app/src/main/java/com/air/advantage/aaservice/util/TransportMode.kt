@@ -8,7 +8,12 @@ enum class TransportMode(val value: String) {
     Ws("ws");
 
     companion object {
+        /** Prefs / defaults: unknown or null → [Usb]. */
         fun fromValue(raw: String?): TransportMode =
-            entries.find { it.value == raw } ?: Usb
+            parseOrNull(raw) ?: Usb
+
+        /** Intent extras: unknown or null → null (caller keeps prefs). */
+        fun parseOrNull(raw: String?): TransportMode? =
+            entries.find { it.value == raw }
     }
 }

@@ -44,6 +44,8 @@ import com.air.advantage.aaservice.receiver.GetAllDataReceiver
 import com.air.advantage.aaservice.receiver.GetDataReceiver
 import com.air.advantage.aaservice.receiver.MessageToCbReceiver
 import com.air.advantage.aaservice.receiver.UsbPermissionReceiver
+import com.air.advantage.aaservice.service.daemon.DaemonLifecycle
+import com.air.advantage.aaservice.service.daemon.SuDaemonLifecycle
 import com.air.advantage.aaservice.ui.main.MainActivity
 import com.air.advantage.aaservice.ui.usb.UsbConnectActivity
 import com.air.advantage.aaservice.util.CryptoHelper
@@ -61,8 +63,10 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.withTimeoutOrNull
 import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.io.InputStream
@@ -71,8 +75,9 @@ import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 
 /**
- * Foreground host for USB UART and mailbox WS. Transport selection is owned by
- * [TransportRouter]; this service supplies USB callbacks and lifecycle.
+ * Foreground host for USB UART and mailbox WS. Mode exclusivity is owned by
+ * [ModeSwitchCoordinator] (Magisk + snapshot gate); [TransportRouter] stays thin
+ * USB/WS I/O. This service supplies USB callbacks and lifecycle.
  *
  * Not `@AndroidEntryPoint` — Robolectric `buildService` tests construct the service
  * without Hilt. Deps resolve via [UartServiceEntryPoint] with a manual fallback.
@@ -88,12 +93,28 @@ class UartForegroundService : Service() {
     internal var preferencesManager: PreferencesManager? = null
     internal var mailboxWsClientFactory: MailboxWsClientFactory? = null
 
+    /**
+     * Overridable Magisk lifecycle; production uses [SuDaemonLifecycle].
+     * Inject a succeeding fake in Robolectric so loopback WS switches can complete.
+     */
+    internal var daemonLifecycle: DaemonLifecycle? = null
+
+    /** Overridable snapshot wait for tests (default matches [ModeSwitchCoordinator]). */
+    internal var snapshotTimeoutMs: Long = ModeSwitchCoordinator.DEFAULT_SNAPSHOT_TIMEOUT_MS
+
     @Volatile
     private var transportRouterField: TransportRouter? = null
+
+    @Volatile
+    private var modeSwitchCoordinatorField: ModeSwitchCoordinator? = null
 
     /** Exposed for tests / diagnostics once [ensureTransportRouter] has run. */
     internal val transportRouter: TransportRouter
         get() = ensureTransportRouter()
+
+    /** Exposed for tests once [ensureModeSwitchCoordinator] has run. */
+    internal val modeSwitchCoordinator: ModeSwitchCoordinator
+        get() = ensureModeSwitchCoordinator()
 
     private val usbPermissionReceiver = UsbPermissionReceiver()
     private val getDataReceiver = GetDataReceiver()
@@ -159,6 +180,7 @@ class UartForegroundService : Service() {
     internal var mailboxWsClient: MailboxWsClient? = null
         private set
     private var mailboxCollectionJob: Job? = null
+    private var mailboxStatusJob: Job? = null
 
     @Volatile private var currentAccessory: UsbAccessory? = null
     private var currentPfd: ParcelFileDescriptor? = null
@@ -213,19 +235,48 @@ class UartForegroundService : Service() {
 
     /**
      * Syncs the inbound collector with [TransportRouter.mailboxWsClient] after mode changes.
-     * Detaches when the router has no client (USB mode).
+     * Detaches when the router has no client (USB mode). Also mirrors
+     * [MailboxConnectionState] into [TransportStatusStore] for A1 UI.
      */
     private fun syncMailboxInboundCollector() {
         val routerClient = transportRouterField?.mailboxWsClient
         if (routerClient == null) {
             mailboxCollectionJob?.cancel()
             mailboxCollectionJob = null
+            mailboxStatusJob?.cancel()
+            mailboxStatusJob = null
             mailboxWsClient = null
             return
         }
-        if (mailboxWsClient === routerClient && mailboxCollectionJob?.isActive == true) return
-        attachMailboxWsClient(routerClient)
-        Log.i(TAG, "syncMailboxInboundCollector: collecting TransportRouter mailbox client")
+        if (mailboxWsClient !== routerClient || mailboxCollectionJob?.isActive != true) {
+            attachMailboxWsClient(routerClient)
+            Log.i(TAG, "syncMailboxInboundCollector: collecting TransportRouter mailbox client")
+        }
+        if (mailboxStatusJob?.isActive == true && mailboxWsClient === routerClient) return
+        mailboxStatusJob?.cancel()
+        mailboxStatusJob = ioScope.launch {
+            routerClient.connectionState.collect { state ->
+                publishMailboxConnectionStatus(state)
+            }
+        }
+    }
+
+    private fun publishModeSwitchStatus(status: ModeSwitchStatus) {
+        TransportStatusStore.publish(status)
+    }
+
+    private fun publishMailboxConnectionStatus(state: MailboxConnectionState) {
+        // Idle is owned by ModeSwitchCoordinator (USB path); ignore mailbox Idle so a
+        // disconnect mid-switch does not clobber Connecting.
+        val mapped = when (state) {
+            is MailboxConnectionState.Idle -> return
+            is MailboxConnectionState.Connecting -> ModeSwitchStatus.Connecting
+            is MailboxConnectionState.Connected -> ModeSwitchStatus.Connected
+            is MailboxConnectionState.Disconnected,
+            is MailboxConnectionState.Rejected,
+            is MailboxConnectionState.Error -> ModeSwitchStatus.Error
+        }
+        TransportStatusStore.publish(mapped)
     }
 
     override fun onCreate() {
@@ -279,7 +330,7 @@ class UartForegroundService : Service() {
         ensureDeviceAdmin()?.let { return it }
         handleNullAction(intent)?.let { return it }
         // Mode sync before accessory discovery so WS never opens UsbAccessory.
-        // Intent extra transport_mode is log-only; prefs win.
+        // On TRANSPORT_MODE_CHANGED, valid extras write prefs then switch; else prefs only.
         applyTransportModeFromPrefs(intent)
         if (intent?.action == ServiceHelper.ACTION_TRANSPORT_MODE_CHANGED) {
             return START_STICKY
@@ -318,22 +369,61 @@ class UartForegroundService : Service() {
     }
 
     /**
-     * Applies [PreferencesManager.transportMode] via [TransportRouter.applyMode].
-     * Logs Intent [ServiceHelper.EXTRA_TRANSPORT_MODE] when present; prefs always win.
+     * Resolves transport mode and applies it via [ModeSwitchCoordinator.switchTo].
+     *
+     * On [ServiceHelper.ACTION_TRANSPORT_MODE_CHANGED]:
+     * - Optional non-blank [ServiceHelper.EXTRA_DAEMON_WS_URL] is persisted first.
+     * - If [ServiceHelper.EXTRA_TRANSPORT_MODE] is present and valid (`usb`|`ws`),
+     *   it is written to prefs (extra wins), then the coordinator runs that mode.
+     * - If the mode extra is absent/invalid, prefs are used unchanged (backward compatible).
+     *
+     * Other actions: prefs only.
+     *
+     * Same-mode is **not** blindly skipped: [ModeSwitchCoordinator.switchTo] / [ModeSwitchCoordinator.needsSwitch]
+     * still retries Magisk/connect when status is Error (or Ws mailbox not Connected), so operator
+     * `am … --es transport_mode ws` after Magisk/snapshot failure works even though
+     * [TransportRouter.activeMode] already reports Ws. Healthy Usb+Idle and Ws+Connected remain
+     * cheap no-ops inside the coordinator.
+     *
+     * Joins the switch job before returning so [TransportRouter.activeMode] gates the
+     * USB accessory path correctly for the rest of [onStartCommand].
      */
     private fun applyTransportModeFromPrefs(intent: Intent?) {
         val prefs = resolvePreferencesManager()
-        val prefsMode = prefs.transportMode
-        val extra = intent?.getStringExtra(ServiceHelper.EXTRA_TRANSPORT_MODE)
         if (intent?.action == ServiceHelper.ACTION_TRANSPORT_MODE_CHANGED) {
-            Log.i(
-                TAG,
-                "TRANSPORT_MODE_CHANGED: intent_extra=$extra prefs=$prefsMode (prefs win)"
-            )
+            val urlExtra = intent.getStringExtra(ServiceHelper.EXTRA_DAEMON_WS_URL)?.trim()
+            if (!urlExtra.isNullOrEmpty()) {
+                prefs.daemonWsUrl = urlExtra
+            }
+            val extraRaw = intent.getStringExtra(ServiceHelper.EXTRA_TRANSPORT_MODE)
+            val extraMode = TransportMode.parseOrNull(extraRaw)
+            if (extraMode != null) {
+                prefs.transportMode = extraMode
+                Log.i(TAG, "TRANSPORT_MODE_CHANGED: intent_extra=$extraRaw (extra wins)")
+            } else {
+                Log.i(
+                    TAG,
+                    "TRANSPORT_MODE_CHANGED: intent_extra=$extraRaw prefs=${prefs.transportMode} (prefs only)",
+                )
+            }
         } else {
-            Log.d(TAG, "applyTransportModeFromPrefs: prefs=$prefsMode")
+            Log.d(TAG, "applyTransportModeFromPrefs: prefs=${prefs.transportMode}")
         }
-        ensureTransportRouter().applyMode(prefsMode)
+        val mode = prefs.transportMode
+        ensureTransportRouter()
+        val job = ensureModeSwitchCoordinator().switchTo(mode)
+        // Bound join so a hung Magisk/su cannot block onStartCommand forever (M1).
+        val joined = runBlocking {
+            withTimeoutOrNull(MODE_SWITCH_JOIN_TIMEOUT_MS) { job.join() }
+        }
+        if (joined == null) {
+            Log.e(
+                TAG,
+                "Mode switch join timed out after ${MODE_SWITCH_JOIN_TIMEOUT_MS}ms " +
+                    "(mode=$mode); continuing onStartCommand. Retry: " +
+                    SuDaemonLifecycle.AM_RETRY_TRANSPORT_MODE,
+            )
+        }
         syncMailboxInboundCollector()
     }
 
@@ -369,12 +459,33 @@ class UartForegroundService : Service() {
                     )
                 }
             },
-            // Always start as Usb so first applyMode(Ws) runs connect side effects
-            // (same-mode applyMode is a no-op).
+            // Always start as Usb so first switchTo(Ws) runs connect side effects
+            // (healthy same-mode is a no-op inside ModeSwitchCoordinator.needsSwitch).
             initialMode = TransportMode.Usb,
         )
         transportRouterField = router
         return router
+    }
+
+    /**
+     * Lazily builds [ModeSwitchCoordinator] around [ensureTransportRouter] with
+     * [SuDaemonLifecycle] (or an injected test fake).
+     */
+    internal fun ensureModeSwitchCoordinator(): ModeSwitchCoordinator {
+        modeSwitchCoordinatorField?.let { return it }
+        val router = ensureTransportRouter()
+        val prefs = resolvePreferencesManager()
+        val daemon = daemonLifecycle ?: SuDaemonLifecycle().also { daemonLifecycle = it }
+        val coordinator = ModeSwitchCoordinator(
+            daemonLifecycle = daemon,
+            transportRouter = router,
+            daemonWsUrl = { prefs.daemonWsUrl },
+            onStatus = ::publishModeSwitchStatus,
+            scope = ioScope,
+            snapshotTimeoutMs = snapshotTimeoutMs,
+        )
+        modeSwitchCoordinatorField = coordinator
+        return coordinator
     }
 
     private fun resolvePreferencesManager(): PreferencesManager {
@@ -490,9 +601,12 @@ class UartForegroundService : Service() {
             ServiceHelper.cancelScheduledServiceStart(this, ServiceHelper.ACTION_OPEN_DEVICE)
             closeUartIo()
         }
+        modeSwitchCoordinatorField = null
         transportRouterField = null
         periodicJob?.cancel()
         mailboxCollectionJob?.cancel()
+        mailboxStatusJob?.cancel()
+        TransportStatusStore.reset()
         ioScope.cancel()
         registeredReceivers.forEach { unregisterReceiver(it) }
         registeredReceivers.clear()
@@ -886,6 +1000,12 @@ class UartForegroundService : Service() {
     companion object {
         private const val TAG = "AAService2/Uart"
         private const val MYAIR5_PACKAGE = "com.air.advantage.myair5"
+        /**
+         * Upper bound for joining a mode-switch job in [applyTransportModeFromPrefs].
+         * Covers Magisk [com.air.advantage.aaservice.service.daemon.RuntimeProcessRunner]
+         * timeout plus snapshot wait with headroom.
+         */
+        internal const val MODE_SWITCH_JOIN_TIMEOUT_MS: Long = 30_000L
         var instance: UartForegroundService? = null
     }
 }

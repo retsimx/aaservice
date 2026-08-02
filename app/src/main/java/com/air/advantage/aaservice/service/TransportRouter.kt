@@ -25,6 +25,10 @@ interface UsbTransportController {
  * via [mailboxWsClientFactory] using [daemonWsUrl] at connect time so the endpoint
  * is not stuck on provide-time defaults. No SharedPreferences, Magisk, or silent
  * USB fallback on WS failure.
+ *
+ * Split steps ([prepareWs], [connectWs], [disconnectWs], [activateUsb]) exist so
+ * [ModeSwitchCoordinator] can insert Magisk start between USB tear-down and WS
+ * connect, and Magisk stop between WS disconnect and USB activate.
  */
 class TransportRouter(
     private val mailboxWsClientFactory: MailboxWsClientFactory,
@@ -35,32 +39,59 @@ class TransportRouter(
     var activeMode: TransportMode = initialMode
         private set
 
-    /** Active WS client after [applyMode] to [TransportMode.Ws]; null when USB / idle. */
+    /** Active WS client after [connectWs] / [applyMode] to [TransportMode.Ws]; null when USB / idle. */
     var mailboxWsClient: MailboxWsClient? = null
         private set
 
     /**
      * Activates [mode], tearing down the inactive path.
-     * Same-mode calls are a no-op.
+     * Same-mode calls are a no-op. Does **not** run Magisk lifecycle —
+     * prefer [ModeSwitchCoordinator] for exclusivity sequencing.
      */
     fun applyMode(mode: TransportMode) {
         if (mode == activeMode) return
         when (mode) {
             TransportMode.Ws -> {
-                // Gate USB actions before tear-down so concurrent open paths no-op.
-                activeMode = TransportMode.Ws
-                usbController.tearDown()
-                val client = mailboxWsClientFactory.create(daemonWsUrl())
-                mailboxWsClient = client
-                client.connect()
+                prepareWs()
+                connectWs()
             }
             TransportMode.Usb -> {
-                mailboxWsClient?.disconnect()
-                mailboxWsClient = null
-                activeMode = TransportMode.Usb
-                usbController.activate()
+                disconnectWs()
+                activateUsb()
             }
         }
+    }
+
+    /**
+     * Gates USB and tears down accessory ownership without opening WS.
+     * Magisk start (when needed) must run after this and before [connectWs].
+     */
+    fun prepareWs() {
+        activeMode = TransportMode.Ws
+        usbController.tearDown()
+    }
+
+    /** Creates a mailbox client for the current [daemonWsUrl] and calls [MailboxWsClient.connect]. */
+    fun connectWs() {
+        mailboxWsClient?.disconnect()
+        val client = mailboxWsClientFactory.create(daemonWsUrl())
+        mailboxWsClient = client
+        client.connect()
+    }
+
+    /** Disconnects and clears the active WS client (if any). Does not change [activeMode]. */
+    fun disconnectWs() {
+        mailboxWsClient?.disconnect()
+        mailboxWsClient = null
+    }
+
+    /**
+     * Marks USB mode and resumes the stock accessory path.
+     * Caller must have stopped Magisk before this when leaving WS.
+     */
+    fun activateUsb() {
+        activeMode = TransportMode.Usb
+        usbController.activate()
     }
 
     /**

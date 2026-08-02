@@ -8,9 +8,15 @@ import android.content.Context
 import android.content.Intent
 import android.hardware.usb.UsbAccessory
 import android.hardware.usb.UsbManager
+import androidx.preference.PreferenceManager
+import com.air.advantage.aaservice.data.mailbox.FakeMailboxWsClient
+import com.air.advantage.aaservice.data.mailbox.MailboxWsClientFactory
 import com.air.advantage.aaservice.receiver.DeviceAdminReceiver
+import com.air.advantage.aaservice.service.daemon.DaemonLifecycle
 import com.air.advantage.aaservice.ui.main.MainActivity
+import com.air.advantage.aaservice.util.PreferencesManager
 import com.air.advantage.aaservice.util.ServiceHelper
+import com.air.advantage.aaservice.util.TransportMode
 import org.junit.After
 import org.junit.Assert.*
 import org.junit.Before
@@ -39,17 +45,35 @@ class OnStartCommandTest {
         controller = Robolectric.buildService(UartForegroundService::class.java)
         service = controller.create().get()
         UartForegroundService.instance = service
+        PreferenceManager.getDefaultSharedPreferences(service).edit().clear().apply()
+        TransportStatusStore.reset()
     }
 
     @After
     fun tearDown() {
         service.onDestroy()
         UartForegroundService.instance = null
+        TransportStatusStore.reset()
     }
 
     private fun enableDeviceAdmin() {
         val dpm = service.getSystemService(Context.DEVICE_POLICY_SERVICE) as DevicePolicyManager
         shadowOf(dpm).setActiveAdmin(ComponentName(service, DeviceAdminReceiver::class.java))
+    }
+
+    /** Inject before any onStartCommand that may switch to WS (avoids real su hang). */
+    private fun injectTransportFakes(mode: TransportMode = TransportMode.Usb) {
+        val prefs = PreferencesManager(service)
+        prefs.transportMode = mode
+        service.preferencesManager = prefs
+        service.mailboxWsClientFactory = MailboxWsClientFactory {
+            FakeMailboxWsClient().apply { emitConnectedOnConnect = true }
+        }
+        service.daemonLifecycle = object : DaemonLifecycle {
+            override fun start(): Boolean = true
+            override fun stop(): Boolean = true
+            override fun status(): Boolean = true
+        }
     }
 
     private fun attachAccessory(): UsbAccessory {
@@ -271,11 +295,12 @@ class OnStartCommandTest {
         assertNull("OPEN_DEVICE alarm must be cancelled on destroy", nextScheduledAlarmAction())
     }
 
-    // ── TRANSPORT_MODE_CHANGED (A2: prefs-driven applyMode) ──────
+    // ── TRANSPORT_MODE_CHANGED (A6: extras→prefs then ModeSwitchCoordinator) ─
 
     @Test
     fun `onStartCommand TRANSPORT_MODE_CHANGED without accessory does not stop or crash`() {
         enableDeviceAdmin()
+        injectTransportFakes(TransportMode.Usb)
 
         val result = service.onStartCommand(
             Intent(ServiceHelper.ACTION_TRANSPORT_MODE_CHANGED)
@@ -287,6 +312,7 @@ class OnStartCommandTest {
         assertEquals(Service.START_STICKY, result)
         assertFalse("service must not stopSelf for mode change", shadowOf(service).isStoppedBySelf)
         assertFalse(service.deviceOpen.get())
+        assertEquals(TransportMode.Ws, service.transportRouter.activeMode)
     }
 
     @Test
@@ -296,7 +322,7 @@ class OnStartCommandTest {
         grantPermission(accessory)
 
         // Establish open-device state. Prefs remain Usb (default); intent extra "usb"
-        // must not tear down — applyMode same-mode is a no-op (prefs win over extra).
+        // is same-mode — coordinator path is a no-op (USB stays open).
         service.onStartCommand(
             Intent().setAction(ServiceHelper.ACTION_REQUEST_PERMISSION), 0, 1
         )
