@@ -1,7 +1,6 @@
 package com.air.advantage.aaservice.di
 
 import android.content.Context
-import com.air.advantage.aaservice.data.repository.CanStateRepository
 import com.air.advantage.aaservice.data.repository.DataCacheRepository
 import com.air.advantage.aaservice.data.repository.PollQueueRepository
 import com.air.advantage.aaservice.util.PreferencesManager
@@ -24,10 +23,6 @@ object AppModule {
     @Provides
     @Singleton
     fun provideDataCacheRepository(): DataCacheRepository = DataCacheRepository()
-
-    @Provides
-    @Singleton
-    fun provideCanStateRepository(): CanStateRepository = CanStateRepository()
 
     @Provides
     @Singleton
