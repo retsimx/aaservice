@@ -119,6 +119,34 @@ class StateMachineTest {
     }
 
     @Test
+    fun `ping frame invokes onPingObserved before dispatch`() {
+        val sink = RecordingSink()
+        val input = BlockingInputStream()
+        val output = ByteArrayOutputStream()
+        var pingCount = 0
+        val dataSource = UsbAccessoryDataSource(
+            engine = engine(sink),
+            onPingObserved = { pingCount++ }
+        )
+        val connectJob = connect(dataSource, input, output)
+        try {
+            await { dataSource.isConnected }
+
+            input.push(PING_FRAME)
+            await { pingCount >= 1 }
+            assertEquals(1, pingCount)
+
+            input.push(PING_FRAME)
+            await { pingCount >= 2 }
+            assertEquals(2, pingCount)
+        } finally {
+            input.finish()
+            dataSource.disconnect()
+            connectJob.cancel()
+        }
+    }
+
+    @Test
     fun `data frame does not invoke onPing and only dispatches after CRC validation`() {
         val sink = RecordingSink()
         val input = BlockingInputStream()
