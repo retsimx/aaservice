@@ -62,6 +62,12 @@ class OkHttpMailboxWsClient(
     private val config: MailboxWsConfig,
     client: OkHttpClient = OkHttpClient(),
     private val scope: CoroutineScope,
+    /**
+     * When true, cancels [scope]'s [Job] after disconnect teardown.
+     * Use for per-client scopes from [MailboxWsClientFactory.okHttp]; leave false
+     * when tests share a long-lived scope across clients.
+     */
+    private val cancelScopeOnDisconnect: Boolean = false,
 ) : MailboxWsClient {
 
     private val httpClient: OkHttpClient = client.newBuilder()
@@ -106,12 +112,18 @@ class OkHttpMailboxWsClient(
     override fun disconnect() {
         sessionActive.set(false)
         scope.launch {
-            connectMutex.withLock {
-                reconnectJob?.cancel()
-                reconnectJob = null
-                closeSocketLocked(code = 1000, reason = "client disconnect")
-                failPendingAcks("disconnected")
-                _connectionState.value = MailboxConnectionState.Idle
+            try {
+                connectMutex.withLock {
+                    reconnectJob?.cancel()
+                    reconnectJob = null
+                    closeSocketLocked(code = 1000, reason = "client disconnect")
+                    failPendingAcks("disconnected")
+                    _connectionState.value = MailboxConnectionState.Idle
+                }
+            } finally {
+                if (cancelScopeOnDisconnect) {
+                    scope.coroutineContext[Job]?.cancel()
+                }
             }
         }
     }
