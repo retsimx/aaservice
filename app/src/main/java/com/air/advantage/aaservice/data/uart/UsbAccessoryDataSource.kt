@@ -30,7 +30,13 @@ class UsbAccessoryDataSource(
     private val usbManager: UsbManager? = null,
     private val inputStreamFactory: ((ParcelFileDescriptor) -> InputStream)? = null,
     private val outputStreamFactory: ((ParcelFileDescriptor) -> OutputStream)? = null,
-    private val engine: UartDispatchEngine? = null
+    private val engine: UartDispatchEngine? = null,
+    /**
+     * Invoked on every inbound ping, mirroring reference `ServiceUart$k.d()` calling
+     * `q(true)` so the foreground notification flips to "Connected" as soon as the CB
+     * is talking — not only after a successful poll payload (which CAN2 can starve).
+     */
+    private val onPingObserved: (() -> Unit)? = null
 ) : UartDataSource {
 
     constructor(context: Context) : this(
@@ -243,6 +249,7 @@ class UsbAccessoryDataSource(
             val pingEnd = parser.findEndMarker(start, buffer)
             if (pingEnd > 0) {
                 Log.v(TAG, "processBuffer: ping frame detected")
+                onPingObserved?.invoke()
                 val frame = engine?.onPing()
                 if (frame != null) {
                     Log.d(TAG, "processBuffer: onPing frame ready, content=${textPreviewOf(frame)}")

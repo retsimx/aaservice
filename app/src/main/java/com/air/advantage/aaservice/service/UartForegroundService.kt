@@ -464,7 +464,8 @@ class UartForegroundService : Service() {
         val dataSource = UsbAccessoryDataSource(
             inputStreamFactory = { input },
             outputStreamFactory = { output },
-            engine = dispatchEngine
+            engine = dispatchEngine,
+            onPingObserved = { showNotification(true) }
         )
         uartDataSource = dataSource
         closeUartIoStarted.set(false)
