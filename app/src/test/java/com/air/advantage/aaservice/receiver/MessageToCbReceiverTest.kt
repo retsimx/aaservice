@@ -3,11 +3,12 @@ package com.air.advantage.aaservice.receiver
 import android.content.Context
 import android.content.Intent
 import com.air.advantage.aaservice.service.UartForegroundService
+import java.util.concurrent.atomic.AtomicBoolean
 import org.junit.After
-import org.junit.Assert.*
 import org.junit.Before
 import org.junit.Test
 import org.mockito.Mockito.*
+import org.mockito.kotlin.whenever
 
 class MessageToCbReceiverTest {
 
@@ -28,74 +29,99 @@ class MessageToCbReceiverTest {
         UartForegroundService.instance = null
     }
 
-    @Test
-    fun `onReceive with non-filtered message enqueues`() {
-        UartForegroundService.instance = service
+    private fun intentWithMessage(message: String?): Intent {
         val intent = mock(Intent::class.java)
-        `when`(intent.getStringExtra("com.air.advantage.MESSAGE_TO_CB")).thenReturn("Temperature")
-        receiver.onReceive(context, intent)
-        verify(service).enqueueUartMessage("Temperature")
+        `when`(intent.getStringExtra("com.air.advantage.MESSAGE_TO_CB")).thenReturn(message)
+        return intent
     }
 
     @Test
-    fun `onReceive with Light message is filtered out`() {
-        UartForegroundService.instance = service
-        val intent = mock(Intent::class.java)
-        `when`(intent.getStringExtra("com.air.advantage.MESSAGE_TO_CB")).thenReturn("Light")
-        receiver.onReceive(context, intent)
-        verifyNoInteractions(service)
+    fun `onReceive with device closed does nothing`() {
+        whenever(service.deviceOpen).thenReturn(AtomicBoolean(false))
+
+        receiver.onReceive(context, intentWithMessage("setZoneData?zone=1"))
+
+        verify(service, never()).enqueueUartMessage(anyString())
     }
 
     @Test
-    fun `onReceive with Aircon message is filtered out`() {
-        UartForegroundService.instance = service
-        val intent = mock(Intent::class.java)
-        `when`(intent.getStringExtra("com.air.advantage.MESSAGE_TO_CB")).thenReturn("Aircon")
-        receiver.onReceive(context, intent)
-        verifyNoInteractions(service)
+    fun `onReceive with message without question mark is dropped`() {
+        whenever(service.deviceOpen).thenReturn(AtomicBoolean(true))
+
+        receiver.onReceive(context, intentWithMessage("Temperature"))
+
+        verify(service, never()).enqueueUartMessage(anyString())
     }
 
     @Test
-    fun `onReceive with Activation message is filtered out`() {
-        UartForegroundService.instance = service
-        val intent = mock(Intent::class.java)
-        `when`(intent.getStringExtra("com.air.advantage.MESSAGE_TO_CB")).thenReturn("Activation")
-        receiver.onReceive(context, intent)
-        verifyNoInteractions(service)
+    fun `onReceive with command before question mark enqueues message`() {
+        whenever(service.deviceOpen).thenReturn(AtomicBoolean(true))
+
+        receiver.onReceive(context, intentWithMessage("setZoneData?zone=1"))
+
+        verify(service).enqueueUartMessage("setZoneData?zone=1")
     }
 
     @Test
-    fun `onReceive with MySystem message is filtered out`() {
-        UartForegroundService.instance = service
-        val intent = mock(Intent::class.java)
-        `when`(intent.getStringExtra("com.air.advantage.MESSAGE_TO_CB")).thenReturn("MySystem")
-        receiver.onReceive(context, intent)
-        verifyNoInteractions(service)
+    fun `onReceive with Light command before question mark is filtered`() {
+        whenever(service.deviceOpen).thenReturn(AtomicBoolean(true))
+
+        receiver.onReceive(context, intentWithMessage("Light?x"))
+
+        verify(service, never()).enqueueUartMessage(anyString())
     }
 
     @Test
-    fun `onReceive with null extra returns early`() {
-        UartForegroundService.instance = service
-        val intent = mock(Intent::class.java)
-        `when`(intent.getStringExtra("com.air.advantage.MESSAGE_TO_CB")).thenReturn(null)
-        receiver.onReceive(context, intent)
-        verifyNoInteractions(service)
+    fun `onReceive with Aircon command before question mark is filtered`() {
+        whenever(service.deviceOpen).thenReturn(AtomicBoolean(true))
+
+        receiver.onReceive(context, intentWithMessage("Aircon?x"))
+
+        verify(service, never()).enqueueUartMessage(anyString())
+    }
+
+    @Test
+    fun `onReceive with Activation command before question mark is filtered`() {
+        whenever(service.deviceOpen).thenReturn(AtomicBoolean(true))
+
+        receiver.onReceive(context, intentWithMessage("Activation?x"))
+
+        verify(service, never()).enqueueUartMessage(anyString())
+    }
+
+    @Test
+    fun `onReceive with MySystem command before question mark is filtered`() {
+        whenever(service.deviceOpen).thenReturn(AtomicBoolean(true))
+
+        receiver.onReceive(context, intentWithMessage("MySystem?x"))
+
+        verify(service, never()).enqueueUartMessage(anyString())
+    }
+
+    @Test
+    fun `onReceive with keyword only after question mark is not filtered`() {
+        whenever(service.deviceOpen).thenReturn(AtomicBoolean(true))
+
+        receiver.onReceive(context, intentWithMessage("setSystemData?Light=on"))
+
+        verify(service).enqueueUartMessage("setSystemData?Light=on")
+    }
+
+    @Test
+    fun `onReceive with null extra is dropped`() {
+        whenever(service.deviceOpen).thenReturn(AtomicBoolean(true))
+
+        receiver.onReceive(context, intentWithMessage(null))
+
+        verify(service, never()).enqueueUartMessage(anyString())
     }
 
     @Test
     fun `onReceive with null service does nothing`() {
         UartForegroundService.instance = null
-        val intent = mock(Intent::class.java)
-        `when`(intent.getStringExtra("com.air.advantage.MESSAGE_TO_CB")).thenReturn("Temperature")
-        receiver.onReceive(context, intent)
-    }
 
-    @Test
-    fun `onReceive with system command containing parameter values like Light is NOT filtered`() {
-        UartForegroundService.instance = service
-        val intent = mock(Intent::class.java)
-        `when`(intent.getStringExtra("com.air.advantage.MESSAGE_TO_CB")).thenReturn("setSystemData?Light=on")
-        receiver.onReceive(context, intent)
-        verify(service).enqueueUartMessage("setSystemData?Light=on")
+        receiver.onReceive(context, intentWithMessage("setZoneData?zone=1"))
+
+        verifyNoInteractions(service)
     }
 }
