@@ -89,6 +89,7 @@ class UartForegroundService : Service() {
 
     internal val uartEventSink: UartEventSink = object : UartEventSink {
         override fun onPollData(tag: String, payload: ByteArray) {
+            Log.d(TAG, "onPollData: tag='$tag' (${payload.size} bytes)")
             dataCache.put(tag, payload)
             broadcastData(tag)
             showNotification(true)
@@ -104,7 +105,8 @@ class UartForegroundService : Service() {
             pollTags = POLL_TAGS,
             typeBytes = HardwareDetector.typeBytes(),
             appStoreBytes = HardwareDetector.appStoreBytes(),
-            sink = uartEventSink
+            sink = uartEventSink,
+            logger = { message -> Log.d(TAG, "dispatchEngine: $message") }
         )
     }
 
@@ -124,6 +126,7 @@ class UartForegroundService : Service() {
 
     override fun onCreate() {
         super.onCreate()
+        Log.i(TAG, "onCreate")
         instance = this
 
         // USB permission + accessory detach
@@ -142,7 +145,8 @@ class UartForegroundService : Service() {
         registeredReceivers.add(messageToCbReceiver)
 
         // Secure broadcast receivers (with permission)
-        val securePermission = if (FujitsuDetector.isFujitsuVariant(this))
+        val isFujitsu = FujitsuDetector.isFujitsuVariant(this)
+        val securePermission = if (isFujitsu)
             "com.air.android.secure_comms_fujitsu" else "com.air.android.secure_comms"
         registerReceiver(canToCbReceiver, IntentFilter("com.air.advantage.CAN_TO_CB"), securePermission, null)
         registerReceiver(broadcastCanToCbReceiver, IntentFilter("com.air.advantage.BROADCAST_CAN_TO_CB"), securePermission, null)
@@ -158,12 +162,15 @@ class UartForegroundService : Service() {
         registeredReceivers.add(canToCbNoPermissionReceiver)
         registeredReceivers.add(broadcastCanToCbNoPermissionReceiver)
         registeredReceivers.add(backupMessageNoPermissionReceiver)
+
+        Log.d(TAG, "onCreate: registered ${registeredReceivers.size} receivers (fujitsu=$isFujitsu, securePermission=$securePermission)")
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         super.onStartCommand(intent, flags, startId)
+        Log.d(TAG, "onStartCommand: action=${intent?.action} flags=$flags startId=$startId")
         startPeriodicBroadcastIfNeeded()
         ensureDeviceAdmin()?.let { return it }
         handleNullAction(intent)?.let { return it }
@@ -179,12 +186,14 @@ class UartForegroundService : Service() {
 
     private fun ensureDeviceAdmin(): Int? {
         if (ServiceHelper.isDeviceAdminActive(this)) return null
+        Log.d(TAG, "ensureDeviceAdmin: not active, launching MainActivity")
         startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
         return START_NOT_STICKY
     }
 
     private fun handleNullAction(intent: Intent?): Int? {
         if (intent?.action != null) return null
+        Log.d(TAG, "handleNullAction: null action, scheduling permission request and stopping")
         ServiceHelper.scheduleServiceStart(this, ServiceHelper.ACTION_REQUEST_PERMISSION, 2000)
         stopSelf()
         return START_NOT_STICKY
@@ -201,13 +210,14 @@ class UartForegroundService : Service() {
                 Log.d(TAG, "No accessory present.")
                 return null
             }
-            Log.d(TAG, "USB accessory present - checking permission.")
+            Log.d(TAG, "USB accessory present - checking permission. manufacturer=${accessory.manufacturer} model=${accessory.model}")
             resolvedAction = ServiceHelper.ACTION_REQUEST_PERMISSION
         }
         return accessory to resolvedAction
     }
 
     private fun dispatchAction(action: String?, accessory: UsbAccessory): Int? {
+        Log.d(TAG, "dispatchAction: action=$action")
         when (action) {
             ServiceHelper.ACTION_OPEN_DEVICE -> {
                 val opened = openAccessory(accessory)
@@ -217,9 +227,14 @@ class UartForegroundService : Service() {
                 }
                 sendBroadcast(Intent(ServiceHelper.ACTION_ALLOW_HIDING))
                 deviceOpen.set(true)
+                // Seed the stock MyAir5 register-06 flush token so the first setCAN is not empty
+                // if MyAir5 has not yet queued BROADCAST_CAN_TO_CB (avoids CAN2-in-use on open).
+                dispatchEngine.enqueueBroadcastCanIds(listOf("0701000000600000000000000"))
+                Log.i(TAG, "dispatchAction: accessory opened, deviceOpen=true")
             }
 
             ServiceHelper.ACTION_CLOSE_DEVICE -> {
+                Log.d(TAG, "dispatchAction: closing device, stopping service")
                 stopSelf()
                 return START_NOT_STICKY
             }
@@ -233,9 +248,11 @@ class UartForegroundService : Service() {
         val usbManager = getSystemService(Context.USB_SERVICE) as? UsbManager
         if (!deviceOpen.get() && usbManager != null) {
             if (usbManager.hasPermission(accessory)) {
+                Log.d(TAG, "handlePermissionRequest: permission already granted, opening device")
                 sendBroadcast(Intent(ServiceHelper.ACTION_ALLOW_HIDING))
                 ServiceHelper.scheduleServiceStart(this, ServiceHelper.ACTION_OPEN_DEVICE, 0)
             } else {
+                Log.d(TAG, "handlePermissionRequest: no permission, requesting from user")
                 sendBroadcast(Intent(ServiceHelper.ACTION_BLOCK_HIDING))
                 SystemClock.sleep(1000)
                 requestUsbPermission()
@@ -246,6 +263,7 @@ class UartForegroundService : Service() {
     private fun requestUsbPermission() {
         val accessory = currentAccessory ?: return
         val usbManager = getSystemService(Context.USB_SERVICE) as? UsbManager ?: return
+        Log.d(TAG, "requestUsbPermission: requesting for accessory model=${accessory.model}")
         val pendingIntent = PendingIntent.getBroadcast(
             this,
             0,
@@ -256,6 +274,7 @@ class UartForegroundService : Service() {
     }
 
     override fun onDestroy() {
+        Log.i(TAG, "onDestroy")
         ServiceHelper.cancelScheduledServiceStart(this, ServiceHelper.ACTION_OPEN_DEVICE)
         closeUartIo()
         periodicJob?.cancel()
@@ -268,6 +287,7 @@ class UartForegroundService : Service() {
 
     private fun closeUartIo() {
         if (!closeUartIoStarted.compareAndSet(false, true)) return
+        Log.d(TAG, "closeUartIo: tearing down UART streams")
         uartIoJob?.cancel()
         uartIoJob = null
         deviceOpen.set(false)
@@ -282,40 +302,60 @@ class UartForegroundService : Service() {
     }
 
     fun requestSinglePoll(tag: String) {
+        Log.d(TAG, "requestSinglePoll: '$tag'")
         dispatchEngine.enqueueDirectMessage(tag)
     }
 
     fun enqueueUartMessage(message: String) {
+        Log.d(TAG, "enqueueUartMessage: '$message'")
         dispatchEngine.enqueueDirectMessage(message)
     }
 
-    private fun parseCanIds(canIds: String): List<Int> {
-        return canIds.trim().split("\\s+".toRegex())
-            .mapNotNull { it.toIntOrNull() }
+    /**
+     * Splits a CAN token string the way stock `ServiceUart.i()` does: collapse double
+     * spaces, split on single spaces, keep hex blobs such as
+     * `0701000000600000000000000` (these are not decimal ints — `toIntOrNull` drops them).
+     */
+    private fun parseCanTokens(canIds: String): List<String> {
+        return canIds.replace("  ", " ").split(" ").filter { it.isNotEmpty() }
     }
 
     fun enqueueCanIds(canIds: String) {
-        dispatchEngine.enqueueCanIds(parseCanIds(canIds))
+        val ids = parseCanTokens(canIds)
+        Log.d(TAG, "enqueueCanIds: '$canIds' -> $ids")
+        dispatchEngine.enqueueCanIds(ids)
     }
 
     fun processCanIds(canIds: String) {
-        dispatchEngine.enqueueCanIds(parseCanIds(canIds))
+        val ids = parseCanTokens(canIds)
+        Log.d(TAG, "processCanIds: '$canIds' -> $ids")
+        dispatchEngine.enqueueCanIds(ids)
     }
 
     fun enqueueBroadcastCanIds(canIds: String) {
-        dispatchEngine.enqueueBroadcastCanIds(parseCanIds(canIds))
+        val ids = parseCanTokens(canIds)
+        Log.d(TAG, "enqueueBroadcastCanIds: '$canIds' -> $ids")
+        dispatchEngine.enqueueBroadcastCanIds(ids)
     }
 
     fun broadcastData(tag: String) {
-        if (!deviceOpen.get()) return
+        if (!deviceOpen.get()) {
+            Log.d(TAG, "broadcastData: device not open, skipping '$tag'")
+            return
+        }
         val lookupTag = if (tag.startsWith("getSystemData")) "getSystemData" else tag
-        val data = dataCache.get(lookupTag) ?: return
+        val data = dataCache.get(lookupTag) ?: run {
+            Log.d(TAG, "broadcastData: no cached data for '$lookupTag'")
+            return
+        }
 
         val cbIntent = Intent("com.air.advantage.MESSAGE_FROM_CB").apply {
+            setPackage(MYAIR5_PACKAGE)
             putExtra("com.air.advantage.GET_DATA_REQUEST", tag)
             putExtra("com.air.advantage.MESSAGE_FROM_CB", data)
         }
         sendBroadcast(cbIntent)
+        Log.d(TAG, "broadcastData: sent '$tag' (${data.size} bytes)")
     }
 
     private fun updateLastRawCan(frame: String): Boolean {
@@ -327,7 +367,11 @@ class UartForegroundService : Service() {
     }
 
     internal fun handleGetCan(frame: String) {
-        if (!updateLastRawCan(frame)) return
+        if (!updateLastRawCan(frame)) {
+            Log.v(TAG, "handleGetCan: duplicate raw CAN frame, skipping")
+            return
+        }
+        Log.d(TAG, "handleGetCan: raw CAN frame (${frame.length} chars)")
 
         val isFujitsu = FujitsuDetector.isFujitsuVariant(this)
         val secureAction = if (isFujitsu)
@@ -340,10 +384,12 @@ class UartForegroundService : Service() {
             "com.air.android.secure_comms"
 
         val secureIntent = Intent(secureAction).apply {
+            setPackage(MYAIR5_PACKAGE)
             putExtra("com.air.advantage.GET_DATA_REQUEST", "rawCan")
             putExtra(secureAction, frame)
         }
         sendBroadcast(secureIntent, permission)
+        Log.d(TAG, "handleGetCan: sent secure '$secureAction' broadcast (fujitsu=$isFujitsu)")
 
         val encrypted = CryptoHelper.encrypt(frame.toByteArray(Charsets.UTF_8))
         if (encrypted != null && encrypted.isNotEmpty()) {
@@ -363,6 +409,7 @@ class UartForegroundService : Service() {
             putExtra("com.air.advantage.MESSAGE_TO_CB_NO_PERMISSION_BROADCAST", encrypted)
         }
         sendBroadcast(noPermIntent)
+        Log.d(TAG, "sendNoPermissionBroadcast: sent '$request' (${encrypted.size} encrypted bytes)")
     }
 
     internal suspend fun periodicInfoBroadcast() {
@@ -389,8 +436,10 @@ class UartForegroundService : Service() {
             val isAdmin = ServiceHelper.isDeviceAdminActive(this)
 
             val json = """{"name":"$packageName","version":"$versionCode","enabled":$isAdmin}"""
+            Log.v(TAG, "periodicInfoBroadcast: tick json=$json")
 
             val secureIntent = Intent(secureAction).apply {
+                setPackage(MYAIR5_PACKAGE)
                 putExtra("com.air.advantage.GET_DATA_REQUEST", "aaServiceInfo")
                 putExtra(secureAction, json)
             }
@@ -406,6 +455,7 @@ class UartForegroundService : Service() {
     }
 
     fun startUartIo(pfd: ParcelFileDescriptor) {
+        Log.i(TAG, "startUartIo: starting UART IO loop")
         val input = FileInputStream(pfd.fileDescriptor)
         val output = FileOutputStream(pfd.fileDescriptor)
         inputStream = input
@@ -421,7 +471,8 @@ class UartForegroundService : Service() {
         uartIoJob = ioScope.launch {
             dataSource.connectWithStreams(input, output)
         }
-        uartIoJob?.invokeOnCompletion {
+        uartIoJob?.invokeOnCompletion { cause ->
+            Log.d(TAG, "startUartIo: UART IO job completed (cause=$cause)")
             closeUartIo()
         }
     }
@@ -434,9 +485,11 @@ class UartForegroundService : Service() {
             return true
         }
 
+        Log.d(TAG, "openAccessory: opening manufacturer=${accessory.manufacturer} model=${accessory.model}")
         val pfd = try {
             manager.openAccessory(accessory)
         } catch (e: IllegalArgumentException) {
+            Log.e(TAG, "openAccessory: failed to open accessory", e)
             null
         }
 
@@ -445,6 +498,7 @@ class UartForegroundService : Service() {
             val prefs = getSharedPreferences(packageName + "_preferences", MODE_PRIVATE)
             val count = prefs.getInt("crash_count", 0) + 1
             if (count > 5) {
+                Log.e(TAG, "openAccessory: crash_count=$count exceeded threshold, requesting reboot")
                 sendBroadcast(Intent(ServiceHelper.ACTION_REBOOT_DEVICE))
             } else {
                 prefs.edit().putInt("crash_count", count).apply()
@@ -454,6 +508,7 @@ class UartForegroundService : Service() {
             return false
         }
 
+        Log.i(TAG, "openAccessory: opened successfully")
         currentPfd = pfd
         startUartIo(pfd)
         return true
@@ -462,6 +517,7 @@ class UartForegroundService : Service() {
     fun showNotification(connected: Boolean) {
         if (lastConnectedState == connected) return
         lastConnectedState = connected
+        Log.d(TAG, "showNotification: connected=$connected")
 
         val title = when {
             RebootNotificationService.rebootRequired.get() -> "Reboot required"
@@ -505,7 +561,8 @@ class UartForegroundService : Service() {
     }
 
     companion object {
-        private const val TAG = "UartForegroundService"
+        private const val TAG = "AAService2/Uart"
+        private const val MYAIR5_PACKAGE = "com.air.advantage.myair5"
         var instance: UartForegroundService? = null
     }
 }

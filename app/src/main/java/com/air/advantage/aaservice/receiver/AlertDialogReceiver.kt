@@ -6,6 +6,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.os.SystemClock
+import android.util.Log
 import androidx.localbroadcastmanager.content.LocalBroadcastManager
 import java.util.concurrent.atomic.AtomicBoolean
 import com.air.advantage.aaservice.ui.alert.AlertActivity
@@ -19,9 +20,11 @@ class AlertDialogReceiver : BroadcastReceiver() {
 
     override fun onReceive(context: Context, intent: Intent) {
         if (!alertActive.get()) {
+            Log.d(BCAST_TAG, "AlertDialog: fired while inactive, hiding warning")
             LocalBroadcastManager.getInstance(context).sendBroadcast(Intent("com.air.advantage.HIDE_WARNING"))
             return
         }
+        Log.i(BCAST_TAG, "AlertDialog: alert active, launching AlertActivity")
         val alertIntent = Intent(context, AlertActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK
             addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
@@ -31,6 +34,7 @@ class AlertDialogReceiver : BroadcastReceiver() {
     }
 
     fun setAlert(context: Context, active: Boolean, delayMs: Int) {
+        Log.d(BCAST_TAG, "AlertDialog: setAlert active=$active delayMs=$delayMs")
         alertActive.set(active)
         val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
 

@@ -2,11 +2,19 @@ package com.air.advantage.aaservice.receiver
 
 import android.content.Context
 import android.content.Intent
+import android.util.Log
 
 class GetAllDataReceiver : BaseReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
-        val s = service ?: return
-        if (!s.deviceOpen.get()) return
+        Log.d(BCAST_TAG, "GetAllData: received")
+        val s = service ?: run {
+            Log.d(BCAST_TAG, "GetAllData: no service instance, dropping")
+            return
+        }
+        if (!s.deviceOpen.get()) {
+            Log.d(BCAST_TAG, "GetAllData: device not open, dropping")
+            return
+        }
 
         val baseTags = listOf(
             "getSystemData", "getClock",
@@ -34,5 +42,6 @@ class GetAllDataReceiver : BaseReceiver() {
         scheduleTags.forEach { tag ->
             s.requestSinglePoll(tag)
         }
+        Log.d(BCAST_TAG, "GetAllData: broadcast ${baseTags.size} base tags, polled ${scheduleTags.size} schedule tags")
     }
 }

@@ -58,6 +58,7 @@ class UsbAccessoryDataSource(
     override fun connect(accessory: UsbAccessory): Boolean {
         val manager = usbManager ?: return false
 
+        Log.d(TAG, "connect: opening accessory manufacturer=${accessory.manufacturer} model=${accessory.model}")
         try {
             parcelFileDescriptor = manager.openAccessory(accessory)
         } catch (e: IllegalArgumentException) {
@@ -71,11 +72,13 @@ class UsbAccessoryDataSource(
         fileOutputStream = outputStreamFactory?.invoke(pfd) ?: FileOutputStream(pfd.fileDescriptor)
 
         if (!sendConfigPacket()) {
+            Log.e(TAG, "connect: config packet failed, disconnecting")
             disconnect()
             return false
         }
 
         _isConnected.value = true
+        Log.i(TAG, "connect: connected, starting read loop")
         readJob = scope.launch { readLoop() }
         return true
     }
@@ -87,19 +90,24 @@ class UsbAccessoryDataSource(
      * config packet could not be sent.
      */
     suspend fun connectWithStreams(input: InputStream, output: OutputStream): Boolean {
+        Log.i(TAG, "connectWithStreams: connecting")
         fileInputStream = input
         fileOutputStream = output
         if (!sendConfigPacket()) {
+            Log.e(TAG, "connectWithStreams: config packet failed, disconnecting")
             disconnect()
             return false
         }
         _isConnected.value = true
+        Log.d(TAG, "connectWithStreams: connected, entering read loop")
         readLoop()
+        Log.i(TAG, "connectWithStreams: read loop exited")
         return true
     }
 
     override suspend fun write(data: ByteArray): Boolean {
         val outputStream = fileOutputStream ?: return false
+        Log.d(TAG, "write: ${data.size} bytes, preview=${previewOf(data)}")
         var offset = 0
         var remaining = data.size
         while (remaining > 0) {
@@ -121,6 +129,7 @@ class UsbAccessoryDataSource(
     override fun read(): Flow<ByteArray> = readFlow
 
     override fun disconnect() {
+        Log.d(TAG, "disconnect: tearing down streams")
         _isConnected.value = false
         readJob?.cancel()
         readJob = null
@@ -151,6 +160,7 @@ class UsbAccessoryDataSource(
      * reference `ServiceUart$k` state 1 → 2 transition. On failure the caller aborts connect.
      */
     private fun sendConfigPacket(): Boolean {
+        Log.d(TAG, "sendConfigPacket: sending ${CONFIG_PACKET.size} byte config packet")
         return writeBlocking(CONFIG_PACKET)
     }
 
@@ -192,6 +202,7 @@ class UsbAccessoryDataSource(
                 }
                 val bytesRead = inputStream.read(buffer, bufferOffset, readSize)
                 if (bytesRead > 0) {
+                    Log.v(TAG, "readLoop: read $bytesRead bytes, preview=${previewOf(buffer, bufferOffset, bytesRead)}")
                     bufferOffset += bytesRead
                     processBuffer()
                 }
@@ -209,6 +220,7 @@ class UsbAccessoryDataSource(
                     _isConnected.value = false
                     return
                 }
+                Log.d(TAG, "readLoop: read error, retry $retryCount/$MAX_RETRIES", e)
                 delay(RETRY_DELAY_MS)
             }
         }
@@ -230,8 +242,10 @@ class UsbAccessoryDataSource(
 
             val pingEnd = parser.findEndMarker(start, buffer)
             if (pingEnd > 0) {
+                Log.v(TAG, "processBuffer: ping frame detected")
                 val frame = engine?.onPing()
                 if (frame != null) {
+                    Log.d(TAG, "processBuffer: onPing frame ready, content=${textPreviewOf(frame)}")
                     write(frame)
                 }
                 while (true) {
@@ -259,24 +273,50 @@ class UsbAccessoryDataSource(
             val crcOk = expected == actual
             engine?.setCrcOk(crcOk)
             if (crcOk) {
+                val payloadLen = payloadEnd - payloadStart
+                Log.d(TAG, "processBuffer: frame CRC ok, payload=$payloadLen bytes")
                 parser.extractPayload(buffer, payloadStart, payloadEnd)?.let { payload ->
+                    if (payloadLen <= 64) {
+                        Log.d(TAG, "processBuffer: payload text='${String(payload, Charsets.UTF_8)}'")
+                    }
                     engine?.onFrame(payload)
                 }
-            } else if (parser.isGetCan(buffer) >= 0) {
-                engine?.armAckCan()
+            } else {
+                Log.e(TAG, "processBuffer: frame CRC mismatch expected=$expected actual=$actual")
+                if (parser.isGetCan(buffer) >= 0) {
+                    engine?.armAckCan()
+                }
             }
             parser.shiftBuffer(frameEnd, buffer)
             bufferOffset -= frameEnd
         }
     }
 
+    private fun previewOf(data: ByteArray, offset: Int = 0, length: Int = data.size - offset): String {
+        val previewLength = minOf(length, PREVIEW_BYTES)
+        return data.copyOfRange(offset, offset + previewLength).joinToString(" ") { "%02x".format(it) } +
+            if (previewLength < length) "..." else ""
+    }
+
+    /**
+     * Decodes an outbound `<U>{content}</U={crc}>` frame as text for logging, since dispatch
+     * frames are ASCII (tag names, CAN ids), making this more useful than a hex dump for
+     * identifying poll/direct/CAN TX at a glance.
+     */
+    private fun textPreviewOf(data: ByteArray): String {
+        val text = String(data, Charsets.UTF_8)
+        return if (text.length <= PREVIEW_TEXT_CHARS) text else text.take(PREVIEW_TEXT_CHARS) + "..."
+    }
+
     companion object {
-        private const val TAG = "UsbAccessoryDataSource"
+        private const val TAG = "AAService2/Usb"
         private const val CHUNK_SIZE = 63
         private const val READ_SIZE = 256
         private const val BUFFER_SIZE = 3072
         private const val MAX_RETRIES = 3
         private const val RETRY_DELAY_MS = 500L
+        private const val PREVIEW_BYTES = 32
+        private const val PREVIEW_TEXT_CHARS = 64
         private val CONFIG_PACKET = byteArrayOf(0x00, 0xE1.toByte(), 0x00, 0x00, 0x08, 0x01, 0x00, 0x00)
     }
 }

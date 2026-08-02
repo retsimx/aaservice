@@ -29,7 +29,7 @@ class DirectQueueTest {
     @Test
     fun `direct queue delivers FIFO ahead of poll`() {
         val e = engine()
-        e.enqueueCanIds((1..200).toList())
+        e.enqueueCanIds((1..200).map { it.toString() })
         e.enqueueDirectMessage("a?zone=1")
         e.enqueueDirectMessage("b?zone=1")
 
@@ -50,7 +50,7 @@ class DirectQueueTest {
     @Test
     fun `same direct message is dropped after three identical sends`() {
         val e = engine()
-        e.enqueueCanIds((1..200).toList())
+        e.enqueueCanIds((1..200).map { it.toString() })
         e.enqueueDirectMessage("setPoint?zone=1")
         val expected = frameOf("setPoint?zone=1")
 
@@ -70,7 +70,7 @@ class DirectQueueTest {
     @Test
     fun `poll index resets to zero after fifteen direct sends`() {
         val e = engine(listOf("getClock", "getZoneData?zone=1"))
-        e.enqueueCanIds((1..500).toList())
+        e.enqueueCanIds((1..500).map { it.toString() })
 
         // advance the poll index to 1 so the reset is observable
         assertEquals(frameOf("getClock"), String(e.onPing()!!, Charsets.UTF_8))
@@ -94,7 +94,7 @@ class DirectQueueTest {
     @Test
     fun `direct message is popped only by a matching response`() {
         val e = engine()
-        e.enqueueCanIds((1..200).toList())
+        e.enqueueCanIds((1..200).map { it.toString() })
         e.enqueueDirectMessage("setPoint?zone=1")
 
         assertEquals(frameOf("setPoint?zone=1"), String(e.onPing()!!, Charsets.UTF_8))
