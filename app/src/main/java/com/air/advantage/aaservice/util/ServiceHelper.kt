@@ -15,6 +15,11 @@ import com.air.advantage.aaservice.service.UartForegroundService
 object ServiceHelper {
 
     const val ACTION_REBOOT_DEVICE = "com.air.advantage.REBOOT_DEVICE"
+    const val ACTION_OPEN_DEVICE = "com.air.advantage.OPEN_DEVICE"
+    const val ACTION_CLOSE_DEVICE = "com.air.advantage.CLOSE_DEVICE"
+    const val ACTION_REQUEST_PERMISSION = "com.air.advantage.REQUEST_PERMISSION"
+    const val ACTION_ALLOW_HIDING = "com.air.advantage.ALLOW_HIDING"
+    const val ACTION_BLOCK_HIDING = "com.air.advantage.BLOCK_HIDING"
 
     fun getUsbAccessory(context: Context): UsbAccessory? {
         val usbManager = context.getSystemService(Context.USB_SERVICE) as UsbManager

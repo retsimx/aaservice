@@ -299,6 +299,8 @@ class UartForegroundServiceTest {
         val manager = mock<UsbManager>()
         val accessory = mock<UsbAccessory>()
         val pfd = mock<ParcelFileDescriptor>()
+        val fd = mock<java.io.FileDescriptor>()
+        whenever(pfd.fileDescriptor).thenReturn(fd)
         whenever(manager.openAccessory(accessory)).thenReturn(pfd)
         doReturn(manager).whenever(service).getSystemService(Context.USB_SERVICE)
 
@@ -333,16 +335,19 @@ class UartForegroundServiceTest {
     }
 
     @Test
-    fun `openAccessory with crash count above threshold sends reboot broadcast`() {
+    fun `openAccessory with null PFD and crash count above threshold sends reboot broadcast`() {
         val manager = mock<UsbManager>()
         val accessory = mock<UsbAccessory>()
         doReturn(manager).whenever(service).getSystemService(Context.USB_SERVICE)
 
-        service.crashCount = 6
+        val prefs = service.getSharedPreferences(
+            service.packageName + "_preferences", Context.MODE_PRIVATE
+        )
+        prefs.edit().putInt("crash_count", 6).apply()
 
         val result = service.openAccessory(accessory)
 
-        assertTrue(result)
+        assertFalse(result)
         verify(service).sendBroadcast(argThat<Intent> {
             action == ServiceHelper.ACTION_REBOOT_DEVICE
         })
@@ -362,65 +367,93 @@ class UartForegroundServiceTest {
 
     @Test
     fun `showNotification with connected true shows Connected title`() {
-        service.showNotification(connected = true)
+        val ctrl = Robolectric.buildService(UartForegroundService::class.java).create()
+        val realService = ctrl.get()
+        realService.showNotification(connected = true)
 
-        val shadowNm = shadowOf(
-            service.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        )
-        val notification = shadowNm.getNotification(1)
+        val shadowService = shadowOf(realService)
+        assertEquals(1234, shadowService.lastForegroundNotificationId)
+        val notification = shadowService.lastForegroundNotification
         assertNotNull(notification)
-        assertEquals("Connected", notification?.extras?.getString("android.title"))
+        assertEquals(
+            "Connected to your system",
+            notification?.extras?.getString("android.title")
+        )
+
+        realService.onDestroy()
     }
 
     @Test
     fun `showNotification with connected false shows Not connected title`() {
-        service.showNotification(connected = false)
+        val ctrl = Robolectric.buildService(UartForegroundService::class.java).create()
+        val realService = ctrl.get()
+        realService.showNotification(connected = false)
 
-        val shadowNm = shadowOf(
-            service.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        )
-        val notification = shadowNm.getNotification(1)
+        val shadowService = shadowOf(realService)
+        assertEquals(1234, shadowService.lastForegroundNotificationId)
+        val notification = shadowService.lastForegroundNotification
         assertNotNull(notification)
-        assertEquals("Not connected", notification?.extras?.getString("android.title"))
+        assertEquals(
+            "Not connected to your system",
+            notification?.extras?.getString("android.title")
+        )
+
+        realService.onDestroy()
     }
 
     @Test
-    fun `showNotification with reboot required shows Reboot Required title`() {
+    fun `showNotification with reboot required shows Reboot required title`() {
         RebootNotificationService.rebootRequired.set(true)
-        service.showNotification(connected = true)
+        try {
+            val ctrl = Robolectric.buildService(UartForegroundService::class.java).create()
+            val realService = ctrl.get()
+            realService.showNotification(connected = true)
 
-        val shadowNm = shadowOf(
-            service.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        )
-        val notification = shadowNm.getNotification(1)
-        assertNotNull(notification)
-        assertEquals("Reboot Required", notification?.extras?.getString("android.title"))
+            val shadowService = shadowOf(realService)
+            assertEquals(1234, shadowService.lastForegroundNotificationId)
+            val notification = shadowService.lastForegroundNotification
+            assertNotNull(notification)
+            assertEquals(
+                "Reboot required",
+                notification?.extras?.getString("android.title")
+            )
 
-        RebootNotificationService.rebootRequired.set(false)
+            realService.onDestroy()
+        } finally {
+            RebootNotificationService.rebootRequired.set(false)
+        }
     }
 
     @Test
-    fun `showNotification duplicate call does not show second notification`() {
+    fun `showNotification duplicate call does not repeat side effects`() {
+        val app = service.application as android.app.Application
+        shadowOf(app).clearBroadcastIntents()
+
         service.showNotification(connected = true)
         service.showNotification(connected = true)
 
-        val shadowNm = shadowOf(
-            service.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        )
-        assertEquals(1, shadowNm.allNotifications.size)
+        val hideWarnings = shadowOf(app).broadcastIntents.count {
+            it.action == "com.air.advantage.HIDE_WARNING"
+        }
+        assertEquals(1, hideWarnings)
     }
 
     @Test
     fun `showNotification with different titles shows new notification`() {
-        service.showNotification(connected = true)
-        service.showNotification(connected = false)
+        val ctrl = Robolectric.buildService(UartForegroundService::class.java).create()
+        val realService = ctrl.get()
+        realService.showNotification(connected = true)
+        realService.showNotification(connected = false)
 
-        val shadowNm = shadowOf(
-            service.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-        )
-        val notification = shadowNm.getNotification(1)
+        val shadowService = shadowOf(realService)
+        val notification = shadowService.lastForegroundNotification
         assertNotNull(notification)
-        assertEquals("Not connected", notification?.extras?.getString("android.title"))
+        assertEquals(
+            "Not connected to your system",
+            notification?.extras?.getString("android.title")
+        )
+
+        realService.onDestroy()
     }
 
     // ── broadcastData ──────────────────────────────────────────
