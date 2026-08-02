@@ -4,6 +4,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.os.Build
+import android.os.SystemClock
 import com.air.advantage.aaservice.service.RebootNotificationService
 import com.air.advantage.aaservice.ui.main.MainActivity
 
@@ -20,12 +21,12 @@ class PackageUpgradeReceiver : BroadcastReceiver() {
             context.startService(rebootIntent)
         }
 
-        Thread.sleep(1000)
+        SystemClock.sleep(1000L)
 
         val mainIntent = Intent(context, MainActivity::class.java).apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or
-                    Intent.FLAG_ACTIVITY_CLEAR_TASK or
-                    Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED)
+                    Intent.FLAG_ACTIVITY_SINGLE_TOP or
+                    Intent.FLAG_ACTIVITY_CLEAR_TOP)
         }
         context.startActivity(mainIntent)
     }

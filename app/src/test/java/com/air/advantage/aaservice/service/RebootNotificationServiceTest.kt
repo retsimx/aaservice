@@ -1,6 +1,7 @@
 package com.air.advantage.aaservice.service
 
 import android.app.AlarmManager
+import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
@@ -50,13 +51,29 @@ class RebootNotificationServiceTest {
     }
 
     @Test
-    fun `onDestroy clears rebootRequired`() {
+    fun `onDestroy does not clear rebootRequired`() {
         val controller = Robolectric.buildService(RebootNotificationService::class.java).create()
         controller.startCommand(0, 0)
         assertTrue(RebootNotificationService.rebootRequired.get())
 
         controller.destroy()
-        assertFalse(RebootNotificationService.rebootRequired.get())
+        assertTrue(RebootNotificationService.rebootRequired.get())
+    }
+
+    @Test
+    fun `onCreate deletes legacy notification channel`() {
+        val legacyChannel =
+            ApplicationProvider.getApplicationContext<Context>()
+                .getString(com.air.advantage.aaservice.R.string.service_name) + " Notification"
+        val nm = ApplicationProvider.getApplicationContext<Context>()
+            .getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        nm.createNotificationChannel(
+            NotificationChannel(legacyChannel, "legacy", NotificationManager.IMPORTANCE_LOW)
+        )
+
+        Robolectric.buildService(RebootNotificationService::class.java).create()
+
+        assertTrue(shadowOf(nm).isChannelDeleted(legacyChannel))
     }
 
     @Test
