@@ -93,6 +93,7 @@ class FrameParser {
 
     fun extractPayload(data: ByteArray, start: Int, end: Int): ByteArray? {
         val length = end - start
+        if (length < 0) return null
         if (data.size - start < length) return null
         val result = ByteArray(length)
         System.arraycopy(data, start, result, 0, length)

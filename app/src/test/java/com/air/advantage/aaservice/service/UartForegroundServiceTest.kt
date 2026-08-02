@@ -115,15 +115,19 @@ private lateinit var service: UartForegroundService
     @Test
     fun `processIncomingData handles Ack frame`() {
         val buffer = "<ack>1</ack>".toByteArray()
+        service.lastCrcResult = 3
         service.processIncomingData(buffer)
         assertNull(service.dataCache.get("lastFrame"))
+        assertEquals(3, service.lastCrcResult)
     }
 
     @Test
     fun `processIncomingData handles Nack frame`() {
         val buffer = "<ack>0</ack>".toByteArray()
+        service.lastCrcResult = 3
         service.processIncomingData(buffer)
         assertNull(service.dataCache.get("lastFrame"))
+        assertEquals(3, service.lastCrcResult)
     }
 
     @Test
@@ -131,24 +135,29 @@ private lateinit var service: UartForegroundService
         val tag = "getSystemData"
         val crc = CrcCalculator.computeHex(tag)
         val frame = "<U>$tag</U=$crc>".toByteArray()
+        service.lastCrcResult = 0
         service.processIncomingData(frame)
-        val cached = service.dataCache.get("lastFrame")
-        assertNotNull(cached)
-        assertArrayEquals(frame, cached)
+        assertEquals(1, service.lastCrcResult)
+        assertNull(service.dataCache.get("lastFrame"))
     }
 
     @Test
     fun `processIncomingData handles GetCan frame`() {
         val buffer = "<U>getCAN zone1</U=00>".toByteArray()
+        service.ackCanArmed = false
         service.processIncomingData(buffer)
         assertNull(service.dataCache.get("lastFrame"))
+        assertTrue(service.ackCanArmed)
+        assertEquals(0, service.lastCrcResult)
     }
 
     @Test
     fun `processIncomingData handles Ping frame`() {
         val buffer = "<U>Ping</U=db>".toByteArray()
+        service.lastCrcResult = 3
         service.processIncomingData(buffer)
         assertNull(service.dataCache.get("lastFrame"))
+        assertEquals(3, service.lastCrcResult)
     }
 
     @Test
@@ -156,13 +165,16 @@ private lateinit var service: UartForegroundService
         val buffer = "<U><request>Unknown</request></U=00>".toByteArray()
         service.processIncomingData(buffer)
         assertNull(service.dataCache.get("lastFrame"))
+        assertEquals(0, service.lastCrcResult)
     }
 
     @Test
     fun `processIncomingData with no start marker returns early`() {
         val buffer = "noStartMarkerHere".toByteArray()
+        service.lastCrcResult = 3
         service.processIncomingData(buffer)
         assertNull(service.dataCache.get("lastFrame"))
+        assertEquals(3, service.lastCrcResult)
     }
 
     @Test
@@ -170,6 +182,7 @@ private lateinit var service: UartForegroundService
         val buffer = "<U>CAN2 in use</U=00>".toByteArray()
         service.processIncomingData(buffer)
         assertNull(service.dataCache.get("lastFrame"))
+        assertEquals(0, service.lastCrcResult)
     }
 
     // ── handlePollCycle ──────────────────────────────────────────

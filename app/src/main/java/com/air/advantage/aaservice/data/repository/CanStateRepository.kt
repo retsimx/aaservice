@@ -8,11 +8,12 @@ class CanStateRepository {
     private val needsRetry = AtomicBoolean(false)
     @Volatile private var pendingCanFrame: String? = null
 
-    fun recordRetry() {
+    fun recordRetry(): Int {
         val count = retryCount.incrementAndGet()
         if (count >= 3) {
             needsRetry.set(true)
         }
+        return count
     }
 
     fun resetRetry() {

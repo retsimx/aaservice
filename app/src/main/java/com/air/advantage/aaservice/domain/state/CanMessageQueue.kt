@@ -5,6 +5,7 @@ import com.air.advantage.aaservice.domain.model.CanMessage
 class CanMessageQueue {
     private val queue = ArrayDeque<CanMessage>()
 
+    @Synchronized
     fun enqueue(message: CanMessage) {
         if (message.id != 0) {
             val messageStr = "setCAN ${message.id}"
@@ -21,14 +22,19 @@ class CanMessageQueue {
         queue.addLast(message)
     }
 
+    @Synchronized
     fun dequeue(): CanMessage? = queue.removeFirstOrNull()
 
+    @Synchronized
     fun peek(): CanMessage? = queue.firstOrNull()
 
+    @Synchronized
     fun isEmpty(): Boolean = queue.isEmpty()
 
+    @Synchronized
     fun size(): Int = queue.size
 
+    @Synchronized
     fun clear() {
         queue.clear()
     }
@@ -37,6 +43,7 @@ class CanMessageQueue {
      * Builds "setCAN id1 id2 ... idN" frame string.
      * Max 25 CAN IDs per frame (from reference code).
      */
+    @Synchronized
     fun buildCanFrame(): String {
         if (queue.isEmpty()) return ""
         val ids = queue.joinToString(" ") { it.id.toString() }

@@ -5,7 +5,6 @@ import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.app.Service
 import android.content.BroadcastReceiver
-import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
@@ -19,6 +18,7 @@ import java.util.concurrent.atomic.AtomicReference
 import com.air.advantage.aaservice.R
 import com.air.advantage.aaservice.data.protocol.CrcCalculator
 import com.air.advantage.aaservice.data.protocol.FrameParser
+import com.air.advantage.aaservice.data.repository.CanStateRepository
 import com.air.advantage.aaservice.data.repository.DataCacheRepository
 import com.air.advantage.aaservice.data.repository.PollQueueRepository
 import com.air.advantage.aaservice.data.uart.UartDataSource
@@ -50,6 +50,10 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
 
 class UartForegroundService : Service() {
 
@@ -57,9 +61,15 @@ class UartForegroundService : Service() {
     internal val canQueue = CanMessageQueue()
     internal val stateMachine = UartStateMachine()
     internal val dataCache = DataCacheRepository()
+    internal val canStateRepository = CanStateRepository()
+    internal val parseExecutor: ExecutorService = Executors.newSingleThreadExecutor()
+    @Volatile internal var ackCanArmed: Boolean = false
+    @Volatile internal var lastCrcResult: Int = 1
+    internal val messageSent = AtomicBoolean(false)
+    internal val lastSentMessage = AtomicReference("")
+    internal val lastGetCanString = AtomicReference("")
     internal val registeredReceivers = mutableListOf<BroadcastReceiver>()
     internal val deviceOpen = AtomicBoolean(false)
-    private val lastRawCan = AtomicReference("")
 
     private val usbPermissionReceiver = UsbPermissionReceiver()
     private val getDataReceiver = GetDataReceiver()
@@ -133,6 +143,7 @@ class UartForegroundService : Service() {
         pollJob?.cancel()
         canJob?.cancel()
         ioScope.cancel()
+        parseExecutor.shutdown()
         registeredReceivers.forEach { unregisterReceiver(it) }
         registeredReceivers.clear()
         instance = null
@@ -205,59 +216,16 @@ class UartForegroundService : Service() {
         deviceOpen.set(false)
     }
 
-    private fun updateLastRawCan(frame: String): Boolean {
-        val expected = lastRawCan.get()
-        while (!lastRawCan.compareAndSet(expected, frame)) {
-            if (lastRawCan.get() !== expected) return false
-        }
-        return true
-    }
-
-    private fun handleGetCan(frame: String) {
-        if (!updateLastRawCan(frame)) return
-
-        val isFujitsu = FujitsuDetector.isFujitsuVariant(this)
-        val secureAction = if (isFujitsu)
-            "com.air.advantage.MESSAGE_FROM_CB_SECURE_FUJITSU"
-        else
-            "com.air.advantage.MESSAGE_FROM_CB_SECURE"
-        val permission = if (isFujitsu)
-            "com.air.android.secure_comms_fujitsu"
-        else
-            "com.air.android.secure_comms"
-
-        val secureIntent = Intent(secureAction).apply {
-            putExtra("com.air.advantage.GET_DATA_REQUEST", "rawCan")
-            putExtra(secureAction, frame)
-        }
-        sendBroadcast(secureIntent, permission)
-
-        val encrypted = CryptoHelper.encrypt(frame.toByteArray(Charsets.UTF_8))
-        if (encrypted != null && encrypted.isNotEmpty()) {
-            val noPermIntent = Intent("com.air.advantage.MESSAGE_TO_CB_NO_PERMISSION_BROADCAST").apply {
-                component = ComponentName(
-                    "com.air.advantage.zone10",
-                    "com.air.advantage.ReceiverDataUartForNoPermissionBroadcast"
-                )
-                putExtra("com.air.advantage.GET_DATA_REQUEST", "rawCan")
-                putExtra("com.air.advantage.MESSAGE_TO_CB_NO_PERMISSION_BROADCAST", encrypted)
-            }
-            sendBroadcast(noPermIntent)
-        } else {
-            Log.e(TAG, "Error encrypting rawCan message")
-        }
-    }
-
     internal suspend fun periodicInfoBroadcast() {
         val isFujitsu = FujitsuDetector.isFujitsuVariant(this)
         val secureAction = if (isFujitsu)
-            "com.air.advantage.MESSAGE_FROM_CB_SECURE_FUJITSU"
+            MESSAGE_FROM_CB_SECURE_FUJITSU
         else
-            "com.air.advantage.MESSAGE_FROM_CB_SECURE"
+            MESSAGE_FROM_CB_SECURE
         val permission = if (isFujitsu)
-            "com.air.android.secure_comms_fujitsu"
+            SECURE_PERMISSION_FUJITSU
         else
-            "com.air.android.secure_comms"
+            SECURE_PERMISSION
         val noPermAction = if (isFujitsu)
             "com.air.advantage.MESSAGE_FROM_CB_NO_PERMISSION_FUJITSU"
         else
@@ -282,14 +250,14 @@ class UartForegroundService : Service() {
             val json = """{"name":"$packageName","version":"$versionCode","enabled":$isAdmin}"""
 
             val secureIntent = Intent(secureAction).apply {
-                putExtra("com.air.advantage.GET_DATA_REQUEST", "aaServiceInfo")
+                putExtra(GET_DATA_REQUEST, "aaServiceInfo")
                 putExtra(secureAction, json)
             }
             sendBroadcast(secureIntent, permission)
 
             val encrypted = CryptoHelper.encrypt(json.toByteArray(Charsets.UTF_8))
             val noPermIntent = Intent(noPermAction).apply {
-                putExtra("com.air.advantage.GET_DATA_REQUEST", "aaServiceInfo")
+                putExtra(GET_DATA_REQUEST, "aaServiceInfo")
                 putExtra(noPermAction, String(encrypted ?: ByteArray(0), Charsets.UTF_8))
             }
             sendBroadcast(noPermIntent)
@@ -334,52 +302,54 @@ class UartForegroundService : Service() {
         val startMarker = parser.findStartMarker(buffer)
         if (startMarker < 0) return
 
-        if (parser.isAck(buffer) >= 0) {
-            Log.d(TAG, "Received ACK")
-            return
-        }
-
-        if (parser.isNack(buffer) >= 0) {
-            Log.d(TAG, "Received NACK")
+        if (parser.findEndMarker(startMarker, buffer) >= 0) {
+            Log.d(TAG, "Received Ping")
             return
         }
 
         val frameEnd = parser.findFrameEnd(startMarker, buffer)
         if (frameEnd < 0) return
 
-        val frame = parser.extractPayload(buffer, startMarker, frameEnd) ?: return
-        val frameStr = String(frame, Charsets.UTF_8)
+        val payloadStart = startMarker + 3
+        val contentEnd = frameEnd - 7
+        val expectedCrc = CrcCalculator.compute(buffer, payloadStart, contentEnd)
+        val frameCrcHex = parser.parseHexByte(frameEnd, buffer)
 
-        if (parser.isGetCan(frame) >= 0) {
-            handleGetCan(frameStr)
-            return
+        if (parser.isGetCan(buffer) >= 0) {
+            ackCanArmed = true
         }
 
-        if (parser.isUnknown(frame) >= 0) {
-            Log.d(TAG, "Received Unknown frame")
-            return
+        if (frameCrcHex == expectedCrc) {
+            lastCrcResult = 1
+            val payload = parser.extractPayload(buffer, payloadStart, contentEnd) ?: return
+            parseExecutor.execute(RunnableParseMessage(this, payload))
+            Log.d(TAG, "CRC ok, dispatched frame")
+        } else {
+            lastCrcResult = 0
+            Log.d("crc fail", String(buffer, Charsets.UTF_8))
         }
-
-        if (frameStr.contains("Ping")) {
-            Log.d(TAG, "Received Ping")
-            return
-        }
-
-        if (frameStr.contains("CAN2 in use")) {
-            Log.d(TAG, "Received CAN2 in use")
-            return
-        }
-
-        dataCache.put("lastFrame", frame)
     }
 
     fun handlePollCycle(dataSource: UartDataSource) {
         pollJob = ioScope.launch {
             while (true) {
+                if (ackCanArmed) {
+                    val payload = "ackCAN $lastCrcResult"
+                    val frame = "<U>$payload</U=${CrcCalculator.computeHex(payload)}>"
+                    dataSource.write(frame.toByteArray(Charsets.UTF_8))
+                    Log.d(TAG, "Sent ackCAN: $payload")
+                    ackCanArmed = false
+                    messageSent.set(true)
+                    delay(50)
+                    continue
+                }
+
                 // Check CAN queue first
                 if (!canQueue.isEmpty()) {
                     val canFrame = canQueue.buildCanFrame()
                     if (canFrame.length > 17) {
+                        lastSentMessage.set("<U>$canFrame</U=${CrcCalculator.computeHex(canFrame)}>")
+                        messageSent.set(true)
                         val frameBytes = canFrame.toByteArray(Charsets.UTF_8)
                         dataSource.write(frameBytes)
                         Log.d(TAG, "Sent CAN frame: $canFrame")
@@ -395,6 +365,8 @@ class UartForegroundService : Service() {
                     dataSource.write(frameBytes)
                     Log.d(TAG, "Sent poll: ${currentPoll.tag}")
                     stateMachine.onSendPoll(currentPoll.tag, frameBytes)
+                    lastSentMessage.set("")
+                    messageSent.set(true)
                 }
 
                 pollQueue.advanceToNext()
@@ -475,5 +447,14 @@ class UartForegroundService : Service() {
     companion object {
         private const val TAG = "UartForegroundService"
         var instance: UartForegroundService? = null
+
+        const val MESSAGE_FROM_CB_SECURE = "com.air.advantage.MESSAGE_FROM_CB_SECURE"
+        const val MESSAGE_FROM_CB_SECURE_FUJITSU = "com.air.advantage.MESSAGE_FROM_CB_SECURE_FUJITSU"
+        const val GET_DATA_REQUEST = "com.air.advantage.GET_DATA_REQUEST"
+        const val MESSAGE_TO_CB_NO_PERMISSION_BROADCAST = "com.air.advantage.MESSAGE_TO_CB_NO_PERMISSION_BROADCAST"
+        const val ZONE10_PACKAGE = "com.air.advantage.zone10"
+        const val ZONE10_NO_PERMISSION_RECEIVER = "com.air.advantage.ReceiverDataUartForNoPermissionBroadcast"
+        const val SECURE_PERMISSION = "com.air.android.secure_comms"
+        const val SECURE_PERMISSION_FUJITSU = "com.air.android.secure_comms_fujitsu"
     }
 }
