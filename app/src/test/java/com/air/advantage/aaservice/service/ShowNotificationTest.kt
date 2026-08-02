@@ -3,8 +3,12 @@ package com.air.advantage.aaservice.service
 import android.app.AlarmManager
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.content.BroadcastReceiver
 import android.content.Context
+import android.content.Intent
+import android.content.IntentFilter
 import android.os.SystemClock
+import androidx.localbroadcastmanager.content.LocalBroadcastManager
 import com.air.advantage.aaservice.receiver.AlertDialogReceiver
 import org.junit.After
 import org.junit.Assert.*
@@ -15,6 +19,7 @@ import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
+import org.robolectric.shadows.ShadowLooper
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [33], manifest = Config.NONE)
@@ -22,6 +27,8 @@ class ShowNotificationTest {
 
     private lateinit var controller: org.robolectric.android.controller.ServiceController<UartForegroundService>
     private lateinit var service: UartForegroundService
+    private var localReceiver: BroadcastReceiver? = null
+    private val localReceivedIntents = mutableListOf<Intent>()
 
     @Before
     fun setUp() {
@@ -33,10 +40,24 @@ class ShowNotificationTest {
 
     @After
     fun tearDown() {
+        localReceiver?.let { LocalBroadcastManager.getInstance(service).unregisterReceiver(it) }
+        localReceiver = null
+        localReceivedIntents.clear()
         service.onDestroy()
         UartForegroundService.instance = null
         AlertDialogReceiver.alertActive.set(false)
         RebootNotificationService.rebootRequired.set(false)
+    }
+
+    private fun registerLocalReceiver() {
+        val filter = IntentFilter("com.air.advantage.HIDE_WARNING")
+        val broadcastReceiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context, intent: Intent) {
+                localReceivedIntents.add(intent)
+            }
+        }
+        LocalBroadcastManager.getInstance(service).registerReceiver(broadcastReceiver, filter)
+        localReceiver = broadcastReceiver
     }
 
     private fun notificationManager(): NotificationManager {
@@ -124,17 +145,23 @@ class ShowNotificationTest {
     fun `showNotification repeated same value is a no-op`() {
         val app = service.application as android.app.Application
         shadowOf(app).clearBroadcastIntents()
+        registerLocalReceiver()
 
         service.showNotification(connected = true)
         service.showNotification(connected = true)
+        ShadowLooper.idleMainLooper()
 
-        val hideWarnings = shadowOf(app).broadcastIntents.count {
+        val hideWarnings = localReceivedIntents.count {
             it.action == "com.air.advantage.HIDE_WARNING"
         }
         assertEquals(
             "second call should not repeat side effects",
             1,
             hideWarnings
+        )
+        assertFalse(
+            "HIDE_WARNING must be a local broadcast, not a system broadcast",
+            shadowOf(app).broadcastIntents.any { it.action == "com.air.advantage.HIDE_WARNING" }
         )
     }
 
