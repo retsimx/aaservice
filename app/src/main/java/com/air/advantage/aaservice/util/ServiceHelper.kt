@@ -20,7 +20,7 @@ object ServiceHelper {
     const val ACTION_REQUEST_PERMISSION = "com.air.advantage.REQUEST_PERMISSION"
     const val ACTION_ALLOW_HIDING = "com.air.advantage.ALLOW_HIDING"
     const val ACTION_BLOCK_HIDING = "com.air.advantage.BLOCK_HIDING"
-    /** Mode-change notify for A1; service logs only until A6 transport switch. Extra: `transport_mode` = usb|ws */
+    /** Mode-change notify; service applies [PreferencesManager.transportMode] (extra is log-only). */
     const val ACTION_TRANSPORT_MODE_CHANGED = "com.air.advantage.TRANSPORT_MODE_CHANGED"
     /** Intent extra for [ACTION_TRANSPORT_MODE_CHANGED]: `"usb"` or `"ws"`. */
     const val EXTRA_TRANSPORT_MODE = "transport_mode"

@@ -271,7 +271,7 @@ class OnStartCommandTest {
         assertNull("OPEN_DEVICE alarm must be cancelled on destroy", nextScheduledAlarmAction())
     }
 
-    // ── TRANSPORT_MODE_CHANGED (A1 log/no-op) ────────────────────
+    // ── TRANSPORT_MODE_CHANGED (A2: prefs-driven applyMode) ──────
 
     @Test
     fun `onStartCommand TRANSPORT_MODE_CHANGED without accessory does not stop or crash`() {
@@ -295,7 +295,8 @@ class OnStartCommandTest {
         val accessory = attachAccessory()
         grantPermission(accessory)
 
-        // Establish open-device state so we can assert mode change does not tear down USB.
+        // Establish open-device state. Prefs remain Usb (default); intent extra "usb"
+        // must not tear down — applyMode same-mode is a no-op (prefs win over extra).
         service.onStartCommand(
             Intent().setAction(ServiceHelper.ACTION_REQUEST_PERMISSION), 0, 1
         )
@@ -317,7 +318,7 @@ class OnStartCommandTest {
 
         assertEquals(Service.START_STICKY, result)
         assertFalse("service must not stopSelf for mode change", shadowOf(service).isStoppedBySelf)
-        assertTrue("USB must stay open; no tear-down on mode change", service.deviceOpen.get())
+        assertTrue("USB must stay open when prefs remain Usb", service.deviceOpen.get())
         assertFalse(
             "must not rewrite to REQUEST_PERMISSION path",
             broadcastActions().contains(ServiceHelper.ACTION_ALLOW_HIDING)
