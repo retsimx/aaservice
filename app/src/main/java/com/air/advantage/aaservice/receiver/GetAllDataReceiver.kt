@@ -11,6 +11,11 @@ class GetAllDataReceiver : BaseReceiver() {
             Log.d(BCAST_TAG, "GetAllData: no service instance, dropping")
             return
         }
+        if (s.isWsMode()) {
+            Log.d(BCAST_TAG, "GetAllData: WS mode → resync_mailbox")
+            s.handleGetAllDataWs()
+            return
+        }
         if (!s.deviceOpen.get()) {
             Log.d(BCAST_TAG, "GetAllData: device not open, dropping")
             return
