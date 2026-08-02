@@ -7,6 +7,8 @@ import org.junit.Assert.*
 import org.junit.Before
 import org.junit.Test
 import org.mockito.Mockito.*
+import org.mockito.kotlin.any
+import org.mockito.kotlin.never
 import org.mockito.kotlin.whenever
 
 class UsbPermissionReceiverTest {
@@ -24,6 +26,7 @@ class UsbPermissionReceiverTest {
     fun `onReceive with permission true schedules OPEN_DEVICE with 0 delay`() {
         mockStatic(ServiceHelper::class.java).use { mockedServiceHelper ->
             val receiverIntent = mock(Intent::class.java)
+            whenever(receiverIntent.action).thenReturn("com.air.advantage.USB_PERMISSION")
             whenever(receiverIntent.getBooleanExtra("permission", false)).thenReturn(true)
             
             receiver.onReceive(context, receiverIntent)
@@ -38,6 +41,7 @@ class UsbPermissionReceiverTest {
     fun `onReceive with permission false schedules REQUEST_PERMISSION with 200 delay`() {
         mockStatic(ServiceHelper::class.java).use { mockedServiceHelper ->
             val receiverIntent = mock(Intent::class.java)
+            whenever(receiverIntent.action).thenReturn("com.air.advantage.USB_PERMISSION")
             whenever(receiverIntent.getBooleanExtra("permission", false)).thenReturn(false)
             
             receiver.onReceive(context, receiverIntent)
@@ -52,6 +56,7 @@ class UsbPermissionReceiverTest {
     fun `onReceive with missing permission extra defaults to false`() {
         mockStatic(ServiceHelper::class.java).use { mockedServiceHelper ->
             val receiverIntent = mock(Intent::class.java)
+            whenever(receiverIntent.action).thenReturn("com.air.advantage.USB_PERMISSION")
             whenever(receiverIntent.getBooleanExtra("permission", false)).thenReturn(false)
             
             receiver.onReceive(context, receiverIntent)
@@ -59,6 +64,21 @@ class UsbPermissionReceiverTest {
             mockedServiceHelper.verify {
                 ServiceHelper.scheduleServiceStart(context, "com.air.advantage.REQUEST_PERMISSION", 200)
             }
+        }
+    }
+
+    @Test
+    fun `onReceive with USB_ACCESSORY_DETACHED action does not schedule a service start`() {
+        mockStatic(ServiceHelper::class.java).use { mockedServiceHelper ->
+            val receiverIntent = mock(Intent::class.java)
+            whenever(receiverIntent.action).thenReturn("android.hardware.usb.action.USB_ACCESSORY_DETACHED")
+
+            receiver.onReceive(context, receiverIntent)
+
+            mockedServiceHelper.verify(
+                { ServiceHelper.scheduleServiceStart(any(), any(), any()) },
+                never()
+            )
         }
     }
 
