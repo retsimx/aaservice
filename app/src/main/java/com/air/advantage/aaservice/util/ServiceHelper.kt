@@ -12,6 +12,20 @@ import android.widget.TextView
 import com.air.advantage.aaservice.R
 import com.air.advantage.aaservice.service.UartForegroundService
 
+/**
+ * Shared Intent actions/extras and service start helpers for [UartForegroundService].
+ *
+ * Programmatic transport toggle for SSH/deploy operators (extras win when present):
+ * ```
+ * am start-foreground-service \
+ *   -n com.air.advantage.aaservice/.service.UartForegroundService \
+ *   -a com.air.advantage.TRANSPORT_MODE_CHANGED \
+ *   --es transport_mode ws \
+ *   --es daemon_ws_url ws://127.0.0.1:2026/v1/mailbox-stream
+ * ```
+ * Valid [EXTRA_TRANSPORT_MODE] values are `"usb"` or `"ws"`. Optional [EXTRA_DAEMON_WS_URL]
+ * is persisted before the mode switch. UI still writes prefs first, then fires the same Intent.
+ */
 object ServiceHelper {
 
     const val ACTION_REBOOT_DEVICE = "com.air.advantage.REBOOT_DEVICE"
@@ -20,10 +34,12 @@ object ServiceHelper {
     const val ACTION_REQUEST_PERMISSION = "com.air.advantage.REQUEST_PERMISSION"
     const val ACTION_ALLOW_HIDING = "com.air.advantage.ALLOW_HIDING"
     const val ACTION_BLOCK_HIDING = "com.air.advantage.BLOCK_HIDING"
-    /** Mode-change notify; service applies [PreferencesManager.transportMode] (extra is log-only). */
+    /** Mode-change notify; when [EXTRA_TRANSPORT_MODE] is present and valid, it wins over prefs. */
     const val ACTION_TRANSPORT_MODE_CHANGED = "com.air.advantage.TRANSPORT_MODE_CHANGED"
     /** Intent extra for [ACTION_TRANSPORT_MODE_CHANGED]: `"usb"` or `"ws"`. */
     const val EXTRA_TRANSPORT_MODE = "transport_mode"
+    /** Optional Intent extra for [ACTION_TRANSPORT_MODE_CHANGED]: daemon WebSocket URL to persist. */
+    const val EXTRA_DAEMON_WS_URL = "daemon_ws_url"
 
     fun getUsbAccessory(context: Context): UsbAccessory? {
         val usbManager = context.getSystemService(Context.USB_SERVICE) as UsbManager

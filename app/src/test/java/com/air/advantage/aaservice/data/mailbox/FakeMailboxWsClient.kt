@@ -31,6 +31,13 @@ class FakeMailboxWsClient : MailboxWsClient {
     var nextUpdateAck: MailboxInbound.Ack = successAck("fake-update")
     var nextResyncAck: MailboxInbound.Ack = successAck("fake-resync")
 
+    /**
+     * When true, [connect] moves straight to [MailboxConnectionState.Connected]
+     * so [com.air.advantage.aaservice.service.ModeSwitchCoordinator] snapshot
+     * wait can complete in Robolectric without a manual [emitState].
+     */
+    var emitConnectedOnConnect: Boolean = false
+
     fun emitState(state: MailboxConnectionState) {
         _connectionState.value = state
     }
@@ -41,7 +48,11 @@ class FakeMailboxWsClient : MailboxWsClient {
 
     override fun connect() {
         connectCalls++
-        _connectionState.value = MailboxConnectionState.Connecting
+        _connectionState.value = if (emitConnectedOnConnect) {
+            MailboxConnectionState.Connected
+        } else {
+            MailboxConnectionState.Connecting
+        }
     }
 
     override fun disconnect() {

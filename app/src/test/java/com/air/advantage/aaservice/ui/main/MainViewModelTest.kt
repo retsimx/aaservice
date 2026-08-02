@@ -84,4 +84,24 @@ class MainViewModelTest {
         assertEquals(true, viewModel.connectionState.first())
         assertEquals(TransportConnectionStatus.Error, viewModel.transportConnectionStatus.first())
     }
+
+    @Test
+    fun modeSwitchStatus_maps_to_transportConnectionStatus() {
+        assertEquals(
+            TransportConnectionStatus.Idle,
+            com.air.advantage.aaservice.service.ModeSwitchStatus.Idle.toTransportConnectionStatus(),
+        )
+        assertEquals(
+            TransportConnectionStatus.Connecting,
+            com.air.advantage.aaservice.service.ModeSwitchStatus.Connecting.toTransportConnectionStatus(),
+        )
+        assertEquals(
+            TransportConnectionStatus.Connected,
+            com.air.advantage.aaservice.service.ModeSwitchStatus.Connected.toTransportConnectionStatus(),
+        )
+        assertEquals(
+            TransportConnectionStatus.Error,
+            com.air.advantage.aaservice.service.ModeSwitchStatus.Error.toTransportConnectionStatus(),
+        )
+    }
 }
