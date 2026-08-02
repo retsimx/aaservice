@@ -18,4 +18,15 @@
     <string name="setup_correctly">Permission set correctly.</string>
     <string name="setup_incorrectly">Control System\nis not working.</string>
     <string name="version_number">Version %2$s : %1$s</string>
+    <string name="transport_card_title">Transport</string>
+    <string name="transport_mode_label">Mode</string>
+    <string name="transport_mode_usb">USB</string>
+    <string name="transport_mode_ws">WebSocket</string>
+    <string name="transport_daemon_url_label">Daemon WebSocket URL</string>
+    <string name="transport_url_save">Save</string>
+    <string name="transport_status_label">Status</string>
+    <string name="transport_status_idle">idle</string>
+    <string name="transport_status_connecting">connecting</string>
+    <string name="transport_status_connected">connected</string>
+    <string name="transport_status_error">error</string>
 </resources>
