@@ -174,6 +174,9 @@ class UartForegroundService : Service() {
         startPeriodicBroadcastIfNeeded()
         ensureDeviceAdmin()?.let { return it }
         handleNullAction(intent)?.let { return it }
+        // Handle before accessory discovery so the action is never rewritten to REQUEST_PERMISSION
+        // or dropped when no accessory is attached (A1: log/no-op only).
+        handleTransportModeChanged(intent)?.let { return it }
         val resolved = discoverAccessoryIfNeeded(intent?.action) ?: return START_STICKY
         return dispatchAction(resolved.second, resolved.first) ?: START_NOT_STICKY
     }
@@ -197,6 +200,20 @@ class UartForegroundService : Service() {
         ServiceHelper.scheduleServiceStart(this, ServiceHelper.ACTION_REQUEST_PERMISSION, 2000)
         stopSelf()
         return START_NOT_STICKY
+    }
+
+    /**
+     * A1: acknowledge transport mode change Intent. Extra key `transport_mode` may be
+     * `"usb"` or `"ws"`. No USB tear-down, no WS client, service stays running.
+     */
+    private fun handleTransportModeChanged(intent: Intent?): Int? {
+        if (intent?.action != ServiceHelper.ACTION_TRANSPORT_MODE_CHANGED) return null
+        val mode = intent.getStringExtra(ServiceHelper.EXTRA_TRANSPORT_MODE)
+        Log.i(
+            TAG,
+            "TRANSPORT_MODE_CHANGED: transport_mode=$mode (A1 no-op; no USB tear-down / WS client)"
+        )
+        return START_STICKY
     }
 
     private fun discoverAccessoryIfNeeded(action: String?): Pair<UsbAccessory, String?>? {
