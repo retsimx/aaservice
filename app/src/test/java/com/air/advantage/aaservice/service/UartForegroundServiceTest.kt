@@ -332,6 +332,11 @@ class UartForegroundServiceTest {
         assertTrue(result)
         verify(manager).openAccessory(accessory)
         assertNotNull(service.uartDataSource)
+        // reference f4129z is only set by the OPEN_DEVICE dispatch (ServiceUart.onStartCommand),
+        // not by opening the accessory itself
+        assertFalse(service.deviceOpen.get())
+
+        service.deviceOpen.set(true) // mirrors dispatchAction OPEN_DEVICE success path
         assertTrue(service.deviceOpen.get())
     }
 
@@ -610,6 +615,22 @@ class UartForegroundServiceTest {
         verify(service).sendBroadcast(argThat<Intent> {
             val json = getStringExtra("com.air.advantage.MESSAGE_FROM_CB_SECURE")
             json?.contains("\"version\"") == true
+        }, anyOrNull())
+    }
+
+    @Test
+    fun `periodicInfoBroadcast reports version as an integer string`() = runBlocking {
+        val job = launch {
+            service.periodicInfoBroadcast()
+        }
+        delay(5500)
+        job.cancel()
+
+        verify(service).sendBroadcast(argThat<Intent> {
+            val json = getStringExtra("com.air.advantage.MESSAGE_FROM_CB_SECURE")
+            val match = Regex("\"version\":\"(\\d+)\"").find(json ?: "")
+                ?: return@argThat false
+            match.groupValues[1].toLongOrNull()?.let { it in 0..Int.MAX_VALUE.toLong() } == true
         }, anyOrNull())
     }
 

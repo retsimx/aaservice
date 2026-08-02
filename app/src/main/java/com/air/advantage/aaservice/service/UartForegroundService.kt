@@ -19,7 +19,6 @@ import android.os.SystemClock
 import android.util.Log
 import com.air.advantage.aaservice.R
 import com.air.advantage.aaservice.data.repository.DataCacheRepository
-import com.air.advantage.aaservice.data.repository.PollQueueRepository
 import com.air.advantage.aaservice.data.uart.UartDataSource
 import com.air.advantage.aaservice.data.uart.UsbAccessoryDataSource
 import com.air.advantage.aaservice.domain.state.UartDispatchEngine
@@ -57,7 +56,6 @@ import java.util.concurrent.atomic.AtomicReference
 
 class UartForegroundService : Service() {
 
-    internal val pollQueue = PollQueueRepository()
     internal val dataCache = DataCacheRepository()
     internal val registeredReceivers = mutableListOf<BroadcastReceiver>()
     internal val deviceOpen = AtomicBoolean(false)
@@ -258,6 +256,7 @@ class UartForegroundService : Service() {
     }
 
     override fun onDestroy() {
+        ServiceHelper.cancelScheduledServiceStart(this, ServiceHelper.ACTION_OPEN_DEVICE)
         closeUartIo()
         periodicJob?.cancel()
         ioScope.cancel()
@@ -303,9 +302,14 @@ class UartForegroundService : Service() {
         dispatchEngine.enqueueCanIds(parseCanIds(canIds))
     }
 
+    fun enqueueBroadcastCanIds(canIds: String) {
+        dispatchEngine.enqueueBroadcastCanIds(parseCanIds(canIds))
+    }
+
     fun broadcastData(tag: String) {
         if (!deviceOpen.get()) return
-        val data = dataCache.get(tag) ?: return
+        val lookupTag = if (tag.startsWith("getSystemData")) "getSystemData" else tag
+        val data = dataCache.get(lookupTag) ?: return
 
         val cbIntent = Intent("com.air.advantage.MESSAGE_FROM_CB").apply {
             putExtra("com.air.advantage.GET_DATA_REQUEST", tag)
@@ -377,12 +381,8 @@ class UartForegroundService : Service() {
 
             val versionCode = try {
                 val info = packageManager.getPackageInfo(packageName, 0)
-                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-                    info.longVersionCode.toString()
-                } else {
-                    @Suppress("DEPRECATION")
-                    info.versionCode.toString()
-                }
+                @Suppress("DEPRECATION")
+                info.versionCode.toString()
             } catch (e: Exception) {
                 "0"
             }
@@ -455,7 +455,6 @@ class UartForegroundService : Service() {
         }
 
         currentPfd = pfd
-        deviceOpen.set(true)
         startUartIo(pfd)
         return true
     }

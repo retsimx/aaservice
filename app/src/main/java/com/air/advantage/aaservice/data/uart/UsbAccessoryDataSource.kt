@@ -80,7 +80,13 @@ class UsbAccessoryDataSource(
         return true
     }
 
-    fun connectWithStreams(input: InputStream, output: OutputStream): Boolean {
+    /**
+     * Connects using the given streams, sending the USB config packet once, then blocks in
+     * [readLoop] until the loop terminates (mirroring the reference `ServiceUart$k.run()`, which
+     * runs config then the read loop sequentially on the same thread). Returns `false` if the
+     * config packet could not be sent.
+     */
+    suspend fun connectWithStreams(input: InputStream, output: OutputStream): Boolean {
         fileInputStream = input
         fileOutputStream = output
         if (!sendConfigPacket()) {
@@ -88,7 +94,7 @@ class UsbAccessoryDataSource(
             return false
         }
         _isConnected.value = true
-        readJob = scope.launch { readLoop() }
+        readLoop()
         return true
     }
 
@@ -256,6 +262,8 @@ class UsbAccessoryDataSource(
                 parser.extractPayload(buffer, payloadStart, payloadEnd)?.let { payload ->
                     engine?.onFrame(payload)
                 }
+            } else if (parser.isGetCan(buffer) >= 0) {
+                engine?.armAckCan()
             }
             parser.shiftBuffer(frameEnd, buffer)
             bufferOffset -= frameEnd
