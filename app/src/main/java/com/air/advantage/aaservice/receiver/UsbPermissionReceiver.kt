@@ -12,9 +12,9 @@ class UsbPermissionReceiver : BaseReceiver() {
             return
         }
         if (intent.getBooleanExtra("permission", false)) {
-            ServiceHelper.scheduleServiceStart(context, "com.air.advantage.OPEN_DEVICE", 0)
+            ServiceHelper.scheduleServiceStart(context, ServiceHelper.ACTION_OPEN_DEVICE, 0)
         } else {
-            ServiceHelper.scheduleServiceStart(context, "com.air.advantage.REQUEST_PERMISSION", 200)
+            ServiceHelper.scheduleServiceStart(context, ServiceHelper.ACTION_REQUEST_PERMISSION, 200)
         }
     }
 }
