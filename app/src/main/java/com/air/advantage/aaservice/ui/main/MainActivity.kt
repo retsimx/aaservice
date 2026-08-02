@@ -9,13 +9,17 @@ import android.content.Intent
 import android.os.Bundle
 import android.util.Log
 import android.view.View
+import android.widget.EditText
 import android.widget.ImageView
+import android.widget.RadioGroup
 import android.widget.TextView
 import android.widget.Toast
 import com.air.advantage.aaservice.R
 import com.air.advantage.aaservice.receiver.DeviceAdminReceiver
 import com.air.advantage.aaservice.service.RebootNotificationService
+import com.air.advantage.aaservice.util.PreferencesManager
 import com.air.advantage.aaservice.util.ServiceHelper
+import com.air.advantage.aaservice.util.TransportMode
 import dagger.hilt.android.AndroidEntryPoint
 import java.util.concurrent.atomic.AtomicBoolean
 import javax.inject.Inject
@@ -30,8 +34,14 @@ class MainActivity : ComponentActivity(), View.OnClickListener {
 
     private val viewModel: MainViewModel by viewModels()
 
+    @Inject
+    lateinit var preferencesManager: PreferencesManager
+
     private lateinit var componentName: ComponentName
     lateinit var devicePolicyManager: DevicePolicyManager
+
+    /** Suppress RadioGroup callbacks while syncing controls from prefs. */
+    private var suppressTransportModeCallback = false
 
     override fun onCreate(bundle: Bundle?) {
         super.onCreate(bundle)
@@ -86,6 +96,58 @@ class MainActivity : ComponentActivity(), View.OnClickListener {
         findViewById<View>(R.id.enable_device_admin).setOnClickListener(this)
         findViewById<View>(R.id.disable_device_admin).setOnClickListener(this)
         findViewById<View>(R.id.show_backup).setOnClickListener(this)
+
+        bindTransportControls()
+    }
+
+    private fun bindTransportControls() {
+        val modeGroup = findViewById<RadioGroup>(R.id.transport_mode_group)
+        val urlField = findViewById<EditText>(R.id.transport_daemon_url)
+        val saveButton = findViewById<View>(R.id.transport_url_save)
+        val statusView = findViewById<TextView>(R.id.transport_connection_status)
+
+        suppressTransportModeCallback = true
+        when (preferencesManager.transportMode) {
+            TransportMode.Usb -> modeGroup.check(R.id.transport_mode_usb)
+            TransportMode.Ws -> modeGroup.check(R.id.transport_mode_ws)
+        }
+        suppressTransportModeCallback = false
+
+        urlField.setText(preferencesManager.daemonWsUrl)
+        statusView.setText(statusStringRes(viewModel.transportConnectionStatus.value))
+
+        modeGroup.setOnCheckedChangeListener { _, checkedId ->
+            if (suppressTransportModeCallback) return@setOnCheckedChangeListener
+            val selected = when (checkedId) {
+                R.id.transport_mode_usb -> TransportMode.Usb
+                R.id.transport_mode_ws -> TransportMode.Ws
+                else -> return@setOnCheckedChangeListener
+            }
+            if (selected == preferencesManager.transportMode) return@setOnCheckedChangeListener
+
+            preferencesManager.transportMode = selected
+            val extras = Bundle().apply {
+                putString(ServiceHelper.EXTRA_TRANSPORT_MODE, selected.value)
+            }
+            ServiceHelper.startUartService(
+                this,
+                ServiceHelper.ACTION_TRANSPORT_MODE_CHANGED,
+                extras,
+            )
+        }
+
+        saveButton.setOnClickListener {
+            preferencesManager.daemonWsUrl = urlField.text?.toString().orEmpty()
+            // Reflect any default applied by PreferencesManager (e.g. blank → default URL).
+            urlField.setText(preferencesManager.daemonWsUrl)
+        }
+    }
+
+    private fun statusStringRes(status: TransportConnectionStatus): Int = when (status) {
+        TransportConnectionStatus.Idle -> R.string.transport_status_idle
+        TransportConnectionStatus.Connecting -> R.string.transport_status_connecting
+        TransportConnectionStatus.Connected -> R.string.transport_status_connected
+        TransportConnectionStatus.Error -> R.string.transport_status_error
     }
 
     override fun onClick(view: View) {

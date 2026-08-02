@@ -270,4 +270,62 @@ class OnStartCommandTest {
 
         assertNull("OPEN_DEVICE alarm must be cancelled on destroy", nextScheduledAlarmAction())
     }
+
+    // ── TRANSPORT_MODE_CHANGED (A1 log/no-op) ────────────────────
+
+    @Test
+    fun `onStartCommand TRANSPORT_MODE_CHANGED without accessory does not stop or crash`() {
+        enableDeviceAdmin()
+
+        val result = service.onStartCommand(
+            Intent(ServiceHelper.ACTION_TRANSPORT_MODE_CHANGED)
+                .putExtra(ServiceHelper.EXTRA_TRANSPORT_MODE, "ws"),
+            0,
+            1
+        )
+
+        assertEquals(Service.START_STICKY, result)
+        assertFalse("service must not stopSelf for mode change", shadowOf(service).isStoppedBySelf)
+        assertFalse(service.deviceOpen.get())
+    }
+
+    @Test
+    fun `onStartCommand TRANSPORT_MODE_CHANGED with accessory does not redirect to permission or close USB`() {
+        enableDeviceAdmin()
+        val accessory = attachAccessory()
+        grantPermission(accessory)
+
+        // Establish open-device state so we can assert mode change does not tear down USB.
+        service.onStartCommand(
+            Intent().setAction(ServiceHelper.ACTION_REQUEST_PERMISSION), 0, 1
+        )
+        service.onStartCommand(
+            Intent().setAction(ServiceHelper.ACTION_OPEN_DEVICE), 0, 1
+        )
+        assertTrue("precondition: device should be open", service.deviceOpen.get())
+        // Clear side-effects from the open path so we only observe the mode-change Intent.
+        shadowOf(service.application as android.app.Application).clearBroadcastIntents()
+        ServiceHelper.cancelScheduledServiceStart(service, ServiceHelper.ACTION_OPEN_DEVICE)
+        assertNull(nextScheduledAlarmAction())
+
+        val result = service.onStartCommand(
+            Intent(ServiceHelper.ACTION_TRANSPORT_MODE_CHANGED)
+                .putExtra(ServiceHelper.EXTRA_TRANSPORT_MODE, "usb"),
+            0,
+            1
+        )
+
+        assertEquals(Service.START_STICKY, result)
+        assertFalse("service must not stopSelf for mode change", shadowOf(service).isStoppedBySelf)
+        assertTrue("USB must stay open; no tear-down on mode change", service.deviceOpen.get())
+        assertFalse(
+            "must not rewrite to REQUEST_PERMISSION path",
+            broadcastActions().contains(ServiceHelper.ACTION_ALLOW_HIDING)
+        )
+        assertFalse(broadcastActions().contains(ServiceHelper.ACTION_BLOCK_HIDING))
+        assertNull(
+            "must not schedule OPEN_DEVICE from permission redirect",
+            nextScheduledAlarmAction()
+        )
+    }
 }
