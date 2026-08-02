@@ -15,7 +15,7 @@ class DeviceAdminReceiver : DeviceAdminReceiver() {
 
     override fun onDisabled(context: Context, intent: Intent) {
         super.onDisabled(context, intent)
-        ServiceHelper.stopUartService(context, "com.air.advantage.CLOSE_DEVICE")
+        ServiceHelper.stopUartService(context, ServiceHelper.ACTION_CLOSE_DEVICE)
         val mainIntent = Intent(context, MainActivity::class.java).apply {
             addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
         }

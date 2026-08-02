@@ -3,20 +3,20 @@ package com.air.advantage.aaservice.service
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.app.PendingIntent
 import android.app.Service
 import android.content.BroadcastReceiver
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.hardware.usb.UsbAccessory
+import android.hardware.usb.UsbManager
 import android.os.Build
 import android.os.IBinder
 import android.os.ParcelFileDescriptor
+import android.os.SystemClock
 import android.util.Log
-import java.io.FileInputStream
-import java.io.FileOutputStream
-import java.util.concurrent.atomic.AtomicBoolean
-import java.util.concurrent.atomic.AtomicReference
 import com.air.advantage.aaservice.R
 import com.air.advantage.aaservice.data.repository.DataCacheRepository
 import com.air.advantage.aaservice.data.repository.PollQueueRepository
@@ -24,6 +24,7 @@ import com.air.advantage.aaservice.data.uart.UartDataSource
 import com.air.advantage.aaservice.data.uart.UsbAccessoryDataSource
 import com.air.advantage.aaservice.domain.state.UartDispatchEngine
 import com.air.advantage.aaservice.domain.state.UartEventSink
+import com.air.advantage.aaservice.receiver.AlertDialogReceiver
 import com.air.advantage.aaservice.receiver.BackupMessageNoPermissionReceiver
 import com.air.advantage.aaservice.receiver.BackupMessageReceiver
 import com.air.advantage.aaservice.receiver.BroadcastCanToCbNoPermissionReceiver
@@ -34,8 +35,8 @@ import com.air.advantage.aaservice.receiver.GetAllDataReceiver
 import com.air.advantage.aaservice.receiver.GetDataReceiver
 import com.air.advantage.aaservice.receiver.MessageToCbReceiver
 import com.air.advantage.aaservice.receiver.UsbPermissionReceiver
-import android.hardware.usb.UsbAccessory
-import android.hardware.usb.UsbManager
+import com.air.advantage.aaservice.ui.main.MainActivity
+import com.air.advantage.aaservice.ui.usb.UsbConnectActivity
 import com.air.advantage.aaservice.util.CryptoHelper
 import com.air.advantage.aaservice.util.FujitsuDetector
 import com.air.advantage.aaservice.util.HardwareDetector
@@ -47,6 +48,12 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import java.io.FileInputStream
+import java.io.FileOutputStream
+import java.io.InputStream
+import java.io.OutputStream
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
 
 class UartForegroundService : Service() {
 
@@ -86,6 +93,7 @@ class UartForegroundService : Service() {
         override fun onPollData(tag: String, payload: ByteArray) {
             dataCache.put(tag, payload)
             broadcastData(tag)
+            showNotification(true)
         }
 
         override fun onRawCan(payload: ByteArray) {
@@ -101,6 +109,20 @@ class UartForegroundService : Service() {
             sink = uartEventSink
         )
     }
+
+    private val ioScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    internal var uartIoJob: Job? = null
+    internal var periodicJob: Job? = null
+    private val closeUartIoStarted = AtomicBoolean(false)
+
+    @Volatile private var currentAccessory: UsbAccessory? = null
+    private var currentPfd: ParcelFileDescriptor? = null
+    private var inputStream: InputStream? = null
+    private var outputStream: OutputStream? = null
+    @Volatile private var lastConnectedState: Boolean? = null
+
+    internal var uartDataSource: UartDataSource? = null
+        private set
 
     override fun onCreate() {
         super.onCreate()
@@ -142,14 +164,122 @@ class UartForegroundService : Service() {
 
     override fun onBind(intent: Intent?): IBinder? = null
 
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        super.onStartCommand(intent, flags, startId)
+        startPeriodicBroadcastIfNeeded()
+        ensureDeviceAdmin()?.let { return it }
+        handleNullAction(intent)?.let { return it }
+        val resolved = discoverAccessoryIfNeeded(intent?.action) ?: return START_STICKY
+        return dispatchAction(resolved.second, resolved.first) ?: START_NOT_STICKY
+    }
+
+    private fun startPeriodicBroadcastIfNeeded() {
+        if (periodicJob == null) {
+            periodicJob = ioScope.launch { periodicInfoBroadcast() }
+        }
+    }
+
+    private fun ensureDeviceAdmin(): Int? {
+        if (ServiceHelper.isDeviceAdminActive(this)) return null
+        startActivity(Intent(this, MainActivity::class.java).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        return START_NOT_STICKY
+    }
+
+    private fun handleNullAction(intent: Intent?): Int? {
+        if (intent?.action != null) return null
+        ServiceHelper.scheduleServiceStart(this, ServiceHelper.ACTION_REQUEST_PERMISSION, 2000)
+        stopSelf()
+        return START_NOT_STICKY
+    }
+
+    private fun discoverAccessoryIfNeeded(action: String?): Pair<UsbAccessory, String?>? {
+        var accessory = currentAccessory
+        var resolvedAction = action
+        if (accessory == null) {
+            showNotification(false)
+            accessory = ServiceHelper.getUsbAccessory(this)
+            currentAccessory = accessory
+            if (accessory == null) {
+                Log.d(TAG, "No accessory present.")
+                return null
+            }
+            Log.d(TAG, "USB accessory present - checking permission.")
+            resolvedAction = ServiceHelper.ACTION_REQUEST_PERMISSION
+        }
+        return accessory to resolvedAction
+    }
+
+    private fun dispatchAction(action: String?, accessory: UsbAccessory): Int? {
+        when (action) {
+            ServiceHelper.ACTION_OPEN_DEVICE -> {
+                val opened = openAccessory(accessory)
+                if (!opened) {
+                    Log.d(TAG, "Opening accessory - fail")
+                    return START_NOT_STICKY
+                }
+                sendBroadcast(Intent(ServiceHelper.ACTION_ALLOW_HIDING))
+                deviceOpen.set(true)
+            }
+
+            ServiceHelper.ACTION_CLOSE_DEVICE -> {
+                stopSelf()
+                return START_NOT_STICKY
+            }
+
+            ServiceHelper.ACTION_REQUEST_PERMISSION -> handlePermissionRequest(accessory)
+        }
+        return null
+    }
+
+    private fun handlePermissionRequest(accessory: UsbAccessory) {
+        val usbManager = getSystemService(Context.USB_SERVICE) as? UsbManager
+        if (!deviceOpen.get() && usbManager != null) {
+            if (usbManager.hasPermission(accessory)) {
+                sendBroadcast(Intent(ServiceHelper.ACTION_ALLOW_HIDING))
+                ServiceHelper.scheduleServiceStart(this, ServiceHelper.ACTION_OPEN_DEVICE, 0)
+            } else {
+                sendBroadcast(Intent(ServiceHelper.ACTION_BLOCK_HIDING))
+                SystemClock.sleep(1000)
+                requestUsbPermission()
+            }
+        }
+    }
+
+    private fun requestUsbPermission() {
+        val accessory = currentAccessory ?: return
+        val usbManager = getSystemService(Context.USB_SERVICE) as? UsbManager ?: return
+        val pendingIntent = PendingIntent.getBroadcast(
+            this,
+            0,
+            Intent("com.air.advantage.USB_PERMISSION"),
+            PendingIntent.FLAG_IMMUTABLE
+        )
+        usbManager.requestPermission(accessory, pendingIntent)
+    }
+
     override fun onDestroy() {
-        deviceOpen.set(false)
-        uartIoJob?.cancel()
+        closeUartIo()
+        periodicJob?.cancel()
         ioScope.cancel()
         registeredReceivers.forEach { unregisterReceiver(it) }
         registeredReceivers.clear()
         instance = null
         super.onDestroy()
+    }
+
+    private fun closeUartIo() {
+        if (!closeUartIoStarted.compareAndSet(false, true)) return
+        uartIoJob?.cancel()
+        uartIoJob = null
+        deviceOpen.set(false)
+        showNotification(false)
+        runCatching { inputStream?.close() }
+        runCatching { outputStream?.close() }
+        runCatching { currentPfd?.close() }
+        inputStream = null
+        outputStream = null
+        currentPfd = null
+        uartDataSource = null
     }
 
     fun requestSinglePoll(tag: String) {
@@ -279,77 +409,102 @@ class UartForegroundService : Service() {
         }
     }
 
-    private val ioScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
-    private var uartIoJob: Job? = null
-
-    internal var uartDataSource: UartDataSource? = null
-        private set
-
     fun startUartIo(pfd: ParcelFileDescriptor) {
+        val input = FileInputStream(pfd.fileDescriptor)
+        val output = FileOutputStream(pfd.fileDescriptor)
+        inputStream = input
+        outputStream = output
+        currentPfd = pfd
         val dataSource = UsbAccessoryDataSource(
-            inputStreamFactory = { FileInputStream(it.fileDescriptor) },
-            outputStreamFactory = { FileOutputStream(it.fileDescriptor) },
+            inputStreamFactory = { input },
+            outputStreamFactory = { output },
             engine = dispatchEngine
         )
         uartDataSource = dataSource
+        closeUartIoStarted.set(false)
         uartIoJob = ioScope.launch {
-            dataSource.connectWithStreams(
-                FileInputStream(pfd.fileDescriptor),
-                FileOutputStream(pfd.fileDescriptor)
-            )
+            dataSource.connectWithStreams(input, output)
+        }
+        uartIoJob?.invokeOnCompletion {
+            closeUartIo()
         }
     }
-
-    private val maxRetries = 5
-    private var notificationShown = false
-    @Volatile private var lastNotificationTitle: String? = null
-    @Volatile internal var crashCount: Int = 0
 
     fun openAccessory(accessory: UsbAccessory): Boolean {
         val manager = getSystemService(Context.USB_SERVICE) as? UsbManager ?: return false
 
-        if (crashCount > maxRetries) {
-            sendBroadcast(Intent(ServiceHelper.ACTION_REBOOT_DEVICE))
+        if (currentPfd != null) {
+            Log.d(TAG, "already working")
             return true
         }
 
-        val pfd = manager.openAccessory(accessory) ?: return false
+        val pfd = try {
+            manager.openAccessory(accessory)
+        } catch (e: IllegalArgumentException) {
+            null
+        }
+
+        if (pfd == null) {
+            Log.d(TAG, "Problem creating a parcelFileDescriptor")
+            val prefs = getSharedPreferences(packageName + "_preferences", MODE_PRIVATE)
+            val count = prefs.getInt("crash_count", 0) + 1
+            if (count > 5) {
+                sendBroadcast(Intent(ServiceHelper.ACTION_REBOOT_DEVICE))
+            } else {
+                prefs.edit().putInt("crash_count", count).apply()
+            }
+            stopSelf()
+            UsbConnectActivity.finishIfShowing()
+            return false
+        }
+
+        currentPfd = pfd
         deviceOpen.set(true)
         startUartIo(pfd)
         return true
     }
 
     fun showNotification(connected: Boolean) {
+        if (lastConnectedState == connected) return
+        lastConnectedState = connected
+
         val title = when {
-            RebootNotificationService.rebootRequired.get() -> "Reboot Required"
-            connected -> "Connected"
-            else -> "Not connected"
+            RebootNotificationService.rebootRequired.get() -> "Reboot required"
+            connected -> "Connected to your system"
+            else -> "Not connected to your system"
         }
 
-        if (title == lastNotificationTitle) return
+        AlertDialogReceiver().setAlert(this, active = !connected, if (connected) 0 else 60000)
 
-        lastNotificationTitle = title
-        notificationShown = true
-
-        val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-
-        if (Build.VERSION.SDK_INT >= 26) {
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+            val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+            nm.deleteNotificationChannel(getString(R.string.service_name) + " Notification")
             nm.createNotificationChannel(
-                NotificationChannel("uart_channel", "UART Service", NotificationManager.IMPORTANCE_LOW)
+                NotificationChannel(
+                    "notification_channel_1",
+                    getString(R.string.service_name),
+                    NotificationManager.IMPORTANCE_LOW
+                ).apply {
+                    description = getString(R.string.service_name) + " Notification Icon"
+                }
             )
-            nm.notify(1,
-                Notification.Builder(this, "uart_channel")
+            startForeground(1234,
+                Notification.Builder(this, "notification_channel_1")
                     .setContentTitle(title)
                     .setSmallIcon(R.drawable.ic_info)
-                    .setContentText("")
+                    .setContentIntent(null)
+                    .setWhen(0L)
                     .build())
         } else {
             @Suppress("DEPRECATION")
-            nm.notify(1,
+            stopForeground(true)
+            @Suppress("DEPRECATION")
+            startForeground(1234,
                 Notification.Builder(this)
                     .setContentTitle(title)
                     .setSmallIcon(R.drawable.ic_info)
-                    .setContentText("")
+                    .setContentIntent(null)
+                    .setWhen(0L)
                     .build())
         }
     }
