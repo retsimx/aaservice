@@ -1,0 +1,5 @@
+{
+  "type": "ack",
+  "msg_id": "__MSG_ID__",
+  "status": "success"
+}

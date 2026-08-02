@@ -1,0 +1,15 @@
+{
+  "type": "mailbox_snapshot",
+  "unit_id": "AA-TEST-001",
+  "system_status": {
+    "airconOn": true,
+    "mode": "cool",
+    "fan": "auto"
+  },
+  "zone_config": {
+    "zones": 4
+  },
+  "zones": {
+    "z1": { "name": "Living", "open": true }
+  }
+}
