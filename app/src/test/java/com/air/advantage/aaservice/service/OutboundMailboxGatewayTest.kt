@@ -1,0 +1,185 @@
+package com.air.advantage.aaservice.service
+
+import android.content.Intent
+import androidx.preference.PreferenceManager
+import com.air.advantage.aaservice.data.mailbox.FakeMailboxWsClient
+import com.air.advantage.aaservice.data.mailbox.MailboxAckStatus
+import com.air.advantage.aaservice.data.mailbox.MailboxConnectionState
+import com.air.advantage.aaservice.data.mailbox.MailboxInbound
+import com.air.advantage.aaservice.data.mailbox.MailboxMessageType
+import com.air.advantage.aaservice.data.mailbox.MailboxWsClientFactory
+import com.air.advantage.aaservice.data.mailbox.MyAir5OutboundMailboxMapper
+import com.air.advantage.aaservice.receiver.GetAllDataReceiver
+import com.air.advantage.aaservice.receiver.MessageToCbReceiver
+import com.air.advantage.aaservice.util.PreferencesManager
+import com.air.advantage.aaservice.util.TransportMode
+import org.json.JSONObject
+import org.junit.After
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
+import org.junit.Before
+import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.Robolectric
+import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
+import java.util.concurrent.TimeUnit
+
+/**
+ * A5 gateway: WS outbound mapping via [UartForegroundService] + [FakeMailboxWsClient].
+ */
+@RunWith(RobolectricTestRunner::class)
+@Config(sdk = [33], manifest = Config.NONE)
+class OutboundMailboxGatewayTest {
+
+    private lateinit var controller: org.robolectric.android.controller.ServiceController<UartForegroundService>
+    private lateinit var service: UartForegroundService
+    private lateinit var prefs: PreferencesManager
+    private lateinit var fakeWs: FakeMailboxWsClient
+
+    @Before
+    fun setUp() {
+        controller = Robolectric.buildService(UartForegroundService::class.java)
+        service = controller.create().get()
+        UartForegroundService.instance = service
+        PreferenceManager.getDefaultSharedPreferences(service).edit().clear().apply()
+    }
+
+    @After
+    fun tearDown() {
+        service.onDestroy()
+        UartForegroundService.instance = null
+    }
+
+    private fun injectWsConnected() {
+        prefs = PreferencesManager(service)
+        prefs.transportMode = TransportMode.Ws
+        fakeWs = FakeMailboxWsClient()
+        service.preferencesManager = prefs
+        service.mailboxWsClientFactory = MailboxWsClientFactory { fakeWs }
+        service.ensureTransportRouter().applyMode(TransportMode.Ws)
+        fakeWs.emitState(MailboxConnectionState.Connected)
+    }
+
+    private fun injectUsb() {
+        prefs = PreferencesManager(service)
+        prefs.transportMode = TransportMode.Usb
+        fakeWs = FakeMailboxWsClient()
+        service.preferencesManager = prefs
+        service.mailboxWsClientFactory = MailboxWsClientFactory { fakeWs }
+        service.ensureTransportRouter().applyMode(TransportMode.Usb)
+    }
+
+    private fun awaitOutbound() {
+        // ioScope uses Dispatchers.IO — give the serialized send a moment.
+        TimeUnit.MILLISECONDS.sleep(300)
+    }
+
+    @Test
+    fun `WS setAircon power sends mailbox_update system_status`() {
+        injectWsConnected()
+        service.deviceOpen.set(false)
+
+        val msg = """setAircon?json={"aircons":{"ac1":{"info":{"state":"on","mode":"cool","fan":"high"}}}}"""
+        service.enqueueUartMessage(msg)
+        awaitOutbound()
+
+        assertEquals(1, fakeWs.sentUpdates.size)
+        assertEquals("system_status", fakeWs.sentUpdates[0].first)
+        assertEquals("on", fakeWs.sentUpdates[0].second.getString("power"))
+        assertEquals("cool", fakeWs.sentUpdates[0].second.getString("mode"))
+        assertEquals("high", fakeWs.sentUpdates[0].second.getString("fan"))
+    }
+
+    @Test
+    fun `WS setAircon zone sends mailbox_update zone_state`() {
+        injectWsConnected()
+        val msg = """setAircon?json={"aircons":{"ac1":{"zones":{"z03":{"state":"open","setTemp":22}}}}}"""
+        service.enqueueUartMessage(msg)
+        awaitOutbound()
+
+        assertEquals(1, fakeWs.sentUpdates.size)
+        assertEquals("zone_state", fakeWs.sentUpdates[0].first)
+        assertEquals(3, fakeWs.sentUpdates[0].second.getInt("zone_id"))
+        assertTrue(fakeWs.sentUpdates[0].second.getBoolean("open"))
+    }
+
+    @Test
+    fun `WS ack error does not pretend success`() {
+        injectWsConnected()
+        fakeWs.nextUpdateAck = MailboxInbound.Ack(
+            msgId = "err",
+            status = MailboxAckStatus.ERROR,
+            reason = "denied",
+            raw = JSONObject()
+                .put("type", MailboxMessageType.ACK)
+                .put("msg_id", "err")
+                .put("status", "error"),
+        )
+        service.enqueueUartMessage(
+            """setAircon?json={"aircons":{"ac1":{"info":{"state":"off"}}}}""",
+        )
+        awaitOutbound()
+        // Send still attempted (recorded); status is error — gateway must not throw/crash.
+        assertEquals(1, fakeWs.sentUpdates.size)
+    }
+
+    @Test
+    fun `USB mode does not call WS sendUpdate`() {
+        injectUsb()
+        service.deviceOpen.set(true)
+        service.enqueueUartMessage("setZoneData?zone=1")
+        awaitOutbound()
+        assertTrue(fakeWs.sentUpdates.isEmpty())
+        assertTrue(fakeWs.sentResyncs.isEmpty())
+    }
+
+    @Test
+    fun `WS GET_ALL_DATA triggers sendResync`() {
+        injectWsConnected()
+        service.handleGetAllDataWs()
+        awaitOutbound()
+        assertEquals(1, fakeWs.sentResyncs.size)
+        assertTrue(fakeWs.sentUpdates.isEmpty())
+    }
+
+    @Test
+    fun `WS normal CAN ids do not send`() {
+        injectWsConnected()
+        service.processCanIds("5 6 7")
+        awaitOutbound()
+        assertTrue(fakeWs.sentUpdates.isEmpty())
+        assertTrue(fakeWs.sentResyncs.isEmpty())
+    }
+
+    @Test
+    fun `WS reg06 flush triggers sendResync`() {
+        injectWsConnected()
+        service.processCanIds(MyAir5OutboundMailboxMapper.REG06_FLUSH_TOKEN)
+        awaitOutbound()
+        assertEquals(1, fakeWs.sentResyncs.size)
+    }
+
+    @Test
+    fun `MessageToCbReceiver WS reaches gateway when deviceOpen false`() {
+        injectWsConnected()
+        service.deviceOpen.set(false)
+        val receiver = MessageToCbReceiver()
+        val intent = Intent("com.air.advantage.MESSAGE_TO_CB").putExtra(
+            "com.air.advantage.MESSAGE_TO_CB",
+            """setAircon?json={"aircons":{"ac1":{"info":{"state":"on"}}}}""",
+        )
+        receiver.onReceive(service, intent)
+        awaitOutbound()
+        assertEquals(1, fakeWs.sentUpdates.size)
+    }
+
+    @Test
+    fun `GetAllDataReceiver WS triggers resync without deviceOpen`() {
+        injectWsConnected()
+        service.deviceOpen.set(false)
+        GetAllDataReceiver().onReceive(service, Intent("com.air.advantage.GET_ALL_DATA"))
+        awaitOutbound()
+        assertEquals(1, fakeWs.sentResyncs.size)
+    }
+}

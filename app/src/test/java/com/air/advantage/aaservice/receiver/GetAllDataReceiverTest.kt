@@ -49,9 +49,23 @@ class GetAllDataReceiverTest {
     @Test
     fun `onReceive with device closed broadcasts nothing and polls nothing`() {
         whenever(service.deviceOpen).thenReturn(AtomicBoolean(false))
+        whenever(service.isWsMode()).thenReturn(false)
 
         receiver.onReceive(context, Intent("com.air.advantage.GET_ALL_DATA"))
 
+        verify(service, never()).broadcastData(anyString())
+        verify(service, never()).requestSinglePoll(anyString())
+        verify(service, never()).handleGetAllDataWs()
+    }
+
+    @Test
+    fun `onReceive WS mode calls handleGetAllDataWs without deviceOpen`() {
+        whenever(service.deviceOpen).thenReturn(AtomicBoolean(false))
+        whenever(service.isWsMode()).thenReturn(true)
+
+        receiver.onReceive(context, Intent("com.air.advantage.GET_ALL_DATA"))
+
+        verify(service).handleGetAllDataWs()
         verify(service, never()).broadcastData(anyString())
         verify(service, never()).requestSinglePoll(anyString())
     }
@@ -59,6 +73,7 @@ class GetAllDataReceiverTest {
     @Test
     fun `onReceive with device open broadcasts all base and schedule tags`() {
         whenever(service.deviceOpen).thenReturn(AtomicBoolean(true))
+        whenever(service.isWsMode()).thenReturn(false)
 
         receiver.onReceive(context, Intent("com.air.advantage.GET_ALL_DATA"))
 
@@ -70,6 +85,7 @@ class GetAllDataReceiverTest {
     @Test
     fun `onReceive with device open enqueues every schedule tag unconditionally`() {
         whenever(service.deviceOpen).thenReturn(AtomicBoolean(true))
+        whenever(service.isWsMode()).thenReturn(false)
 
         receiver.onReceive(context, Intent("com.air.advantage.GET_ALL_DATA"))
 

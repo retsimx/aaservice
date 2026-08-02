@@ -11,7 +11,8 @@ class MessageToCbReceiver : BaseReceiver() {
             Log.d(BCAST_TAG, "MessageToCb: no service instance, dropping")
             return
         }
-        if (!s.deviceOpen.get()) {
+        val wsMode = s.isWsMode()
+        if (!wsMode && !s.deviceOpen.get()) {
             Log.d(BCAST_TAG, "MessageToCb: device not open, dropping")
             return
         }
@@ -24,12 +25,16 @@ class MessageToCbReceiver : BaseReceiver() {
             return
         }
         val command = message.substring(0, message.indexOf("?"))
-        if (command.contains("Light") || command.contains("Aircon") ||
-            command.contains("Activation") || command.contains("MySystem")) {
+        // Stock USB filter: Light/Aircon/Activation/MySystem never hit UART.
+        // WS mode still accepts setAircon?json= for mailbox_update mapping (A5).
+        if (!wsMode &&
+            (command.contains("Light") || command.contains("Aircon") ||
+                command.contains("Activation") || command.contains("MySystem"))
+        ) {
             Log.d(BCAST_TAG, "MessageToCb: blocked command '$command'")
             return
         }
-        Log.d(BCAST_TAG, "MessageToCb: enqueueing '$message'")
+        Log.d(BCAST_TAG, "MessageToCb: enqueueing '$message' (ws=$wsMode)")
         s.enqueueUartMessage(message)
     }
 }

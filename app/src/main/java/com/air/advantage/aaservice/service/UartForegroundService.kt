@@ -18,7 +18,12 @@ import android.os.ParcelFileDescriptor
 import android.os.SystemClock
 import android.util.Log
 import com.air.advantage.aaservice.R
+import com.air.advantage.aaservice.data.mailbox.MailboxAckStatus
+import com.air.advantage.aaservice.data.mailbox.MailboxAckTimeoutException
+import com.air.advantage.aaservice.data.mailbox.MailboxConnectionState
 import com.air.advantage.aaservice.data.mailbox.MailboxWsClientFactory
+import com.air.advantage.aaservice.data.mailbox.MyAir5OutboundMailboxMapper
+import com.air.advantage.aaservice.data.mailbox.OutboundMailboxAction
 import com.air.advantage.aaservice.data.repository.DataCacheRepository
 import com.air.advantage.aaservice.data.uart.UartDataSource
 import com.air.advantage.aaservice.data.uart.UsbAccessoryDataSource
@@ -52,6 +57,8 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.io.FileInputStream
 import java.io.FileOutputStream
 import java.io.InputStream
@@ -134,6 +141,8 @@ class UartForegroundService : Service() {
     }
 
     private val ioScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+    /** Serializes WS outbound sendUpdate/sendResync so acks cannot interleave. */
+    private val outboundWsMutex = Mutex()
     internal var uartIoJob: Job? = null
     internal var periodicJob: Job? = null
     private val closeUartIoStarted = AtomicBoolean(false)
@@ -433,12 +442,24 @@ class UartForegroundService : Service() {
         uartDataSource = null
     }
 
+    /** True when [TransportRouter] is in WebSocket mode. */
+    fun isWsMode(): Boolean = ensureTransportRouter().activeMode == TransportMode.Ws
+
     fun requestSinglePoll(tag: String) {
+        if (isWsMode()) {
+            Log.d(TAG, "requestSinglePoll: WS mode, ignoring UART poll '$tag'")
+            return
+        }
         Log.d(TAG, "requestSinglePoll: '$tag'")
         dispatchEngine.enqueueDirectMessage(tag)
     }
 
     fun enqueueUartMessage(message: String) {
+        if (isWsMode()) {
+            Log.d(TAG, "enqueueUartMessage: WS mode mapping '$message'")
+            dispatchOutboundMailboxActions(MyAir5OutboundMailboxMapper.mapMessageToCb(message))
+            return
+        }
         Log.d(TAG, "enqueueUartMessage: '$message'")
         dispatchEngine.enqueueDirectMessage(message)
     }
@@ -452,22 +473,113 @@ class UartForegroundService : Service() {
         return canIds.replace("  ", " ").split(" ").filter { it.isNotEmpty() }
     }
 
+    private fun dispatchWsCanTokens(canIds: String, label: String) {
+        when (val action = MyAir5OutboundMailboxMapper.mapCanTokens(canIds)) {
+            OutboundMailboxAction.Resync -> {
+                Log.d(TAG, "$label: WS mode reg-06 flush → resync")
+                dispatchOutboundMailboxActions(listOf(action))
+            }
+            else -> Log.d(TAG, "$label: WS mode ignoring CAN tokens '$canIds'")
+        }
+    }
+
     fun enqueueCanIds(canIds: String) {
+        if (isWsMode()) {
+            dispatchWsCanTokens(canIds, "enqueueCanIds")
+            return
+        }
         val ids = parseCanTokens(canIds)
         Log.d(TAG, "enqueueCanIds: '$canIds' -> $ids")
         dispatchEngine.enqueueCanIds(ids)
     }
 
     fun processCanIds(canIds: String) {
+        if (isWsMode()) {
+            dispatchWsCanTokens(canIds, "processCanIds")
+            return
+        }
         val ids = parseCanTokens(canIds)
         Log.d(TAG, "processCanIds: '$canIds' -> $ids")
         dispatchEngine.enqueueCanIds(ids)
     }
 
     fun enqueueBroadcastCanIds(canIds: String) {
+        if (isWsMode()) {
+            dispatchWsCanTokens(canIds, "enqueueBroadcastCanIds")
+            return
+        }
         val ids = parseCanTokens(canIds)
         Log.d(TAG, "enqueueBroadcastCanIds: '$canIds' -> $ids")
         dispatchEngine.enqueueBroadcastCanIds(ids)
+    }
+
+    /**
+     * WS-mode GET_ALL_DATA: request a mailbox resync (no UART schedule polls).
+     * USB path remains in [GetAllDataReceiver].
+     */
+    fun handleGetAllDataWs() {
+        Log.d(TAG, "handleGetAllDataWs: resync_mailbox")
+        dispatchOutboundMailboxActions(listOf(MyAir5OutboundMailboxMapper.mapGetAllData()))
+    }
+
+    /**
+     * Sends mapped mailbox actions on [ioScope], serialized via [outboundWsMutex].
+     * Ack `error` / timeout are logged; never treated as success.
+     */
+    internal fun dispatchOutboundMailboxActions(actions: List<OutboundMailboxAction>) {
+        val meaningful = actions.filter { it !is OutboundMailboxAction.Ignore }
+        if (meaningful.isEmpty()) {
+            Log.d(TAG, "dispatchOutboundMailboxActions: nothing to send")
+            return
+        }
+        val client = ensureTransportRouter().mailboxWsClient
+        if (client == null ||
+            client.connectionState.value !is MailboxConnectionState.Connected
+        ) {
+            Log.d(TAG, "dispatchOutboundMailboxActions: WS not Connected, dropping")
+            return
+        }
+        ioScope.launch {
+            outboundWsMutex.withLock {
+                for (action in meaningful) {
+                    when (action) {
+                        is OutboundMailboxAction.Update -> {
+                            try {
+                                val ack = client.sendUpdate(action.register, action.payload)
+                                if (ack.status != MailboxAckStatus.SUCCESS) {
+                                    Log.e(
+                                        TAG,
+                                        "mailbox_update ack failure register=${action.register} " +
+                                            "status=${ack.status} reason=${ack.reason}",
+                                    )
+                                }
+                            } catch (e: MailboxAckTimeoutException) {
+                                Log.e(TAG, "mailbox_update ack timeout msg_id=${e.msgId}", e)
+                            } catch (e: Exception) {
+                                Log.e(TAG, "mailbox_update failed register=${action.register}", e)
+                            }
+                        }
+                        OutboundMailboxAction.Resync -> {
+                            try {
+                                val ack = client.sendResync()
+                                if (ack.status != MailboxAckStatus.SUCCESS) {
+                                    Log.e(
+                                        TAG,
+                                        "resync_mailbox ack failure status=${ack.status} " +
+                                            "reason=${ack.reason}",
+                                    )
+                                }
+                            } catch (e: MailboxAckTimeoutException) {
+                                Log.e(TAG, "resync_mailbox ack timeout msg_id=${e.msgId}", e)
+                            } catch (e: Exception) {
+                                Log.e(TAG, "resync_mailbox failed", e)
+                            }
+                        }
+                        OutboundMailboxAction.Ignore -> Unit
+                    }
+                }
+            }
+        }
     }
 
     fun broadcastData(tag: String) {
