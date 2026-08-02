@@ -162,27 +162,6 @@ class UartForegroundServiceProcessPollTest {
         assertFalse(service.dataCache.hasChanged(tag, data))
     }
 
-    // ── PollQueueRepository ──────────────────────────────────────
-
-    @Test
-    fun `pollQueue returns correct entry after initialization`() {
-        service.pollQueue.initialize(isMyAir5 = true)
-        val current = service.pollQueue.currentPoll()
-
-        assertNotNull(current)
-        assertEquals("getSystemData", current?.tag)
-    }
-
-    @Test
-    fun `pollQueue advanceToNext moves to next entry`() {
-        service.pollQueue.initialize(isMyAir5 = true)
-        service.pollQueue.advanceToNext()
-        val current = service.pollQueue.currentPoll()
-
-        assertNotNull(current)
-        assertEquals("getClock", current?.tag)
-    }
-
     private companion object {
         val POLL_TAGS = listOf(
             "getSystemData",

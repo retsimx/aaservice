@@ -8,9 +8,37 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.io.ByteArrayInputStream
 import java.io.ByteArrayOutputStream
+import java.io.InputStream
+import java.io.OutputStream
 import java.lang.reflect.Field
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 
 class UsbAccessoryDataSourceTest {
+
+    private val testScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+
+    /**
+     * Launches the now-suspend [UsbAccessoryDataSource.connectWithStreams] in a background
+     * coroutine; the function blocks for the lifetime of the read loop.
+     */
+    private fun connectAsync(
+        dataSource: UsbAccessoryDataSource,
+        input: InputStream,
+        output: OutputStream
+    ): Job = testScope.launch { dataSource.connectWithStreams(input, output) }
+
+    private fun await(timeoutMs: Long = 5000, condition: () -> Boolean) {
+        val deadline = System.currentTimeMillis() + timeoutMs
+        while (System.currentTimeMillis() < deadline) {
+            if (condition()) return
+            Thread.sleep(10)
+        }
+        assertTrue("Condition not met within ${timeoutMs}ms", condition())
+    }
 
     @Test
     fun `implements UartDataSource interface`() {
@@ -140,10 +168,14 @@ class UsbAccessoryDataSourceTest {
         val dataSource = UsbAccessoryDataSource()
         val input = ByteArrayInputStream(ByteArray(0))
         val output = ByteArrayOutputStream()
-        val result = dataSource.connectWithStreams(input, output)
-        assertTrue(result)
-        assertTrue(dataSource.isConnected)
-        dataSource.disconnect()
+        val connectJob = connectAsync(dataSource, input, output)
+        try {
+            await { dataSource.isConnected }
+            assertTrue(dataSource.isConnected)
+        } finally {
+            dataSource.disconnect()
+            connectJob.cancel()
+        }
     }
 
     @Test
@@ -151,9 +183,14 @@ class UsbAccessoryDataSourceTest {
         val dataSource = UsbAccessoryDataSource()
         val input = ByteArrayInputStream(ByteArray(0))
         val output = ByteArrayOutputStream()
-        dataSource.connectWithStreams(input, output)
-        dataSource.disconnect()
-        assertFalse(dataSource.isConnected)
+        val connectJob = connectAsync(dataSource, input, output)
+        try {
+            await { dataSource.isConnected }
+            dataSource.disconnect()
+            assertFalse(dataSource.isConnected)
+        } finally {
+            connectJob.cancel()
+        }
     }
 
     @Test
@@ -161,19 +198,23 @@ class UsbAccessoryDataSourceTest {
         val dataSource = UsbAccessoryDataSource()
         val output = ByteArrayOutputStream()
         val input = ByteArrayInputStream(ByteArray(0))
-        dataSource.connectWithStreams(input, output)
+        val connectJob = connectAsync(dataSource, input, output)
+        try {
+            await { dataSource.isConnected }
 
-        // Clear the config packet bytes written during connect
-        output.reset()
+            // Clear the config packet bytes written during connect
+            output.reset()
 
-        val data = "hello".toByteArray()
-        val result = kotlinx.coroutines.runBlocking {
-            dataSource.write(data)
+            val data = "hello".toByteArray()
+            val result = kotlinx.coroutines.runBlocking {
+                dataSource.write(data)
+            }
+            assertTrue(result)
+            assertArrayEquals(data, output.toByteArray())
+        } finally {
+            dataSource.disconnect()
+            connectJob.cancel()
         }
-        assertTrue(result)
-        assertArrayEquals(data, output.toByteArray())
-
-        dataSource.disconnect()
     }
 
     @Test
@@ -181,18 +222,23 @@ class UsbAccessoryDataSourceTest {
         val dataSource = UsbAccessoryDataSource()
         val output = ByteArrayOutputStream()
         val input = ByteArrayInputStream(ByteArray(0))
-        dataSource.connectWithStreams(input, output)
+        val connectJob = connectAsync(dataSource, input, output)
+        try {
+            await { dataSource.isConnected }
 
-        // Clear the config packet bytes written during connect
-        output.reset()
+            // Clear the config packet bytes written during connect
+            output.reset()
 
-        val data = ByteArray(200) { it.toByte() }
-        kotlinx.coroutines.runBlocking {
-            dataSource.write(data)
+            val data = ByteArray(200) { it.toByte() }
+            kotlinx.coroutines.runBlocking {
+                dataSource.write(data)
+            }
+
+            assertArrayEquals(data, output.toByteArray())
+        } finally {
+            dataSource.disconnect()
+            connectJob.cancel()
         }
-
-        assertArrayEquals(data, output.toByteArray())
-        dataSource.disconnect()
     }
 
     private fun getConstant(name: String): Any {
