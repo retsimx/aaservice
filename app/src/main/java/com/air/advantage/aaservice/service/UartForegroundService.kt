@@ -343,18 +343,22 @@ class UartForegroundService : Service() {
 
         val encrypted = CryptoHelper.encrypt(frame.toByteArray(Charsets.UTF_8))
         if (encrypted != null && encrypted.isNotEmpty()) {
-            val noPermIntent = Intent("com.air.advantage.MESSAGE_TO_CB_NO_PERMISSION_BROADCAST").apply {
-                component = ComponentName(
-                    "com.air.advantage.zone10",
-                    "com.air.advantage.ReceiverDataUartForNoPermissionBroadcast"
-                )
-                putExtra("com.air.advantage.GET_DATA_REQUEST", "rawCan")
-                putExtra("com.air.advantage.MESSAGE_TO_CB_NO_PERMISSION_BROADCAST", encrypted)
-            }
-            sendBroadcast(noPermIntent)
+            sendNoPermissionBroadcast("rawCan", encrypted)
         } else {
             Log.e(TAG, "Error encrypting rawCan message")
         }
+    }
+
+    private fun sendNoPermissionBroadcast(request: String, encrypted: ByteArray) {
+        val noPermIntent = Intent("com.air.advantage.MESSAGE_TO_CB_NO_PERMISSION_BROADCAST").apply {
+            component = ComponentName(
+                "com.air.advantage.zone10",
+                "com.air.advantage.ReceiverDataUartForNoPermissionBroadcast"
+            )
+            putExtra("com.air.advantage.GET_DATA_REQUEST", request)
+            putExtra("com.air.advantage.MESSAGE_TO_CB_NO_PERMISSION_BROADCAST", encrypted)
+        }
+        sendBroadcast(noPermIntent)
     }
 
     internal suspend fun periodicInfoBroadcast() {
@@ -367,10 +371,6 @@ class UartForegroundService : Service() {
             "com.air.android.secure_comms_fujitsu"
         else
             "com.air.android.secure_comms"
-        val noPermAction = if (isFujitsu)
-            "com.air.advantage.MESSAGE_FROM_CB_NO_PERMISSION_FUJITSU"
-        else
-            "com.air.advantage.MESSAGE_FROM_CB_NO_PERMISSION"
 
         while (true) {
             delay(5000)
@@ -397,11 +397,11 @@ class UartForegroundService : Service() {
             sendBroadcast(secureIntent, permission)
 
             val encrypted = CryptoHelper.encrypt(json.toByteArray(Charsets.UTF_8))
-            val noPermIntent = Intent(noPermAction).apply {
-                putExtra("com.air.advantage.GET_DATA_REQUEST", "aaServiceInfo")
-                putExtra(noPermAction, String(encrypted ?: ByteArray(0), Charsets.UTF_8))
+            if (encrypted != null && encrypted.isNotEmpty()) {
+                sendNoPermissionBroadcast("aaServiceInfo", encrypted)
+            } else {
+                Log.e(TAG, "Error encrypting aaServiceInfo message")
             }
-            sendBroadcast(noPermIntent)
         }
     }
 

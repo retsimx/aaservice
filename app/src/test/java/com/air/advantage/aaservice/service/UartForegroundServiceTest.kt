@@ -636,8 +636,7 @@ class UartForegroundServiceTest {
         job.cancel()
 
         verify(service).sendBroadcast(argThat<Intent> {
-            action == "com.air.advantage.MESSAGE_FROM_CB_NO_PERMISSION" ||
-                action == "com.air.advantage.MESSAGE_FROM_CB_NO_PERMISSION_FUJITSU"
+            action == "com.air.advantage.MESSAGE_TO_CB_NO_PERMISSION_BROADCAST"
         })
     }
 }

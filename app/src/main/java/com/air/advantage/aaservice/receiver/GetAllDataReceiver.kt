@@ -6,6 +6,8 @@ import android.content.Intent
 class GetAllDataReceiver : BaseReceiver() {
     override fun onReceive(context: Context, intent: Intent) {
         val s = service ?: return
+        if (!s.deviceOpen.get()) return
+
         val baseTags = listOf(
             "getSystemData", "getClock",
             "getZoneData?zone=1", "getZoneData?zone=2", "getZoneData?zone=3",
@@ -29,10 +31,8 @@ class GetAllDataReceiver : BaseReceiver() {
             s.broadcastData(tag)
         }
 
-        if (s.pollQueue.queueSize() == 18) {
-            scheduleTags.forEach { tag ->
-                s.requestSinglePoll(tag)
-            }
+        scheduleTags.forEach { tag ->
+            s.requestSinglePoll(tag)
         }
     }
 }
