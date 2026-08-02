@@ -34,7 +34,7 @@ class BroadcastCanToCbReceiverTest {
         val intent = mock(Intent::class.java)
         `when`(intent.getStringExtra("com.air.advantage.BROADCAST_CAN_TO_CB")).thenReturn("1 2 3")
         receiver.onReceive(context, intent)
-        verify(service).enqueueCanIds("1 2 3")
+        verify(service).enqueueBroadcastCanIds("1 2 3")
     }
 
     @Test
@@ -52,7 +52,7 @@ class BroadcastCanToCbReceiverTest {
         val intent = mock(Intent::class.java)
         `when`(intent.getStringExtra("com.air.advantage.BROADCAST_CAN_TO_CB")).thenReturn("42")
         receiver.onReceive(context, intent)
-        verify(service).enqueueCanIds("42")
+        verify(service).enqueueBroadcastCanIds("42")
     }
 
     @Test

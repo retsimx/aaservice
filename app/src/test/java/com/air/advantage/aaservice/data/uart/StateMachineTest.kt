@@ -3,6 +3,12 @@ package com.air.advantage.aaservice.data.uart
 import com.air.advantage.aaservice.data.protocol.CrcCalculator
 import com.air.advantage.aaservice.domain.state.UartDispatchEngine
 import com.air.advantage.aaservice.domain.state.UartEventSink
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
+import kotlinx.coroutines.launch
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -16,18 +22,29 @@ import java.util.concurrent.LinkedBlockingQueue
 
 class StateMachineTest {
 
+    private val testScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+
+    /**
+     * Launches the now-suspend [UsbAccessoryDataSource.connectWithStreams] in a background
+     * coroutine; it blocks for the lifetime of the read loop.
+     */
+    private fun connect(dataSource: UsbAccessoryDataSource, input: InputStream, output: OutputStream): Job =
+        testScope.launch { dataSource.connectWithStreams(input, output) }
+
     @Test
     fun `config packet is the first write and nothing else is written yet`() {
         val input = BlockingInputStream()
         val output = ByteArrayOutputStream()
         val dataSource = UsbAccessoryDataSource()
+        val connectJob = connect(dataSource, input, output)
         try {
-            assertTrue(dataSource.connectWithStreams(input, output))
+            await { dataSource.isConnected }
             assertTrue(dataSource.isConnected)
             assertArrayEquals(CONFIG_BYTES, output.toByteArray())
         } finally {
             input.finish()
             dataSource.disconnect()
+            connectJob.cancel()
         }
     }
 
@@ -44,10 +61,34 @@ class StateMachineTest {
         }
         val dataSource = UsbAccessoryDataSource()
         try {
-            val result = dataSource.connectWithStreams(BlockingInputStream(), failingOutput)
-            assertFalse(result)
+            val result = testScope.async {
+                dataSource.connectWithStreams(BlockingInputStream(), failingOutput)
+            }
+            assertFalse(kotlinx.coroutines.runBlocking { result.await() })
             assertFalse(dataSource.isConnected)
         } finally {
+            dataSource.disconnect()
+        }
+    }
+
+    @Test
+    fun `connectWithStreams blocks until the read loop terminates`() {
+        val input = BlockingInputStream()
+        val output = ByteArrayOutputStream()
+        val dataSource = UsbAccessoryDataSource()
+        try {
+            val connectResult = testScope.async { dataSource.connectWithStreams(input, output) }
+            await { dataSource.isConnected }
+            assertFalse("connect must not return while the read loop is running", connectResult.isCompleted)
+
+            input.finish()
+            dataSource.disconnect()
+            assertTrue(
+                "connect must return once the read loop terminates",
+                kotlinx.coroutines.runBlocking { connectResult.await() }
+            )
+        } finally {
+            input.finish()
             dataSource.disconnect()
         }
     }
@@ -58,8 +99,9 @@ class StateMachineTest {
         val input = BlockingInputStream()
         val output = ByteArrayOutputStream()
         val dataSource = UsbAccessoryDataSource(engine = engine(sink))
+        val connectJob = connect(dataSource, input, output)
         try {
-            assertTrue(dataSource.connectWithStreams(input, output))
+            await { dataSource.isConnected }
 
             input.push(PING_FRAME)
             val expected = frame("getClock")
@@ -72,6 +114,7 @@ class StateMachineTest {
         } finally {
             input.finish()
             dataSource.disconnect()
+            connectJob.cancel()
         }
     }
 
@@ -81,8 +124,9 @@ class StateMachineTest {
         val input = BlockingInputStream()
         val output = ByteArrayOutputStream()
         val dataSource = UsbAccessoryDataSource(engine = engine(sink))
+        val connectJob = connect(dataSource, input, output)
         try {
-            assertTrue(dataSource.connectWithStreams(input, output))
+            await { dataSource.isConnected }
 
             input.push(frame("<request>getClock</request><clock><time>10:00</time></clock>"))
             await { sink.pollData.isNotEmpty() }
@@ -92,6 +136,7 @@ class StateMachineTest {
         } finally {
             input.finish()
             dataSource.disconnect()
+            connectJob.cancel()
         }
     }
 
@@ -101,8 +146,9 @@ class StateMachineTest {
         val input = BlockingInputStream()
         val output = ByteArrayOutputStream()
         val dataSource = UsbAccessoryDataSource(engine = engine(sink))
+        val connectJob = connect(dataSource, input, output)
         try {
-            assertTrue(dataSource.connectWithStreams(input, output))
+            await { dataSource.isConnected }
 
             input.push(PING_FRAME)
             input.push(PING_FRAME)
@@ -112,6 +158,7 @@ class StateMachineTest {
         } finally {
             input.finish()
             dataSource.disconnect()
+            connectJob.cancel()
         }
     }
 
@@ -121,8 +168,9 @@ class StateMachineTest {
         val input = BlockingInputStream()
         val output = ByteArrayOutputStream()
         val dataSource = UsbAccessoryDataSource(engine = engine(sink))
+        val connectJob = connect(dataSource, input, output)
         try {
-            assertTrue(dataSource.connectWithStreams(input, output))
+            await { dataSource.isConnected }
 
             val combined = PING_FRAME + PING_FRAME + frame("<request>getClock</request><state>cool</state>")
             input.push(combined)
@@ -135,6 +183,7 @@ class StateMachineTest {
         } finally {
             input.finish()
             dataSource.disconnect()
+            connectJob.cancel()
         }
     }
 
@@ -144,8 +193,9 @@ class StateMachineTest {
         val input = BlockingInputStream()
         val output = ByteArrayOutputStream()
         val dataSource = UsbAccessoryDataSource(engine = engine(sink))
+        val connectJob = connect(dataSource, input, output)
         try {
-            assertTrue(dataSource.connectWithStreams(input, output))
+            await { dataSource.isConnected }
 
             input.push(frame("getCAN 12345"))
             await { sink.rawCan.isNotEmpty() }
@@ -157,6 +207,7 @@ class StateMachineTest {
         } finally {
             input.finish()
             dataSource.disconnect()
+            connectJob.cancel()
         }
     }
 
@@ -166,8 +217,9 @@ class StateMachineTest {
         val input = BlockingInputStream()
         val output = ByteArrayOutputStream()
         val dataSource = UsbAccessoryDataSource(engine = engine(sink))
+        val connectJob = connect(dataSource, input, output)
         try {
-            assertTrue(dataSource.connectWithStreams(input, output))
+            await { dataSource.isConnected }
 
             input.push(frame("getCAN 12345"))
             await { sink.rawCan.isNotEmpty() }
@@ -180,6 +232,29 @@ class StateMachineTest {
         } finally {
             input.finish()
             dataSource.disconnect()
+            connectJob.cancel()
+        }
+    }
+
+    @Test
+    fun `corrupt getCAN frame arms ackCAN zero without broadcasting`() {
+        val sink = RecordingSink()
+        val input = BlockingInputStream()
+        val output = ByteArrayOutputStream()
+        val dataSource = UsbAccessoryDataSource(engine = engine(sink))
+        val connectJob = connect(dataSource, input, output)
+        try {
+            await { dataSource.isConnected }
+
+            input.push(corruptFrame(frame("getCAN 9999")))
+            input.push(PING_FRAME)
+            await { String(output.toByteArray(), Charsets.UTF_8).contains("ackCAN 0") }
+
+            assertTrue("corrupt getCAN must not broadcast", sink.rawCan.isEmpty())
+        } finally {
+            input.finish()
+            dataSource.disconnect()
+            connectJob.cancel()
         }
     }
 

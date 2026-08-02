@@ -254,4 +254,20 @@ class OnStartCommandTest {
         assertEquals(Service.START_NOT_STICKY, result)
         assertTrue("service should stopSelf", shadowOf(service).isStoppedBySelf)
     }
+
+    @Test
+    fun `onDestroy cancels a pending OPEN_DEVICE alarm`() {
+        enableDeviceAdmin()
+        val accessory = attachAccessory()
+        grantPermission(accessory)
+
+        service.onStartCommand(
+            Intent().setAction(ServiceHelper.ACTION_REQUEST_PERMISSION), 0, 1
+        )
+        assertEquals(ServiceHelper.ACTION_OPEN_DEVICE, nextScheduledAlarmAction())
+
+        service.onDestroy()
+
+        assertNull("OPEN_DEVICE alarm must be cancelled on destroy", nextScheduledAlarmAction())
+    }
 }

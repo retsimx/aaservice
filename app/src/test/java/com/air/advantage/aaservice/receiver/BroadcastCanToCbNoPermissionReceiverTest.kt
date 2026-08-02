@@ -42,7 +42,7 @@ class BroadcastCanToCbNoPermissionReceiverTest {
             whenever(intent.getByteArrayExtra("com.air.advantage.BROADCAST_CAN_TO_CB_NO_PERMISSION")).thenReturn(encrypted)
 
             receiver.onReceive(context, intent)
-            verify(service).enqueueCanIds("10 20 30")
+            verify(service).enqueueBroadcastCanIds("10 20 30")
         }
     }
 

@@ -49,6 +49,7 @@ class UartDispatchEngine(
     private val pollList: List<String> = pollTags.map { framed(it) }
 
     private val canQueue = ArrayDeque<String>()
+    private val broadcastCanQueue = ArrayDeque<String>()
     private val directQueue = ArrayDeque<String>()
 
     private var pollIndex = 0
@@ -138,14 +139,6 @@ class UartDispatchEngine(
                 if (expectingAck) {
                     logger("Warning got a failed ack back")
                 }
-                if (canRetryCount < 3) {
-                    canRetryCount++
-                    canRetry = true
-                } else {
-                    canRetryCount = 0
-                    canRetry = false
-                }
-                canMessageArmed = false
                 if (parser.isUnknown(payload) >= 0) {
                     logger("CB doesn't support can messages")
                     canUnsupported = true
@@ -254,12 +247,41 @@ class UartDispatchEngine(
     }
 
     /**
+     * Adds broadcast CAN ids to the dedicated broadcast queue, skipping ids already queued.
+     * Mirrors the reference `ServiceUart.f4131f` list, which is only consulted as a fallback
+     * when the CAN queue is empty.
+     */
+    fun enqueueBroadcastCanIds(ids: List<Int>) {
+        synchronized(lock) {
+            for (id in ids) {
+                val idStr = id.toString()
+                if (!broadcastCanQueue.contains(idStr)) {
+                    broadcastCanQueue.addLast(idStr)
+                }
+            }
+        }
+    }
+
+    /**
+     * Arms the outbound `ackCAN` reply without an inbound frame having passed CRC validation.
+     * Mirrors the reference read-loop arming (`ServiceUart$k.e()`), which sets `f4169v = true`
+     * whenever `getCAN ` appears in the buffer regardless of the CRC outcome.
+     */
+    fun armAckCan() {
+        synchronized(lock) {
+            ackCanPending = true
+            canMessageArmed = false
+        }
+    }
+
+    /**
      * Resets all engine state and clears the response cache.
      */
     fun reset() {
         synchronized(lock) {
             pollIndex = 0
             canQueue.clear()
+            broadcastCanQueue.clear()
             directQueue.clear()
             ackCanPending = false
             lastCrcOk = true
@@ -303,8 +325,8 @@ class UartDispatchEngine(
             sb.append(canQueue.removeFirst())
             popped++
         }
-        if (popped == 0 && directQueue.isNotEmpty()) {
-            sb.append(directQueue.removeFirst())
+        if (popped == 0 && broadcastCanQueue.isNotEmpty()) {
+            sb.append(broadcastCanQueue.removeFirst())
         }
         val bytes = framed(sb.toString()).toByteArray(StandardCharsets.UTF_8)
         if (bytes.size > 17) {
