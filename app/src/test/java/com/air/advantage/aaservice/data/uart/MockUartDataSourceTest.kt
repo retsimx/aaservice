@@ -1,9 +1,9 @@
 package com.air.advantage.aaservice.data.uart
 
 import android.hardware.usb.UsbAccessory
+import com.air.advantage.aaservice.data.protocol.CrcCalculator
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
-import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
@@ -23,6 +23,8 @@ class MockUartDataSourceTest {
         mockDataSource = MockUartDataSource()
         usbAccessory = mock(UsbAccessory::class.java)
     }
+
+    // ── interface contract ───────────────────────────────────────
 
     @Test
     fun `implements UartDataSource interface`() {
@@ -72,89 +74,131 @@ class MockUartDataSourceTest {
         assertNotNull(flow)
     }
 
+    // ── valid wire frames ────────────────────────────────────────
+
     @Test
-    fun `ping command returns ping response and ack`() {
+    fun `ping write emits ping frame followed by ack frame`() {
         mockDataSource.connect(usbAccessory)
 
-        val response = runBlocking {
-            mockDataSource.write("Ping".toByteArray())
-            mockDataSource.read().first()
-        }
+        val response = writeAndRead("Ping")
+        val frames = splitFrames(response)
 
-        val responseStr = String(response, StandardCharsets.UTF_8)
-        assertTrue(responseStr.contains("<U>Ping</U=db>"))
-        assertTrue(responseStr.contains("<ack>1</ack>"))
+        assertEquals(2, frames.size)
+        assertEquals(MockUartDataSource.PING_FRAME, frames[0])
+        assertFrame(frames[1], ACK_PAYLOAD)
     }
 
     @Test
-    fun `getSystemData returns system data frame`() {
+    fun `ping response frames are frame-detectable`() {
         mockDataSource.connect(usbAccessory)
 
-        val response = runBlocking {
-            mockDataSource.write("getSystemData".toByteArray())
-            mockDataSource.read().first()
-        }
+        val response = writeAndRead("Ping")
+        val frames = splitFrames(response)
 
-        val responseStr = String(response, StandardCharsets.UTF_8)
-        assertTrue(responseStr.contains("type=17"))
-        assertTrue(responseStr.contains("AppStore=MyAir5"))
-        assertTrue(responseStr.contains("<ack>1</ack>"))
+        frames.forEach { frame ->
+            assertTrue("Frame must start with <U>", frame.startsWith("<U>"))
+            assertTrue("Frame must end with footer", frame.contains("</U="))
+        }
     }
 
     @Test
-    fun `getClock returns clock response`() {
+    fun `getSystemData returns valid frame with expected payload`() {
         mockDataSource.connect(usbAccessory)
 
-        val response = runBlocking {
-            mockDataSource.write("getClock".toByteArray())
-            mockDataSource.read().first()
-        }
+        val response = writeAndRead("getSystemData")
+        val frames = splitFrames(response)
 
-        val responseStr = String(response, StandardCharsets.UTF_8)
-        assertTrue(responseStr.contains("time="))
-        assertTrue(responseStr.contains("<ack>1</ack>"))
+        assertEquals(2, frames.size)
+        assertEquals(MockUartDataSource.PING_FRAME, frames[0])
+        assertFrame(frames[1], SYSTEM_DATA_PAYLOAD)
     }
 
     @Test
-    fun `getZoneData zone 1 returns zone data`() {
+    fun `getSystemData frame footer CRC matches payload`() {
         mockDataSource.connect(usbAccessory)
 
-        val response = runBlocking {
-            mockDataSource.write("getZoneData?zone=1".toByteArray())
-            mockDataSource.read().first()
-        }
+        val response = writeAndRead("getSystemData")
+        val frames = splitFrames(response)
 
-        val responseStr = String(response, StandardCharsets.UTF_8)
-        assertTrue(responseStr.contains("zone=1"))
-        assertTrue(responseStr.contains("state=off"))
-        assertTrue(responseStr.contains("<ack>1</ack>"))
+        val expectedCrc = CrcCalculator.computeHex(SYSTEM_DATA_PAYLOAD)
+        assertTrue("Missing expected CRC footer", frames[1].endsWith("</U=$expectedCrc>"))
+    }
+
+    @Test
+    fun `getClock returns valid frame with fixed time`() {
+        mockDataSource.connect(usbAccessory)
+
+        val response = writeAndRead("getClock")
+        val frames = splitFrames(response)
+
+        assertEquals(2, frames.size)
+        assertEquals(MockUartDataSource.PING_FRAME, frames[0])
+        assertFrame(frames[1], CLOCK_PAYLOAD)
+    }
+
+    @Test
+    fun `getZoneData zone 1 returns valid zone frame`() {
+        mockDataSource.connect(usbAccessory)
+
+        val response = writeAndRead("getZoneData?zone=1")
+        val frames = splitFrames(response)
+
+        assertEquals(2, frames.size)
+        assertFrame(frames[1], zonePayload(1))
     }
 
     @Test
     fun `getZoneData zone 5 returns zone data for zone 5`() {
         mockDataSource.connect(usbAccessory)
 
-        val response = runBlocking {
-            mockDataSource.write("getZoneData?zone=5".toByteArray())
-            mockDataSource.read().first()
-        }
+        val response = writeAndRead("getZoneData?zone=5")
+        val frames = splitFrames(response)
 
-        val responseStr = String(response, StandardCharsets.UTF_8)
-        assertTrue(responseStr.contains("zone=5"))
-        assertTrue(responseStr.contains("state=off"))
+        assertFrame(frames[1], zonePayload(5))
     }
 
     @Test
-    fun `unknown command returns ack`() {
+    fun `getZoneData zone 10 returns zone data for zone 10`() {
         mockDataSource.connect(usbAccessory)
 
-        val response = runBlocking {
-            mockDataSource.write("someUnknownCommand".toByteArray())
-            mockDataSource.read().first()
-        }
+        val response = writeAndRead("getZoneData?zone=10")
+        val frames = splitFrames(response)
 
-        val responseStr = String(response, StandardCharsets.UTF_8)
-        assertTrue(responseStr.contains("<ack>1</ack>"))
+        assertFrame(frames[1], zonePayload(10))
+    }
+
+    @Test
+    fun `getZoneData without zone defaults to zone 1`() {
+        mockDataSource.connect(usbAccessory)
+
+        val response = writeAndRead("getZoneData")
+        val frames = splitFrames(response)
+
+        assertFrame(frames[1], zonePayload(1))
+    }
+
+    @Test
+    fun `zone data frame carries a valid CRC footer`() {
+        mockDataSource.connect(usbAccessory)
+
+        val response = writeAndRead("getZoneData?zone=3")
+        val frames = splitFrames(response)
+        val payload = zonePayload(3)
+        val expectedCrc = CrcCalculator.computeHex(payload)
+
+        assertEquals("<U>$payload</U=$expectedCrc>", frames[1])
+    }
+
+    @Test
+    fun `unknown command returns ack frame`() {
+        mockDataSource.connect(usbAccessory)
+
+        val response = writeAndRead("someUnknownCommand")
+        val frames = splitFrames(response)
+
+        assertEquals(2, frames.size)
+        assertEquals(MockUartDataSource.PING_FRAME, frames[0])
+        assertFrame(frames[1], ACK_PAYLOAD)
     }
 
     @Test
@@ -171,12 +215,9 @@ class MockUartDataSourceTest {
         )
 
         for (command in pollCommands) {
-            val response = runBlocking {
-                mockDataSource.write(command.toByteArray())
-                mockDataSource.read().first()
-            }
-            assertNotNull(response)
-            assertTrue("Response for $command should not be empty", response.isNotEmpty())
+            val frames = splitFrames(writeAndRead(command))
+            assertTrue("Response for $command should contain ping + response", frames.size == 2)
+            assertEquals("Response for $command should lead with ping", MockUartDataSource.PING_FRAME, frames[0])
         }
     }
 
@@ -184,15 +225,11 @@ class MockUartDataSourceTest {
     fun `multiple writes produce multiple responses`() {
         mockDataSource.connect(usbAccessory)
 
-        runBlocking {
-            mockDataSource.write("Ping".toByteArray())
-            val response1 = mockDataSource.read().first()
-            assertTrue(String(response1, StandardCharsets.UTF_8).contains("Ping"))
+        val response1 = writeAndRead("Ping")
+        val response2 = writeAndRead("getClock")
 
-            mockDataSource.write("getClock".toByteArray())
-            val response2 = mockDataSource.read().first()
-            assertTrue(String(response2, StandardCharsets.UTF_8).contains("time="))
-        }
+        assertTrue(String(response1, StandardCharsets.UTF_8).contains("Ping"))
+        assertTrue(String(response2, StandardCharsets.UTF_8).contains("getClock"))
     }
 
     @Test
@@ -207,55 +244,69 @@ class MockUartDataSourceTest {
     }
 
     @Test
-    fun `getZoneData zone 10 returns zone data for zone 10`() {
+    fun `system data response contains original MyAppRev`() {
         mockDataSource.connect(usbAccessory)
 
-        val response = runBlocking {
-            mockDataSource.write("getZoneData?zone=10".toByteArray())
-            mockDataSource.read().first()
-        }
+        val frames = splitFrames(writeAndRead("getSystemData"))
 
-        val responseStr = String(response, StandardCharsets.UTF_8)
-        assertTrue(responseStr.contains("zone=10"))
-        assertTrue(responseStr.contains("state=off"))
-    }
-
-    @Test
-    fun `system data response contains correct model`() {
-        mockDataSource.connect(usbAccessory)
-
-        val response = runBlocking {
-            mockDataSource.write("getSystemData".toByteArray())
-            mockDataSource.read().first()
-        }
-
-        val responseStr = String(response, StandardCharsets.UTF_8)
-        assertTrue(responseStr.contains("Model=MyAir5"))
+        assertTrue(frames[1].contains("14.148"))
     }
 
     @Test
     fun `zone data response contains default temp`() {
         mockDataSource.connect(usbAccessory)
 
-        val response = runBlocking {
-            mockDataSource.write("getZoneData?zone=1".toByteArray())
-            mockDataSource.read().first()
-        }
+        val frames = splitFrames(writeAndRead("getZoneData?zone=1"))
 
-        val responseStr = String(response, StandardCharsets.UTF_8)
-        assertTrue(responseStr.contains("temp=21.0"))
+        assertTrue(frames[1].contains("temp>21.0"))
     }
 
     @Test
     fun `zone data response contains default fan mode`() {
         mockDataSource.connect(usbAccessory)
 
-        val response = runBlocking {
-            mockDataSource.write("getZoneData?zone=1".toByteArray())
-            mockDataSource.read().first()
-        }
+        val frames = splitFrames(writeAndRead("getZoneData?zone=1"))
 
-        val responseStr = String(response, StandardCharsets.UTF_8)
-        assertTrue(responseStr.contains("fan=auto"))
+        assertTrue(frames[1].contains("fan>auto"))
+    }
+
+    // ── helpers ──────────────────────────────────────────────────
+
+    private fun writeAndRead(command: String): ByteArray = runBlocking {
+        mockDataSource.write(command.toByteArray())
+        mockDataSource.read().first()
+    }
+
+    private fun splitFrames(response: ByteArray): List<String> {
+        val text = String(response, StandardCharsets.UTF_8)
+        val frames = mutableListOf<String>()
+        var index = 0
+        while (true) {
+            val start = text.indexOf("<U>", index)
+            if (start < 0) break
+            val endMarker = text.indexOf("</U=", start)
+            if (endMarker < 0) break
+            val end = text.indexOf(">", endMarker)
+            if (end < 0) break
+            frames.add(text.substring(start, end + 1))
+            index = end + 1
+        }
+        return frames
+    }
+
+    private fun assertFrame(frame: String, payload: String) {
+        val expectedCrc = CrcCalculator.computeHex(payload)
+        assertEquals("Frame must be <U>payload</U=crc>", "<U>$payload</U=$expectedCrc>", frame)
+    }
+
+    private fun zonePayload(zone: Int): String =
+        "<request>getZoneData</request><zone>$zone</zone><state>off</state><temp>21.0</temp><fan>auto</fan>"
+
+    private companion object {
+        const val ACK_PAYLOAD = "<ack>1</ack>"
+        val SYSTEM_DATA_PAYLOAD = ("<request>getSystemData</request><type>00</type><AppStore>x</AppStore>" +
+            "<dhcp>192.168.1.1</dhcp><subnet>255.255.255.0</subnet><gateway>192.168.1.254</gateway>" +
+            "<MyAppRev>14.148</MyAppRev>")
+        val CLOCK_PAYLOAD = "<request>getClock</request><time>2026-08-02 12:00:00</time>"
     }
 }

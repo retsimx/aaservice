@@ -1,21 +1,17 @@
 package com.air.advantage.aaservice.service
 
-import com.air.advantage.aaservice.data.uart.UartDataSource
-import com.air.advantage.aaservice.domain.model.CanMessage
-import com.air.advantage.aaservice.domain.state.UartState
-import com.air.advantage.aaservice.domain.state.UartStateMachine
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.flowOf
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
+import android.content.ContextWrapper
+import android.content.Intent
+import com.air.advantage.aaservice.data.protocol.CrcCalculator
 import org.junit.After
 import org.junit.Assert.*
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
-import org.mockito.kotlin.*
 import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.RuntimeEnvironment
+import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 
 @RunWith(RobolectricTestRunner::class)
@@ -27,7 +23,7 @@ class UartForegroundServiceProcessPollTest {
     @Before
     fun setUp() {
         val controller = Robolectric.buildService(UartForegroundService::class.java)
-        service = controller.create().get()
+        service = controller.get()
 
         UartForegroundService.instance = service
     }
@@ -38,137 +34,104 @@ class UartForegroundServiceProcessPollTest {
         UartForegroundService.instance = null
     }
 
-    // ── handlePollCycle tests ────────────────────────────────────
+    private fun sentBroadcasts(): List<Intent> =
+        shadowOf(RuntimeEnvironment.getApplication() as ContextWrapper).broadcastIntents
+
+    // ── ping → poll → response loop ──────────────────────────────
 
     @Test
-    fun `handlePollCycle sends current poll and advances`() {
-        runBlocking {
-            val dataSource = mock<UartDataSource>()
-            whenever(dataSource.isConnected).thenReturn(true)
-            whenever(dataSource.read()).thenReturn(flowOf(ByteArray(0)))
+    fun `onPing returns framed current poll tag without advancing`() {
+        val frame = service.dispatchEngine.onPing()
+        assertNotNull(frame)
+        val expectedCrc = CrcCalculator.computeHex("getSystemData")
+        assertEquals("<U>getSystemData</U=$expectedCrc>", String(frame!!, Charsets.UTF_8))
+        assertEquals(0, service.dispatchEngine.currentPollIndex())
+    }
 
-            service.pollQueue.initialize(isMyAir5 = true)
-            service.handlePollCycle(dataSource)
-            delay(120)
+    @Test
+    fun `matching response advances poll index`() {
+        val engine = service.dispatchEngine
+        engine.onPing()
+        engine.onFrame(SYSTEM_DATA)
+        assertEquals(1, engine.currentPollIndex())
+    }
 
-            verify(dataSource, atLeastOnce()).write(any())
+    @Test
+    fun `mismatched response does not advance poll index`() {
+        val engine = service.dispatchEngine
+        engine.onPing()
+        engine.onFrame("<request>getClock</request><time>t</time>".toByteArray())
+        assertEquals(0, engine.currentPollIndex())
+    }
+
+    @Test
+    fun `poll index wraps to zero after last tag`() {
+        val engine = service.dispatchEngine
+        POLL_TAGS.forEachIndexed { i, tag ->
+            assertEquals(i, engine.currentPollIndex())
+            val base = tag.substringBefore("?")
+            val payload = if (tag == "getSystemData") SYSTEM_DATA
+            else "<request>$base</request><dummy>1</dummy>".toByteArray()
+            engine.onFrame(payload)
         }
+        assertEquals(0, engine.currentPollIndex())
     }
 
     @Test
-    fun `handlePollCycle with empty queue does not write to data source`() {
-        runBlocking {
-            val dataSource = mock<UartDataSource>()
-            whenever(dataSource.isConnected).thenReturn(true)
-            whenever(dataSource.read()).thenReturn(flowOf(ByteArray(0)))
+    fun `ping poll response loop caches and broadcasts transformed data`() {
+        service.deviceOpen.set(true)
+        val engine = service.dispatchEngine
+        engine.onPing()
+        engine.onFrame(SYSTEM_DATA)
 
-            // Don't initialize poll queue - leave it empty
-
-            service.handlePollCycle(dataSource)
-            delay(120)
-
-            verify(dataSource, never()).write(any())
-        }
+        val cached = service.dataCache.get("getSystemData")
+        assertNotNull(cached)
+        assertTrue(String(cached!!, Charsets.UTF_8).contains("<type>17</type>"))
+        val sent = sentBroadcasts()
+        assertTrue(sent.any { it.getStringExtra("com.air.advantage.GET_DATA_REQUEST") == "getSystemData" })
     }
 
     @Test
-    fun `handlePollCycle advances poll index correctly`() {
-        runBlocking {
-            val dataSource = mock<UartDataSource>()
-            whenever(dataSource.isConnected).thenReturn(true)
-            whenever(dataSource.read()).thenReturn(flowOf(ByteArray(0)))
+    fun `direct message is sent before poll on next ping`() {
+        service.enqueueUartMessage("Temperature")
+        val frame = service.dispatchEngine.onPing()
+        assertNotNull(frame)
+        val expectedCrc = CrcCalculator.computeHex("Temperature")
+        assertEquals("<U>Temperature</U=$expectedCrc>", String(frame!!, Charsets.UTF_8))
+        assertEquals(0, service.dispatchEngine.currentPollIndex())
+    }
 
-            service.pollQueue.initialize(isMyAir5 = true)
-            service.handlePollCycle(dataSource)
-            delay(120)
+    // ── CAN-pending path ─────────────────────────────────────────
 
-            verify(dataSource, atLeastOnce()).write(any())
-            val state = service.stateMachine.getCurrentState()
-            assertTrue("Should be in AwaitingResponse state", state is UartState.AwaitingResponse)
-        }
+    @Test
+    fun `CAN pending returns setCAN frame before poll`() {
+        val engine = service.dispatchEngine
+        service.enqueueCanIds("1 2 3 4 5")
+        engine.onPing()
+        val frame = engine.onPing()
+        assertNotNull(frame)
+        val text = String(frame!!, Charsets.UTF_8)
+        assertTrue(text.startsWith("<U>setCAN "))
+        assertTrue(text.contains("1 2 3 4 5"))
+        assertFalse(text.contains("getSystemData"))
     }
 
     @Test
-    fun `handlePollCycle with CAN queue pending sends CAN frame`() {
-        runBlocking {
-            val dataSource = mock<UartDataSource>()
-            whenever(dataSource.isConnected).thenReturn(true)
-            whenever(dataSource.read()).thenReturn(flowOf(ByteArray(0)))
-
-            // Enqueue enough CAN IDs to make frame > 17 chars
-            (1..10).forEach { id ->
-                service.canQueue.enqueue(CanMessage(id = id, data = "test"))
-            }
-
-            service.handlePollCycle(dataSource)
-            delay(120)
-
-            verify(dataSource, atLeastOnce()).write(any())
-            assertTrue("CAN queue should be cleared", service.canQueue.isEmpty())
-        }
+    fun `setCAN reply advances CAN queue ids`() {
+        val engine = service.dispatchEngine
+        service.enqueueCanIds("1 2 3 4 5 6 7 8 9 10")
+        engine.onPing()
+        val first = engine.onPing()
+        val second = engine.onPing()
+        assertNotNull(first)
+        assertNotNull(second)
+        val firstText = String(first!!, Charsets.UTF_8)
+        assertTrue(firstText.startsWith("<U>setCAN "))
+        // second ping after the CAN send arms the poll again
+        assertTrue(String(second!!, Charsets.UTF_8).contains("getSystemData"))
     }
 
-    // ── sendCanMessages tests ────────────────────────────────────
-
-    @Test
-    fun `sendCanMessages with short frame skips write`() {
-        runBlocking {
-            val dataSource = mock<UartDataSource>()
-            service.canQueue.enqueue(CanMessage(id = 1, data = "hi"))
-
-            service.sendCanMessages(dataSource)
-            delay(50)
-
-            verify(dataSource, never()).write(any())
-        }
-    }
-
-    @Test
-    fun `sendCanMessages with valid frame writes and clears queue`() {
-        runBlocking {
-            val dataSource = mock<UartDataSource>()
-            (1..10).forEach { id ->
-                service.canQueue.enqueue(CanMessage(id = id, data = ""))
-            }
-
-            service.sendCanMessages(dataSource)
-            delay(50)
-
-            verify(dataSource).write(any())
-            assertTrue(service.canQueue.isEmpty())
-        }
-    }
-
-    // ── State machine tests ──────────────────────────────────────
-
-    @Test
-    fun `state machine starts in Disconnected state`() {
-        val stateMachine = UartStateMachine()
-        assertEquals(UartState.Disconnected, stateMachine.getCurrentState())
-    }
-
-    @Test
-    fun `state machine transitions to AwaitingResponse after sendPoll`() {
-        val stateMachine = UartStateMachine()
-        stateMachine.onSendPoll("getSystemData", ByteArray(10))
-        assertEquals(UartState.AwaitingResponse("getSystemData", 0, true), stateMachine.getCurrentState())
-    }
-
-    @Test
-    fun `state machine advances after 3 retries then skip`() {
-        val stateMachine = UartStateMachine()
-        stateMachine.onSendPoll("getClock", ByteArray(10))
-
-        stateMachine.onNoResponse()
-        stateMachine.onNoResponse()
-        stateMachine.onNoResponse()
-
-        val state = stateMachine.getCurrentState()
-        assertTrue("Should be Polling after 3 retries", state is UartState.Polling)
-        assertEquals(1, (state as UartState.Polling).index)
-    }
-
-    // ── Data cache tests ─────────────────────────────────────────
+    // ── data cache ───────────────────────────────────────────────
 
     @Test
     fun `dataCache stores and retrieves data correctly`() {
@@ -199,7 +162,7 @@ class UartForegroundServiceProcessPollTest {
         assertFalse(service.dataCache.hasChanged(tag, data))
     }
 
-    // ── PollQueueRepository tests ────────────────────────────────
+    // ── PollQueueRepository ──────────────────────────────────────
 
     @Test
     fun `pollQueue returns correct entry after initialization`() {
@@ -218,5 +181,25 @@ class UartForegroundServiceProcessPollTest {
 
         assertNotNull(current)
         assertEquals("getClock", current?.tag)
+    }
+
+    private companion object {
+        val POLL_TAGS = listOf(
+            "getSystemData",
+            "getClock",
+            "getZoneData?zone=1",
+            "getZoneData?zone=2",
+            "getZoneData?zone=3",
+            "getZoneData?zone=4",
+            "getZoneData?zone=5",
+            "getZoneData?zone=6",
+            "getZoneData?zone=7",
+            "getZoneData?zone=8",
+            "getZoneData?zone=9",
+            "getZoneData?zone=10"
+        )
+        val SYSTEM_DATA = ("<request>getSystemData</request><type>00</type><AppStore>x</AppStore>" +
+            "<dhcp>192.168.1.1</dhcp><subnet>255.255.255.0</subnet><gateway>192.168.1.254</gateway>" +
+            "<MyAppRev>14.148</MyAppRev>").toByteArray(Charsets.UTF_8)
     }
 }
