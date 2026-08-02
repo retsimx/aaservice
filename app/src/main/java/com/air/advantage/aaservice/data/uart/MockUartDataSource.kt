@@ -2,6 +2,7 @@ package com.air.advantage.aaservice.data.uart
 
 import android.hardware.usb.UsbAccessory
 import android.util.Log
+import com.air.advantage.aaservice.data.protocol.CrcCalculator
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -10,10 +11,16 @@ import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.asSharedFlow
 import java.nio.charset.StandardCharsets
-import java.text.SimpleDateFormat
-import java.util.Date
-import java.util.Locale
 
+/**
+ * Simulated USB accessory that speaks the real wire protocol.
+ *
+ * Every [write] emits the deterministic sequence `[ping frame] + [response frame]`. The ping
+ * frame drives the read-loop dispatch (`onPing()` → outbound write), and the response frame is
+ * then CRC-validated and handed to the engine via `onFrame()`. Frames use the wire format
+ * `<U>{payload}</U={crc}>` where the CRC footer is [CrcCalculator.computeHex] over the payload,
+ * so a real [UsbAccessoryDataSource] framing loop can detect and validate them.
+ */
 class MockUartDataSource : UartDataSource {
 
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
@@ -32,7 +39,7 @@ class MockUartDataSource : UartDataSource {
         return true
     }
 
-   override suspend fun write(data: ByteArray): Boolean {
+    override suspend fun write(data: ByteArray): Boolean {
         if (!connected) return false
 
         val message = String(data, StandardCharsets.UTF_8)
@@ -56,66 +63,51 @@ class MockUartDataSource : UartDataSource {
     }
 
     private fun generateResponse(message: String): ByteArray {
-        return when {
-            message.contains("Ping") -> buildPingResponse()
-            message.contains("getSystemData") -> buildSystemDataResponse()
-            message.contains("getClock") -> buildClockResponse()
-            message.contains("getZoneData") -> buildZoneDataResponse(message)
-            else -> buildAckResponse()
+        val pingFrame = PING_FRAME
+        val responseFrame = when {
+            message.contains("Ping") -> frame(ACK_PAYLOAD)
+            message.contains("getSystemData") -> buildSystemDataFrame()
+            message.contains("getClock") -> buildClockFrame()
+            message.contains("getZoneData") -> buildZoneDataFrame(message)
+            else -> frame(ACK_PAYLOAD)
         }
+        val combined = pingFrame + responseFrame
+        Log.d(TAG, "Mock response: $combined")
+        return combined.toByteArray(StandardCharsets.UTF_8)
     }
 
-    private fun buildPingResponse(): ByteArray {
-        val pingFrame = "<U>Ping</U=db>".toByteArray(StandardCharsets.UTF_8)
-        val ackFrame = "<ack>1</ack>".toByteArray(StandardCharsets.UTF_8)
-        val combined = ByteArray(pingFrame.size + ackFrame.size)
-        System.arraycopy(pingFrame, 0, combined, 0, pingFrame.size)
-        System.arraycopy(ackFrame, 0, combined, pingFrame.size, ackFrame.size)
-        Log.d(TAG, "Mock response: Ping + ack")
-        return combined
-    }
+    private fun buildSystemDataFrame(): String = frame(
+        "<request>getSystemData</request>" +
+            "<type>00</type>" +
+            "<AppStore>x</AppStore>" +
+            "<dhcp>192.168.1.1</dhcp>" +
+            "<subnet>255.255.255.0</subnet>" +
+            "<gateway>192.168.1.254</gateway>" +
+            "<MyAppRev>14.148</MyAppRev>"
+    )
 
-    private fun buildSystemDataResponse(): ByteArray {
-        val frame = "<U=01>type=17;AppStore=MyAir5;Model=MyAir5;Version=1.0</U=db>".toByteArray(StandardCharsets.UTF_8)
-        val ackFrame = "<ack>1</ack>".toByteArray(StandardCharsets.UTF_8)
-        val combined = ByteArray(frame.size + ackFrame.size)
-        System.arraycopy(frame, 0, combined, 0, frame.size)
-        System.arraycopy(ackFrame, 0, combined, frame.size, ackFrame.size)
-        Log.d(TAG, "Mock response: system data")
-        return combined
-    }
+    private fun buildClockFrame(): String = frame(
+        "<request>getClock</request><time>2026-08-02 12:00:00</time>"
+    )
 
-    private fun buildClockResponse(): ByteArray {
-        val sdf = SimpleDateFormat("yyyy-MM-dd HH:mm:ss", Locale.US)
-        val timeStr = sdf.format(Date())
-        val frame = "<U=02>time=$timeStr</U=db>".toByteArray(StandardCharsets.UTF_8)
-        val ackFrame = "<ack>1</ack>".toByteArray(StandardCharsets.UTF_8)
-        val combined = ByteArray(frame.size + ackFrame.size)
-        System.arraycopy(frame, 0, combined, 0, frame.size)
-        System.arraycopy(ackFrame, 0, combined, frame.size, ackFrame.size)
-        Log.d(TAG, "Mock response: clock = $timeStr")
-        return combined
-    }
-
-    private fun buildZoneDataResponse(message: String): ByteArray {
+    private fun buildZoneDataFrame(message: String): String {
         val zoneMatch = Regex("zone=(\\d+)").find(message)
         val zoneNum = zoneMatch?.groupValues?.get(1) ?: "1"
-        val frame = "<U=03>zone=$zoneNum;state=off;temp=21.0;fan=auto</U=db>".toByteArray(StandardCharsets.UTF_8)
-        val ackFrame = "<ack>1</ack>".toByteArray(StandardCharsets.UTF_8)
-        val combined = ByteArray(frame.size + ackFrame.size)
-        System.arraycopy(frame, 0, combined, 0, frame.size)
-        System.arraycopy(ackFrame, 0, combined, frame.size, ackFrame.size)
-        Log.d(TAG, "Mock response: zone data for zone $zoneNum")
-        return combined
+        return frame(
+            "<request>getZoneData</request>" +
+                "<zone>$zoneNum</zone>" +
+                "<state>off</state>" +
+                "<temp>21.0</temp>" +
+                "<fan>auto</fan>"
+        )
     }
 
-    private fun buildAckResponse(): ByteArray {
-        val ackFrame = "<ack>1</ack>".toByteArray(StandardCharsets.UTF_8)
-        Log.d(TAG, "Mock response: ack (unknown command)")
-        return ackFrame
-    }
+    private fun frame(payload: String): String =
+        "<U>$payload</U=${CrcCalculator.computeHex(payload)}>"
 
     companion object {
         private const val TAG = "MockUartDataSource"
+        private const val ACK_PAYLOAD = "<ack>1</ack>"
+        const val PING_FRAME: String = "<U>Ping</U=db>"
     }
 }

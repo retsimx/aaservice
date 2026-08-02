@@ -5,6 +5,9 @@ import android.hardware.usb.UsbAccessory
 import android.hardware.usb.UsbManager
 import android.os.ParcelFileDescriptor
 import android.util.Log
+import com.air.advantage.aaservice.data.protocol.CrcCalculator
+import com.air.advantage.aaservice.data.protocol.FrameParser
+import com.air.advantage.aaservice.domain.state.UartDispatchEngine
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -26,7 +29,8 @@ import java.io.OutputStream
 class UsbAccessoryDataSource(
     private val usbManager: UsbManager? = null,
     private val inputStreamFactory: ((ParcelFileDescriptor) -> InputStream)? = null,
-    private val outputStreamFactory: ((ParcelFileDescriptor) -> OutputStream)? = null
+    private val outputStreamFactory: ((ParcelFileDescriptor) -> OutputStream)? = null,
+    private val engine: UartDispatchEngine? = null
 ) : UartDataSource {
 
     constructor(context: Context) : this(
@@ -48,6 +52,8 @@ class UsbAccessoryDataSource(
 
     private val buffer = ByteArray(BUFFER_SIZE)
     private var bufferOffset = 0
+
+    private val parser = FrameParser()
 
     override fun connect(accessory: UsbAccessory): Boolean {
         val manager = usbManager ?: return false
@@ -134,9 +140,12 @@ class UsbAccessoryDataSource(
         }
     }
 
+    /**
+     * Sends the USB config packet exactly once before any framed read/write, mirroring the
+     * reference `ServiceUart$k` state 1 → 2 transition. On failure the caller aborts connect.
+     */
     private fun sendConfigPacket(): Boolean {
-        val configPacket = byteArrayOf(0x00, 0xE1.toByte(), 0x00, 0x00, 0x08, 0x01, 0x00, 0x00)
-        return writeBlocking(configPacket)
+        return writeBlocking(CONFIG_PACKET)
     }
 
     private fun writeBlocking(data: ByteArray): Boolean {
@@ -178,7 +187,7 @@ class UsbAccessoryDataSource(
                 val bytesRead = inputStream.read(buffer, bufferOffset, readSize)
                 if (bytesRead > 0) {
                     bufferOffset += bytesRead
-                    _readFlow.emit(buffer.copyOf(bufferOffset))
+                    processBuffer()
                 }
                 retryCount = 0
             } catch (e: IOException) {
@@ -199,6 +208,60 @@ class UsbAccessoryDataSource(
         }
     }
 
+    /**
+     * Frames and dispatches the bytes buffered by [readLoop], mirroring the reference
+     * `ServiceUart$k.e()`. A ping frame triggers one [UartDispatchEngine.onPing] whose
+     * returned frame is written out; leading pings are then stripped. A complete
+     * `<U>..</U=xx>` frame is CRC-validated against its footer before
+     * [UartDispatchEngine.onFrame], with the result recorded via
+     * [UartDispatchEngine.setCrcOk]. Consumed bytes are compacted left via
+     * [FrameParser.shiftBuffer].
+     */
+    private suspend fun processBuffer() {
+        while (true) {
+            val start = parser.findStartMarker(buffer)
+            if (start < 0) return
+
+            val pingEnd = parser.findEndMarker(start, buffer)
+            if (pingEnd > 0) {
+                val frame = engine?.onPing()
+                if (frame != null) {
+                    write(frame)
+                }
+                while (true) {
+                    val headPingEnd = parser.findEndMarker(0, buffer)
+                    if (headPingEnd <= 0) break
+                    parser.shiftBuffer(headPingEnd, buffer)
+                    bufferOffset -= headPingEnd
+                }
+                continue
+            }
+
+            val frameEnd = parser.findFrameEnd(start, buffer)
+            if (frameEnd <= 0) return
+
+            if (start != 0) {
+                parser.shiftBuffer(start, buffer)
+                bufferOffset -= start
+                continue
+            }
+
+            val payloadStart = start + 3
+            val payloadEnd = frameEnd - 7
+            val expected = parser.parseHexByte(frameEnd, buffer)
+            val actual = CrcCalculator.compute(buffer, payloadStart, payloadEnd)
+            val crcOk = expected == actual
+            engine?.setCrcOk(crcOk)
+            if (crcOk) {
+                parser.extractPayload(buffer, payloadStart, payloadEnd)?.let { payload ->
+                    engine?.onFrame(payload)
+                }
+            }
+            parser.shiftBuffer(frameEnd, buffer)
+            bufferOffset -= frameEnd
+        }
+    }
+
     companion object {
         private const val TAG = "UsbAccessoryDataSource"
         private const val CHUNK_SIZE = 63
@@ -206,5 +269,6 @@ class UsbAccessoryDataSource(
         private const val BUFFER_SIZE = 3072
         private const val MAX_RETRIES = 3
         private const val RETRY_DELAY_MS = 500L
+        private val CONFIG_PACKET = byteArrayOf(0x00, 0xE1.toByte(), 0x00, 0x00, 0x08, 0x01, 0x00, 0x00)
     }
 }

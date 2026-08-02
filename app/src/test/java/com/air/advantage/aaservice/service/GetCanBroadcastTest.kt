@@ -19,7 +19,7 @@ class GetCanBroadcastTest {
 
     private lateinit var service: UartForegroundService
 
-    private val getCanFrame = "<U>getCAN zone1</U=00>"
+    private val getCanPayload = "getCAN zone1"
 
     @Before
     fun setUp() {
@@ -43,8 +43,8 @@ class GetCanBroadcastTest {
     }
 
     @Test
-    fun `getCAN frame sends MESSAGE_FROM_CB_SECURE with rawCan and frame extra`() {
-        service.processIncomingData(getCanFrame.toByteArray(Charsets.UTF_8))
+    fun `getCAN payload sends MESSAGE_FROM_CB_SECURE with rawCan and payload extra`() {
+        service.handleGetCan(getCanPayload)
 
         val secureCaptor = ArgumentCaptor.forClass(Intent::class.java)
         verify(service).sendBroadcast(secureCaptor.capture(), eq("com.air.android.secure_comms"))
@@ -52,12 +52,12 @@ class GetCanBroadcastTest {
         val secureIntent = secureCaptor.value
         assertEquals("com.air.advantage.MESSAGE_FROM_CB_SECURE", secureIntent.action)
         assertEquals("rawCan", secureIntent.getStringExtra("com.air.advantage.GET_DATA_REQUEST"))
-        assertEquals(getCanFrame, secureIntent.getStringExtra("com.air.advantage.MESSAGE_FROM_CB_SECURE"))
+        assertEquals(getCanPayload, secureIntent.getStringExtra("com.air.advantage.MESSAGE_FROM_CB_SECURE"))
     }
 
     @Test
-    fun `getCAN frame sends encrypted no-permission broadcast to explicit component`() {
-        service.processIncomingData(getCanFrame.toByteArray(Charsets.UTF_8))
+    fun `getCAN payload sends encrypted no-permission broadcast to explicit component`() {
+        service.handleGetCan(getCanPayload)
 
         val noPermCaptor = ArgumentCaptor.forClass(Intent::class.java)
         verify(service).sendBroadcast(noPermCaptor.capture())
@@ -74,7 +74,7 @@ class GetCanBroadcastTest {
         assertNotNull(encrypted)
         assertTrue("Encrypted bytes should be non-empty", encrypted!!.isNotEmpty())
         assertArrayEquals(
-            getCanFrame.toByteArray(Charsets.UTF_8),
+            getCanPayload.toByteArray(Charsets.UTF_8),
             CryptoHelper.decrypt(encrypted)
         )
     }
@@ -83,22 +83,13 @@ class GetCanBroadcastTest {
     fun `fujitsu variant uses fujitsu secure action and permission`() {
         doReturn("com.air.advantage.fgassist").whenever(service).packageName
 
-        service.processIncomingData(getCanFrame.toByteArray(Charsets.UTF_8))
+        service.handleGetCan(getCanPayload)
 
         val secureCaptor = ArgumentCaptor.forClass(Intent::class.java)
         verify(service).sendBroadcast(secureCaptor.capture(), eq("com.air.android.secure_comms_fujitsu"))
 
         val secureIntent = secureCaptor.value
         assertEquals("com.air.advantage.MESSAGE_FROM_CB_SECURE_FUJITSU", secureIntent.action)
-        assertEquals(getCanFrame, secureIntent.getStringExtra("com.air.advantage.MESSAGE_FROM_CB_SECURE_FUJITSU"))
-    }
-
-    @Test
-    fun `non-getCAN frame sends no secure or no-permission broadcast`() {
-        val buffer = "<U>Ping</U=db>".toByteArray(Charsets.UTF_8)
-        service.processIncomingData(buffer)
-
-        verify(service, never()).sendBroadcast(any<Intent>())
-        verify(service, never()).sendBroadcast(any<Intent>(), anyOrNull())
+        assertEquals(getCanPayload, secureIntent.getStringExtra("com.air.advantage.MESSAGE_FROM_CB_SECURE_FUJITSU"))
     }
 }

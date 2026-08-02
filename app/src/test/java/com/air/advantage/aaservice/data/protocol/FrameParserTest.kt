@@ -256,6 +256,29 @@ class FrameParserTest {
         parser.replaceTagContent(xml, "tag".toByteArray(), "new".toByteArray())
     }
 
+    // --- removeRange ---
+
+    @Test
+    fun `removeRange removes from startTag through endTag inclusive spanning intermediate tags`() {
+        val xml = "<first>1</first><start>val</start><mid>2</mid><end>3</end><last>4</last>".toByteArray()
+        val result = parser.removeRange(xml, "start", "end")
+        assertEquals("<first>1</first><last>4</last>", String(result))
+    }
+
+    @Test
+    fun `removeRange returns same data when startTag absent`() {
+        val xml = "<first>1</first>".toByteArray()
+        val result = parser.removeRange(xml, "start", "start")
+        assertEquals("<first>1</first>", String(result))
+    }
+
+    @Test
+    fun `removeRange returns same data when endTag absent`() {
+        val xml = "<first>1</first><start>val</start><last>4</last>".toByteArray()
+        val result = parser.removeRange(xml, "start", "end")
+        assertEquals("<first>1</first><start>val</start><last>4</last>", String(result))
+    }
+
     // --- removeTag ---
 
     @Test

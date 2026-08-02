@@ -1,26 +1,17 @@
 package com.air.advantage.aaservice.service
 
-import com.air.advantage.aaservice.data.protocol.CrcCalculator
-import com.air.advantage.aaservice.data.repository.DataCacheRepository
-import com.air.advantage.aaservice.data.uart.UartDataSource
-import com.air.advantage.aaservice.domain.model.CanMessage
-import com.air.advantage.aaservice.domain.state.CanMessageQueue
-import com.air.advantage.aaservice.domain.state.UartState
-import com.air.advantage.aaservice.domain.state.UartStateMachine
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.flowOf
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.runBlocking
+import android.content.ContextWrapper
+import android.content.Intent
 import org.junit.After
 import org.junit.Assert.*
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
-import org.mockito.kotlin.*
 import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.RuntimeEnvironment
+import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
-import android.content.Intent
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [33], manifest = Config.NONE)
@@ -31,14 +22,7 @@ class UartForegroundServiceProcessPollResponseTest {
     @Before
     fun setUp() {
         val controller = Robolectric.buildService(UartForegroundService::class.java)
-        service = spy(controller.get())
-
-        doReturn("com.air.advantage.aaservice").whenever(service).packageName
-        whenever(service.registerReceiver(any(), any())).thenReturn(null)
-        whenever(service.registerReceiver(any(), any(), anyOrNull(), anyOrNull())).thenReturn(null)
-        doNothing().whenever(service).unregisterReceiver(any())
-        doNothing().whenever(service).sendBroadcast(any<Intent>())
-        doNothing().whenever(service).sendBroadcast(any<Intent>(), anyOrNull())
+        service = controller.get()
 
         UartForegroundService.instance = service
     }
@@ -49,167 +33,174 @@ class UartForegroundServiceProcessPollResponseTest {
         UartForegroundService.instance = null
     }
 
-    // ── processPollResponse tests ────────────────────────────────
+    private fun sentBroadcasts(): List<Intent> =
+        shadowOf(RuntimeEnvironment.getApplication() as ContextWrapper).broadcastIntents
+
+    private fun advanceTo(tag: String) {
+        val targetIndex = POLL_TAGS.indexOf(tag)
+        for (i in 0 until targetIndex) {
+            val currentTag = POLL_TAGS[i]
+            val base = currentTag.substringBefore("?")
+            val payload = if (currentTag == "getSystemData") SYSTEM_DATA
+            else "<request>$base</request><dummy>1</dummy>".toByteArray()
+            service.dispatchEngine.onFrame(payload)
+        }
+        assertEquals(targetIndex, service.dispatchEngine.currentPollIndex())
+    }
+
+    // ── getSystemData transform ──────────────────────────────────
 
     @Test
-    fun `processPollResponse with getSystemData injects type=17`() {
-        val tag = "getSystemData"
-        service.processPollResponse(tag)
+    fun `onFrame getSystemData stores transformed payload`() {
+        service.dispatchEngine.onFrame(SYSTEM_DATA)
 
-        val cached = service.dataCache.get(tag)
+        val cached = service.dataCache.get("getSystemData")
         assertNotNull(cached)
-        val cachedStr = String(cached!!, Charsets.UTF_8)
-        assertTrue("Should contain <type>17</type>", cachedStr.contains("<type>17</type>"))
-        assertTrue("Should contain <AppStore>MyAir5</AppStore>", cachedStr.contains("<AppStore>MyAir5</AppStore>"))
-        assertTrue("Should contain <MyAppRev>14.150</MyAppRev>", cachedStr.contains("<MyAppRev>14.150</MyAppRev>"))
+        val text = String(cached!!, Charsets.UTF_8)
+        assertTrue("type injected", text.contains("<type>17</type>"))
+        assertTrue("AppStore injected", text.contains("<AppStore>MyAir5</AppStore>"))
+        assertTrue("MyAppRev injected", text.contains("<MyAppRev>14.150</MyAppRev>"))
+        assertFalse("dhcp range stripped", text.contains("<dhcp>"))
+        assertFalse("gateway range stripped", text.contains("<gateway>"))
     }
 
     @Test
-    fun `processPollResponse with getClock passes through tag as data`() {
-        val tag = "getClock"
-        service.processPollResponse(tag)
+    fun `onFrame getSystemData broadcasts transformed data`() {
+        service.deviceOpen.set(true)
+        service.dispatchEngine.onFrame(SYSTEM_DATA)
 
-        val cached = service.dataCache.get(tag)
-        assertNotNull(cached)
-        assertArrayEquals("getClock".toByteArray(Charsets.UTF_8), cached)
+        val sent = sentBroadcasts()
+        assertTrue(sent.any {
+            it.action == "com.air.advantage.MESSAGE_FROM_CB" &&
+                it.getStringExtra("com.air.advantage.GET_DATA_REQUEST") == "getSystemData" &&
+                it.getByteArrayExtra("com.air.advantage.MESSAGE_FROM_CB")?.let { bytes ->
+                    String(bytes, Charsets.UTF_8).contains("<MyAppRev>14.150</MyAppRev>")
+                } == true
+        })
     }
 
     @Test
-    fun `processPollResponse getSystemData produces correct bytes`() {
-        val tag = "getSystemData"
-        service.processPollResponse(tag)
-
-        val cached = service.dataCache.get(tag)
-        assertNotNull(cached)
-        val cachedStr = String(cached!!, Charsets.UTF_8)
-        assertTrue("Should contain <type>17</type>", cachedStr.contains("<type>17</type>"))
-        assertTrue("Should contain <AppStore>MyAir5</AppStore>", cachedStr.contains("<AppStore>MyAir5</AppStore>"))
-        assertTrue("Should contain <MyAppRev>14.150</MyAppRev>", cachedStr.contains("<MyAppRev>14.150</MyAppRev>"))
+    fun `onFrame caches data via DataCacheRepository`() {
+        service.dispatchEngine.onFrame(SYSTEM_DATA)
+        assertNotNull(service.dataCache.get("getSystemData"))
     }
 
     @Test
-    fun `processPollResponse caches data via DataCacheRepository`() {
-        val tag = "getSystemData"
-        service.processPollResponse(tag)
+    fun `onFrame getSystemData missing MyAppRev is dropped without broadcast`() {
+        val payload = ("<request>getSystemData</request><type>00</type><AppStore>x</AppStore>" +
+            "<dhcp>192.168.1.1</dhcp><gateway>192.168.1.254</gateway>").toByteArray()
+        service.dispatchEngine.onFrame(payload)
 
-        val cached = service.dataCache.get(tag)
-        assertNotNull(cached)
-        val cachedStr = String(cached!!, Charsets.UTF_8)
-        assertTrue("Should contain <type>17</type>", cachedStr.contains("<type>17</type>"))
+        assertNull(service.dataCache.get("getSystemData"))
+        val sent = sentBroadcasts()
+        assertFalse(sent.any { it.getStringExtra("com.air.advantage.GET_DATA_REQUEST") == "getSystemData" })
+    }
+
+    // ── non-system poll tags pass through ────────────────────────
+
+    @Test
+    fun `onFrame getClock passes through unchanged`() {
+        advanceTo("getClock")
+        service.dispatchEngine.onFrame(CLOCK_PAYLOAD)
+        assertArrayEquals(CLOCK_PAYLOAD, service.dataCache.get("getClock"))
     }
 
     @Test
-    fun `processPollResponse calls broadcastData after caching`() {
-        val tag = "getSystemData"
-
-        service.processPollResponse(tag)
-
-        verify(service).broadcastData(tag)
+    fun `onFrame getZoneData passes through unchanged`() {
+        advanceTo("getZoneData?zone=1")
+        val payload = ("<request>getZoneData</request><zone>1</zone><state>off</state>" +
+            "<temp>21.0</temp><fan>auto</fan>").toByteArray()
+        service.dispatchEngine.onFrame(payload)
+        assertArrayEquals(payload, service.dataCache.get("getZoneData?zone=1"))
     }
 
     @Test
-    fun `processPollResponse transitions state machine to Polling`() {
-        val tag = "getSystemData"
-        service.stateMachine.onSendPoll(tag, ByteArray(10))
+    fun `onFrame identical payload does not re-broadcast`() {
+        advanceTo("getClock")
+        service.deviceOpen.set(true)
+        service.dispatchEngine.onFrame(CLOCK_PAYLOAD)
+        service.dispatchEngine.onFrame(CLOCK_PAYLOAD)
 
-        service.processPollResponse(tag)
-
-        val state = service.stateMachine.getCurrentState()
-        assertTrue("Should be Polling state", state is UartState.Polling)
-    }
-
-    // ── State machine transition tests ───────────────────────────
-
-    @Test
-    fun `state machine transitions from AwaitingResponse to Polling on valid response`() {
-        val stateMachine = UartStateMachine()
-        val tag = "getSystemData"
-
-        stateMachine.onSendPoll(tag, ByteArray(10))
-        stateMachine.onValidResponse(tag)
-
-        val state = stateMachine.getCurrentState()
-        assertTrue("Should be Polling state", state is UartState.Polling)
-        assertEquals(1, (state as UartState.Polling).index)
-    }
-
-    @Test
-    fun `state machine skips after 3 retries then advances poll`() {
-        val stateMachine = UartStateMachine()
-        val tag = "getClock"
-
-        stateMachine.onSendPoll(tag, ByteArray(10))
-
-        stateMachine.onNoResponse()
-        stateMachine.onNoResponse()
-        stateMachine.onNoResponse()
-
-        val state = stateMachine.getCurrentState()
-        assertTrue("Should be Polling after 3 retries", state is UartState.Polling)
-        assertEquals(1, (state as UartState.Polling).index)
-    }
-
-    // ── CAN queue and poll cycle tests ───────────────────────────
-
-    @Test
-    fun `CAN queue check before polling sends CAN if pending`() {
-        runBlocking {
-            val dataSource = mock<UartDataSource>()
-            whenever(dataSource.isConnected).thenReturn(true)
-            whenever(dataSource.read()).thenReturn(flowOf(ByteArray(0)))
-
-            (1..10).forEach { id ->
-                service.canQueue.enqueue(CanMessage(id = id, data = ""))
+        val sent = sentBroadcasts()
+        assertEquals(
+            1,
+            sent.count {
+                it.action == "com.air.advantage.MESSAGE_FROM_CB" &&
+                    it.getStringExtra("com.air.advantage.GET_DATA_REQUEST") == "getClock"
             }
-
-            service.sendCanMessages(dataSource)
-            delay(120)
-
-            verify(dataSource).write(any())
-            assertTrue("CAN queue should be cleared", service.canQueue.isEmpty())
-        }
+        )
     }
 
     @Test
-    fun `handlePollCycle with empty queue does not write`() {
-        runBlocking {
-            val dataSource = mock<UartDataSource>()
-            whenever(dataSource.isConnected).thenReturn(true)
-            whenever(dataSource.read()).thenReturn(flowOf(ByteArray(0)))
+    fun `onFrame mismatched request does not advance or broadcast`() {
+        val payload = "<request>getClock</request><time>t</time>".toByteArray()
+        service.dispatchEngine.onFrame(payload)
 
-            // Don't initialize poll queue - leave it empty
-            service.handlePollCycle(dataSource)
-            delay(120)
-
-            verify(dataSource, never()).write(any())
-        }
+        assertEquals(0, service.dispatchEngine.currentPollIndex())
+        assertNull(service.dataCache.get("getClock"))
     }
 
     @Test
-    fun `handlePollCycle advances poll index correctly`() {
-        runBlocking {
-            val dataSource = mock<UartDataSource>()
-            whenever(dataSource.isConnected).thenReturn(true)
-            whenever(dataSource.read()).thenReturn(flowOf(ByteArray(0)))
+    fun `direct message response is matched and pops the direct queue`() {
+        service.enqueueUartMessage("Temperature")
+        val sent = service.dispatchEngine.onPing()
+        assertNotNull(sent)
+        assertTrue(String(sent!!, Charsets.UTF_8).startsWith("<U>Temperature</U="))
 
-            service.pollQueue.initialize(isMyAir5 = true)
-            val initialIndex = service.pollQueue.getIndex()
+        service.dispatchEngine.onFrame("<request>Temperature</request><value>25</value>".toByteArray())
 
-            service.handlePollCycle(dataSource)
-            delay(120)
+        val next = service.dispatchEngine.onPing()
+        assertNotNull(next)
+        assertFalse("popped direct message should not be re-sent", String(next!!, Charsets.UTF_8).contains("Temperature"))
+    }
 
-            val newIndex = service.pollQueue.getIndex()
-            assertTrue("Index should advance", newIndex > initialIndex || newIndex == 0)
-        }
+    // ── getCAN raw-CAN handling ──────────────────────────────────
+
+    @Test
+    fun `onFrame getCAN forwards raw CAN and arms ackCAN`() {
+        val payload = "getCAN 1026".toByteArray()
+        service.dispatchEngine.onFrame(payload)
+
+        val sent = sentBroadcasts()
+        assertTrue(sent.any {
+            it.action == "com.air.advantage.MESSAGE_FROM_CB_SECURE" &&
+                it.getStringExtra("com.air.advantage.GET_DATA_REQUEST") == "rawCan"
+        })
+
+        val ack = service.dispatchEngine.onPing()
+        assertNotNull(ack)
+        assertTrue(String(ack!!, Charsets.UTF_8).startsWith("<U>ackCAN "))
     }
 
     @Test
-    fun `processPollResponse with unknown tag uses tag as data`() {
-        val tag = "getZoneData?zone=1"
-        service.processPollResponse(tag)
+    fun `onFrame getCAN retry-needed suppresses broadcast`() {
+        val payload = "getCAN 0000".toByteArray()
+        service.dispatchEngine.onFrame(payload)
 
-        val cached = service.dataCache.get(tag)
-        assertNotNull(cached)
-        assertArrayEquals("getZoneData?zone=1".toByteArray(Charsets.UTF_8), cached)
+        assertNull(service.dataCache.get("rawCan"))
+        val sent = sentBroadcasts()
+        assertFalse(sent.any { it.getStringExtra("com.air.advantage.GET_DATA_REQUEST") == "rawCan" })
+    }
+
+    private companion object {
+        val POLL_TAGS = listOf(
+            "getSystemData",
+            "getClock",
+            "getZoneData?zone=1",
+            "getZoneData?zone=2",
+            "getZoneData?zone=3",
+            "getZoneData?zone=4",
+            "getZoneData?zone=5",
+            "getZoneData?zone=6",
+            "getZoneData?zone=7",
+            "getZoneData?zone=8",
+            "getZoneData?zone=9",
+            "getZoneData?zone=10"
+        )
+        val SYSTEM_DATA = ("<request>getSystemData</request><type>00</type><AppStore>x</AppStore>" +
+            "<dhcp>192.168.1.1</dhcp><subnet>255.255.255.0</subnet><gateway>192.168.1.254</gateway>" +
+            "<MyAppRev>14.148</MyAppRev>").toByteArray(Charsets.UTF_8)
+        val CLOCK_PAYLOAD = "<request>getClock</request><time>2026-08-02 12:00:00</time>"
+            .toByteArray(Charsets.UTF_8)
     }
 }
