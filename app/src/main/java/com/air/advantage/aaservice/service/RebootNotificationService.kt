@@ -25,7 +25,7 @@ class RebootNotificationService : Service() {
         super.onCreate()
         if (Build.VERSION.SDK_INT >= 26) {
             val nm = getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
-            nm.deleteNotificationChannel(NOTIFICATION_CHANNEL_ID)
+            nm.deleteNotificationChannel(getString(R.string.service_name) + " Notification")
             nm.createNotificationChannel(
                 NotificationChannel(NOTIFICATION_CHANNEL_ID,
                     getString(R.string.service_name),
@@ -51,10 +51,5 @@ class RebootNotificationService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         rebootRequired.set(true)
         return super.onStartCommand(intent, flags, startId)
-    }
-
-    override fun onDestroy() {
-        super.onDestroy()
-        rebootRequired.set(false)
     }
 }
