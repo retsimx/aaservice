@@ -314,10 +314,6 @@ class UartForegroundService : Service() {
         sendBroadcast(cbIntent)
     }
 
-    internal fun onAccessoryDetached() {
-        deviceOpen.set(false)
-    }
-
     private fun updateLastRawCan(frame: String): Boolean {
         val expected = lastRawCan.get()
         while (!lastRawCan.compareAndSet(expected, frame)) {
