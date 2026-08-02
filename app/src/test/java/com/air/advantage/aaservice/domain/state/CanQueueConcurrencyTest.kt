@@ -68,7 +68,7 @@ class CanQueueConcurrencyTest {
                     startLatch.await()
                     val base = p * idsPerProducer
                     (1..idsPerProducer).chunked(10).forEach { chunk ->
-                        e.enqueueCanIds(chunk.map { base + it })
+                        e.enqueueCanIds(chunk.map { (base + it).toString() })
                         e.enqueueDirectMessage("dm-$p-${chunk.first()}")
                     }
                 } catch (t: Throwable) {

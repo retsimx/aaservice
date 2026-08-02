@@ -24,7 +24,7 @@ import javax.inject.Inject
 class MainActivity : ComponentActivity(), View.OnClickListener {
 
     companion object {
-        private const val TAG = "MainActivity"
+        private const val TAG = "AAService2/Main"
         val isVisible = AtomicBoolean(false)
     }
 
@@ -42,6 +42,7 @@ class MainActivity : ComponentActivity(), View.OnClickListener {
 
     public override fun onResume() {
         super.onResume()
+        Log.d(TAG, "onResume")
         isVisible.set(true)
         if (RebootNotificationService.rebootRequired.get()) {
             setContentView(R.layout.reboot_now)
@@ -105,6 +106,7 @@ class MainActivity : ComponentActivity(), View.OnClickListener {
                 builder.create().show()
             }
             R.id.enable_device_admin -> {
+                Log.d(TAG, "onClick: requesting device admin activation")
                 val intent = Intent("android.app.action.ADD_DEVICE_ADMIN")
                 intent.putExtra("android.app.extra.DEVICE_ADMIN", componentName)
                 intent.putExtra("android.app.extra.ADD_EXPLANATION",

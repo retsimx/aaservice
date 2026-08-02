@@ -30,7 +30,7 @@ class DispatcherPriorityTest {
         val e = engine()
         e.setCrcOk(true)
         e.onFrame("getCAN 12345".toByteArray(Charsets.UTF_8))
-        e.enqueueCanIds(listOf(1, 2))
+        e.enqueueCanIds(listOf("1", "2"))
         e.enqueueDirectMessage("setPoint?zone=1")
         assertEquals(frameOf("ackCAN 1"), String(e.onPing()!!, Charsets.UTF_8))
     }
@@ -78,7 +78,7 @@ class DispatcherPriorityTest {
     @Test
     fun `CAN wanted builds setCAN frame with at most 25 ids`() {
         val e = engine()
-        e.enqueueCanIds((1..30).toList())
+        e.enqueueCanIds((1..30).map { it.toString() })
         e.onPing() // prime canWanted via poll entry
         val frame = String(e.onPing()!!, Charsets.UTF_8)
         assertTrue(frame.startsWith("<U>setCAN "))
@@ -90,7 +90,7 @@ class DispatcherPriorityTest {
     @Test
     fun `retry path resends stored setCAN frame`() {
         val e = engine()
-        e.enqueueCanIds((1..30).toList())
+        e.enqueueCanIds((1..30).map { it.toString() })
         e.onPing() // prime canWanted
         val first = String(e.onPing()!!, Charsets.UTF_8)
         assertTrue(first.startsWith("<U>setCAN "))
@@ -103,7 +103,7 @@ class DispatcherPriorityTest {
     @Test
     fun `CAN beats direct and poll`() {
         val e = engine()
-        e.enqueueCanIds(listOf(7))
+        e.enqueueCanIds(listOf("7"))
         e.enqueueDirectMessage("setPoint?zone=1")
         e.onPing() // prime canWanted via direct entry
         val frame = String(e.onPing()!!, Charsets.UTF_8)
@@ -123,7 +123,7 @@ class DispatcherPriorityTest {
     @Test
     fun `direct queue resends head then drops after three identical sends`() {
         val e = engine()
-        e.enqueueCanIds((1..100).toList())
+        e.enqueueCanIds((1..100).map { it.toString() })
         e.enqueueDirectMessage("setPoint?zone=1")
         val expected = frameOf("setPoint?zone=1")
         assertEquals(expected, String(e.onPing()!!, Charsets.UTF_8))
@@ -140,7 +140,7 @@ class DispatcherPriorityTest {
     @Test
     fun `direct queue falls through to poll after 15 stuck sends`() {
         val e = engine()
-        e.enqueueCanIds((1..400).toList())
+        e.enqueueCanIds((1..400).map { it.toString() })
         for (i in 1..15) {
             e.enqueueDirectMessage("msg$i")
             assertEquals(frameOf("msg$i"), String(e.onPing()!!, Charsets.UTF_8))
@@ -164,23 +164,37 @@ class DispatcherPriorityTest {
     // --- CAN2 in use ---
 
     @Test
-    fun `CAN2 in use via poll mismatch sets canInUse`() {
+    fun `CAN2 in use via poll mismatch sets canInUse and drains queued CAN`() {
         val e = engine()
-        e.onPing() // poll entry sent
+        e.enqueueCanIds(listOf("9"))
+        e.onPing() // poll entry sent (arms canWanted because queue non-empty)
         e.onFrame("CAN2 in use".toByteArray(Charsets.UTF_8))
         val frame = String(e.onPing()!!, Charsets.UTF_8)
         assertTrue(frame.startsWith("<U>setCAN"))
+        assertTrue(frame.contains("9"))
         assertEquals(0, e.currentPollIndex())
     }
 
     @Test
-    fun `CAN2 in use via direct response sets canInUse`() {
+    fun `CAN2 in use with empty queues skips empty setCAN and keeps polling`() {
         val e = engine()
+        e.onPing() // poll — queues empty so canWanted is not armed
+        e.onFrame("CAN2 in use".toByteArray(Charsets.UTF_8))
+        // canInUse true but nothing to send → fall through to poll again
+        assertEquals(frameOf("getClock"), String(e.onPing()!!, Charsets.UTF_8))
+        assertEquals(0, e.currentPollIndex())
+    }
+
+    @Test
+    fun `CAN2 in use via direct response drains queued CAN`() {
+        val e = engine()
+        e.enqueueCanIds(listOf("9"))
         e.enqueueDirectMessage("setPoint?zone=1")
         e.onPing() // direct entry sent
         e.onFrame("CAN2 in use".toByteArray(Charsets.UTF_8))
         val frame = String(e.onPing()!!, Charsets.UTF_8)
         assertTrue(frame.startsWith("<U>setCAN"))
+        assertTrue(frame.contains("9"))
     }
 
     // --- poll entry ---
