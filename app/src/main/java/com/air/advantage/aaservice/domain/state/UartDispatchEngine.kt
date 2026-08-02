@@ -42,6 +42,8 @@ class UartDispatchEngine(
     private val logger: (String) -> Unit = {}
 ) {
 
+    private val lock = Any()
+
     private val parser = FrameParser()
 
     private val pollList: List<String> = pollTags.map { framed(it) }
@@ -71,53 +73,55 @@ class UartDispatchEngine(
      * be written. Priority: ackCAN → CAN (retry / `setCAN`) → direct queue → poll.
      */
     fun onPing(): ByteArray? {
-        if (ackCanPending) {
-            val content = "ackCAN " + if (lastCrcOk) "1" else "0"
-            val frame = framed(content).toByteArray(StandardCharsets.UTF_8)
-            ackCanPending = false
+        synchronized(lock) {
+            if (ackCanPending) {
+                val content = "ackCAN " + if (lastCrcOk) "1" else "0"
+                val frame = framed(content).toByteArray(StandardCharsets.UTF_8)
+                ackCanPending = false
+                expectingAck = true
+                return frame
+            }
+
+            if (canWanted || canInUse) {
+                val frame = if (canRetry || canMessageArmed) {
+                    lastCanFrame ?: buildSetCanFrame()
+                } else {
+                    buildSetCanFrame()
+                }
+                canWanted = false
+                expectingAck = true
+                return frame
+            }
+
             expectingAck = true
-            return frame
-        }
-
-        if (canWanted || canInUse) {
-            val frame = if (canRetry || canMessageArmed) {
-                lastCanFrame ?: buildSetCanFrame()
-            } else {
-                buildSetCanFrame()
+            if (!canUnsupported) {
+                canWanted = true
             }
-            canWanted = false
-            expectingAck = true
-            return frame
-        }
 
-        expectingAck = true
-        if (!canUnsupported) {
-            canWanted = true
-        }
+            if (directQueue.isNotEmpty()) {
+                val head = directQueue.first()
+                if (head == lastSentDirect) {
+                    directResendCount++
+                } else {
+                    directResendCount = 0
+                }
+                if (directResendCount > 2) {
+                    directQueue.removeFirst()
+                    return null
+                }
+                if (directRetryCount < 15) {
+                    lastSentDirect = head
+                    directRetryCount++
+                    return head.toByteArray(StandardCharsets.UTF_8)
+                }
+                pollIndex = 0
+                canUnsupported = false
+            }
 
-        if (directQueue.isNotEmpty()) {
-            val head = directQueue.first()
-            if (head == lastSentDirect) {
-                directResendCount++
-            } else {
-                directResendCount = 0
-            }
-            if (directResendCount > 2) {
-                directQueue.removeFirst()
-                return null
-            }
-            if (directRetryCount < 15) {
-                lastSentDirect = head
-                directRetryCount++
-                return head.toByteArray(StandardCharsets.UTF_8)
-            }
-            pollIndex = 0
-            canUnsupported = false
+            directRetryCount = 0
+            lastSentDirect = ""
+            return pollList.getOrNull(pollIndex)?.toByteArray(StandardCharsets.UTF_8)
         }
-
-        directRetryCount = 0
-        lastSentDirect = ""
-        return pollList.getOrNull(pollIndex)?.toByteArray(StandardCharsets.UTF_8)
     }
 
     /**
@@ -125,97 +129,102 @@ class UartDispatchEngine(
      * advance the poll index; only a matching poll `<request>` does.
      */
     fun onFrame(payload: ByteArray) {
-        val text = String(payload, StandardCharsets.UTF_8)
+        var rawCan: ByteArray? = null
+        var pollDelivery: Pair<String, ByteArray>? = null
+        synchronized(lock) {
+            val text = String(payload, StandardCharsets.UTF_8)
 
-        if (parser.isNack(payload) >= 0) {
-            if (expectingAck) {
-                logger("Warning got a failed ack back")
-            }
-            if (parser.isUnknown(payload) >= 0) {
-                logger("CB doesn't support can messages")
-                canUnsupported = true
-                return
-            }
-        } else if (parser.isAck(payload) >= 0) {
-            logger("Got a successful ack back")
-        }
-
-        if (parser.isGetCan(payload) >= 0) {
-            ackCanPending = true
-            canMessageArmed = false
-            val retryNeeded = payload.size <= 9 || (payload.size > 7 && payload[7] == ZERO_BYTE)
-            if (retryNeeded && canRetryCount < 3) {
-                canRetryCount++
-                canRetry = true
-                return
-            }
-            canRetryCount = 0
-            canRetry = false
-            sink.onRawCan(payload)
-            return
-        }
-
-        if (parser.isUnknown(payload) >= 0) {
-            logger("Just got reply unknown")
-            return
-        }
-
-        if (lastSentDirect.isNotEmpty()) {
-            val expectedTag = matchTag(lastSentDirect)
-            val requestContent = extractRequest(payload)
-            if (expectedTag == requestContent) {
-                if (directQueue.isEmpty()) {
-                    logger("Trying to remove a message from the queue that doesn't exist. $expectedTag $text")
-                } else {
-                    directQueue.removeFirst()
+            if (parser.isNack(payload) >= 0) {
+                if (expectingAck) {
+                    logger("Warning got a failed ack back")
                 }
-                return
+                if (canRetryCount < 3) {
+                    canRetryCount++
+                    canRetry = true
+                } else {
+                    canRetryCount = 0
+                    canRetry = false
+                }
+                canMessageArmed = false
+                if (parser.isUnknown(payload) >= 0) {
+                    logger("CB doesn't support can messages")
+                    canUnsupported = true
+                    return
+                }
+            } else if (parser.isAck(payload) >= 0) {
+                logger("Got a successful ack back")
             }
-            if (text == CAN2_IN_USE) {
-                canInUse = true
-                return
-            }
-            logger("request and returned value don't match - $expectedTag $text")
-            return
-        }
 
-        if (pollList.isEmpty() || pollIndex >= pollList.size) {
-            logger("poll number issue")
-            return
-        }
-
-        val pollFrame = pollList[pollIndex]
-        val expectedTag = matchTag(pollFrame)
-        val requestContent = extractRequest(payload)
-        if (expectedTag != requestContent) {
-            if (text == CAN2_IN_USE) {
-                canInUse = true
+            if (parser.isGetCan(payload) >= 0) {
+                ackCanPending = true
+                canMessageArmed = false
+                if (payload.size <= 9) {
+                    return
+                }
+                val retryNeeded = payload[7] == ZERO_BYTE
+                if (retryNeeded && canRetryCount < 3) {
+                    canRetryCount++
+                    canRetry = true
+                    return
+                }
+                canRetryCount = 0
+                canRetry = false
+                rawCan = payload
+            } else if (parser.isUnknown(payload) >= 0) {
+                logger("Just got reply unknown")
+            } else if (lastSentDirect.isNotEmpty()) {
+                val expectedTag = matchTag(lastSentDirect)
+                val requestContent = extractRequest(payload)
+                if (expectedTag == requestContent) {
+                    if (directQueue.isEmpty()) {
+                        logger("Trying to remove a message from the queue that doesn't exist. $expectedTag $text")
+                    } else {
+                        directQueue.removeFirst()
+                    }
+                } else if (text == CAN2_IN_USE) {
+                    canInUse = true
+                } else {
+                    logger("request and returned value don't match - $expectedTag $text")
+                }
+            } else if (pollList.isEmpty() || pollIndex >= pollList.size) {
+                logger("poll number issue")
             } else {
-                logger("poll request and returned value don't match - $expectedTag $text")
+                val pollFrame = pollList[pollIndex]
+                val expectedTag = matchTag(pollFrame)
+                val requestContent = extractRequest(payload)
+                if (expectedTag != requestContent) {
+                    if (text == CAN2_IN_USE) {
+                        canInUse = true
+                    } else {
+                        logger("poll request and returned value don't match - $expectedTag $text")
+                    }
+                } else {
+                    val tag = pollFrame.substring(3, pollFrame.length - 7)
+                    pollIndex++
+                    if (pollIndex >= pollList.size) {
+                        pollIndex = 0
+                        canUnsupported = false
+                    }
+
+                    var broadcastPayload = payload
+                    if (tag == "getSystemData") {
+                        val transformed = GetSystemDataTransformer.transform(payload, typeBytes, appStoreBytes)
+                            ?: return
+                        broadcastPayload = transformed
+                    }
+
+                    val cached = responseCache[tag]
+                    if (cached != null && parser.isEqual(cached, broadcastPayload)) {
+                        return
+                    }
+                    responseCache[tag] = broadcastPayload
+                    pollDelivery = tag to broadcastPayload
+                }
             }
-            return
         }
 
-        val tag = pollFrame.substring(3, pollFrame.length - 7)
-        pollIndex++
-        if (pollIndex >= pollList.size) {
-            pollIndex = 0
-            canUnsupported = false
-        }
-
-        var broadcastPayload = payload
-        if (tag == "getSystemData") {
-            val transformed = GetSystemDataTransformer.transform(payload, typeBytes, appStoreBytes)
-                ?: return
-            broadcastPayload = transformed
-        }
-
-        val cached = responseCache[tag]
-        if (cached != null && parser.isEqual(cached, broadcastPayload)) {
-            return
-        }
-        responseCache[tag] = broadcastPayload
-        sink.onPollData(tag, broadcastPayload)
+        rawCan?.let { sink.onRawCan(it) }
+        pollDelivery?.let { sink.onPollData(it.first, it.second) }
     }
 
     /**
@@ -224,18 +233,22 @@ class UartDispatchEngine(
      */
     fun enqueueDirectMessage(content: String) {
         val framedMessage = framed(content)
-        directQueue.removeAll { it == framedMessage }
-        directQueue.addLast(framedMessage)
+        synchronized(lock) {
+            directQueue.removeAll { it == framedMessage }
+            directQueue.addLast(framedMessage)
+        }
     }
 
     /**
      * Adds CAN ids to the CAN queue, skipping ids already queued.
      */
     fun enqueueCanIds(ids: List<Int>) {
-        for (id in ids) {
-            val idStr = id.toString()
-            if (!canQueue.contains(idStr)) {
-                canQueue.addLast(idStr)
+        synchronized(lock) {
+            for (id in ids) {
+                val idStr = id.toString()
+                if (!canQueue.contains(idStr)) {
+                    canQueue.addLast(idStr)
+                }
             }
         }
     }
@@ -244,36 +257,40 @@ class UartDispatchEngine(
      * Resets all engine state and clears the response cache.
      */
     fun reset() {
-        pollIndex = 0
-        canQueue.clear()
-        directQueue.clear()
-        ackCanPending = false
-        lastCrcOk = true
-        canWanted = false
-        canInUse = false
-        canRetry = false
-        canRetryCount = 0
-        canMessageArmed = false
-        lastCanFrame = null
-        lastSentDirect = ""
-        directRetryCount = 0
-        directResendCount = 0
-        canUnsupported = false
-        expectingAck = false
-        responseCache.clear()
+        synchronized(lock) {
+            pollIndex = 0
+            canQueue.clear()
+            directQueue.clear()
+            ackCanPending = false
+            lastCrcOk = true
+            canWanted = false
+            canInUse = false
+            canRetry = false
+            canRetryCount = 0
+            canMessageArmed = false
+            lastCanFrame = null
+            lastSentDirect = ""
+            directRetryCount = 0
+            directResendCount = 0
+            canUnsupported = false
+            expectingAck = false
+            responseCache.clear()
+        }
     }
 
     /**
      * The poll list index that [onPing] currently sends; advanced only by [onFrame].
      */
-    fun currentPollIndex(): Int = pollIndex
+    fun currentPollIndex(): Int = synchronized(lock) { pollIndex }
 
     /**
      * Records whether the most recent inbound frame passed CRC validation. Feeds the
      * [lastCrcOk] bit used by the outbound `ackCAN 0|1` reply.
      */
     fun setCrcOk(ok: Boolean) {
-        lastCrcOk = ok
+        synchronized(lock) {
+            lastCrcOk = ok
+        }
     }
 
     private fun buildSetCanFrame(): ByteArray {

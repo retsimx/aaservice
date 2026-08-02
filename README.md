@@ -49,7 +49,7 @@ com.air.advantage.aaservice/
 │   ├── uart/          — UART transport (UsbAccessoryDataSource, MockUartDataSource)
 │   ├── protocol/      — FrameParser, CrcCalculator (pure Kotlin, no Android deps)
 │   ├── broadcast/     — MessageReceiver, DataBroadcaster (inter-app broadcast routing)
-│   ├── repository/    — DataCacheRepository, CanStateRepository, PollQueueRepository
+│   ├── repository/    — DataCacheRepository, PollQueueRepository
 │   └── prefs/         — PreferencesManager
 ├── domain/
 │   ├── model/         — SystemData, ZoneData, ScheduleData, CanMessage, Frame types
