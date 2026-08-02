@@ -18,9 +18,11 @@ import android.os.ParcelFileDescriptor
 import android.os.SystemClock
 import android.util.Log
 import com.air.advantage.aaservice.R
+import com.air.advantage.aaservice.data.mailbox.MailboxWsClientFactory
 import com.air.advantage.aaservice.data.repository.DataCacheRepository
 import com.air.advantage.aaservice.data.uart.UartDataSource
 import com.air.advantage.aaservice.data.uart.UsbAccessoryDataSource
+import com.air.advantage.aaservice.di.UartServiceEntryPoint
 import com.air.advantage.aaservice.domain.state.UartDispatchEngine
 import com.air.advantage.aaservice.domain.state.UartEventSink
 import com.air.advantage.aaservice.receiver.AlertDialogReceiver
@@ -39,7 +41,10 @@ import com.air.advantage.aaservice.ui.usb.UsbConnectActivity
 import com.air.advantage.aaservice.util.CryptoHelper
 import com.air.advantage.aaservice.util.FujitsuDetector
 import com.air.advantage.aaservice.util.HardwareDetector
+import com.air.advantage.aaservice.util.PreferencesManager
 import com.air.advantage.aaservice.util.ServiceHelper
+import com.air.advantage.aaservice.util.TransportMode
+import dagger.hilt.android.EntryPointAccessors
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -54,12 +59,30 @@ import java.io.OutputStream
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 
+/**
+ * Foreground host for USB UART and mailbox WS. Transport selection is owned by
+ * [TransportRouter]; this service supplies USB callbacks and lifecycle.
+ *
+ * Not `@AndroidEntryPoint` — Robolectric `buildService` tests construct the service
+ * without Hilt. Deps resolve via [UartServiceEntryPoint] with a manual fallback.
+ */
 class UartForegroundService : Service() {
 
     internal val dataCache = DataCacheRepository()
     internal val registeredReceivers = mutableListOf<BroadcastReceiver>()
     internal val deviceOpen = AtomicBoolean(false)
     private val lastRawCan = AtomicReference("")
+
+    /** Overridable in tests; production fills from Hilt entry point or fallback. */
+    internal var preferencesManager: PreferencesManager? = null
+    internal var mailboxWsClientFactory: MailboxWsClientFactory? = null
+
+    @Volatile
+    private var transportRouterField: TransportRouter? = null
+
+    /** Exposed for tests / diagnostics once [ensureTransportRouter] has run. */
+    internal val transportRouter: TransportRouter
+        get() = ensureTransportRouter()
 
     private val usbPermissionReceiver = UsbPermissionReceiver()
     private val getDataReceiver = GetDataReceiver()
@@ -174,11 +197,22 @@ class UartForegroundService : Service() {
         startPeriodicBroadcastIfNeeded()
         ensureDeviceAdmin()?.let { return it }
         handleNullAction(intent)?.let { return it }
-        // Handle before accessory discovery so the action is never rewritten to REQUEST_PERMISSION
-        // or dropped when no accessory is attached (A1: log/no-op only).
-        handleTransportModeChanged(intent)?.let { return it }
-        val resolved = discoverAccessoryIfNeeded(intent?.action) ?: return START_STICKY
-        return dispatchAction(resolved.second, resolved.first) ?: START_NOT_STICKY
+        // Mode sync before accessory discovery so WS never opens UsbAccessory.
+        // Intent extra transport_mode is log-only; prefs win.
+        applyTransportModeFromPrefs(intent)
+        if (intent?.action == ServiceHelper.ACTION_TRANSPORT_MODE_CHANGED) {
+            return START_STICKY
+        }
+        if (ensureTransportRouter().activeMode == TransportMode.Ws) {
+            Log.d(TAG, "onStartCommand: WS mode active, skipping USB accessory path")
+            return START_STICKY
+        }
+        var result = START_STICKY
+        ensureTransportRouter().onUsbAction {
+            val resolved = discoverAccessoryIfNeeded(intent?.action) ?: return@onUsbAction
+            result = dispatchAction(resolved.second, resolved.first) ?: START_NOT_STICKY
+        }
+        return result
     }
 
     private fun startPeriodicBroadcastIfNeeded() {
@@ -203,17 +237,92 @@ class UartForegroundService : Service() {
     }
 
     /**
-     * A1: acknowledge transport mode change Intent. Extra key `transport_mode` may be
-     * `"usb"` or `"ws"`. No USB tear-down, no WS client, service stays running.
+     * Applies [PreferencesManager.transportMode] via [TransportRouter.applyMode].
+     * Logs Intent [ServiceHelper.EXTRA_TRANSPORT_MODE] when present; prefs always win.
      */
-    private fun handleTransportModeChanged(intent: Intent?): Int? {
-        if (intent?.action != ServiceHelper.ACTION_TRANSPORT_MODE_CHANGED) return null
-        val mode = intent.getStringExtra(ServiceHelper.EXTRA_TRANSPORT_MODE)
-        Log.i(
-            TAG,
-            "TRANSPORT_MODE_CHANGED: transport_mode=$mode (A1 no-op; no USB tear-down / WS client)"
+    private fun applyTransportModeFromPrefs(intent: Intent?) {
+        val prefs = resolvePreferencesManager()
+        val prefsMode = prefs.transportMode
+        val extra = intent?.getStringExtra(ServiceHelper.EXTRA_TRANSPORT_MODE)
+        if (intent?.action == ServiceHelper.ACTION_TRANSPORT_MODE_CHANGED) {
+            Log.i(
+                TAG,
+                "TRANSPORT_MODE_CHANGED: intent_extra=$extra prefs=$prefsMode (prefs win)"
+            )
+        } else {
+            Log.d(TAG, "applyTransportModeFromPrefs: prefs=$prefsMode")
+        }
+        ensureTransportRouter().applyMode(prefsMode)
+    }
+
+    /**
+     * Lazily builds [TransportRouter] with Hilt deps when available, else manual
+     * [PreferencesManager] + OkHttp factory (Robolectric / no-Hilt path).
+     */
+    internal fun ensureTransportRouter(): TransportRouter {
+        transportRouterField?.let { return it }
+        resolvePreferencesManager()
+        resolveMailboxWsClientFactory()
+        val prefs = preferencesManager!!
+        val factory = mailboxWsClientFactory!!
+        val router = TransportRouter(
+            mailboxWsClientFactory = factory,
+            daemonWsUrl = { prefs.daemonWsUrl },
+            usbController = object : UsbTransportController {
+                override fun tearDown() {
+                    Log.d(TAG, "UsbTransportController.tearDown")
+                    ServiceHelper.cancelScheduledServiceStart(
+                        this@UartForegroundService,
+                        ServiceHelper.ACTION_OPEN_DEVICE,
+                    )
+                    closeUartIo()
+                }
+
+                override fun activate() {
+                    Log.d(TAG, "UsbTransportController.activate: scheduling REQUEST_PERMISSION")
+                    ServiceHelper.scheduleServiceStart(
+                        this@UartForegroundService,
+                        ServiceHelper.ACTION_REQUEST_PERMISSION,
+                        0,
+                    )
+                }
+            },
+            // Always start as Usb so first applyMode(Ws) runs connect side effects
+            // (same-mode applyMode is a no-op).
+            initialMode = TransportMode.Usb,
         )
-        return START_STICKY
+        transportRouterField = router
+        return router
+    }
+
+    private fun resolvePreferencesManager(): PreferencesManager {
+        preferencesManager?.let { return it }
+        val resolved = try {
+            EntryPointAccessors.fromApplication(
+                applicationContext,
+                UartServiceEntryPoint::class.java,
+            ).preferencesManager()
+        } catch (e: Exception) {
+            Log.d(TAG, "resolvePreferencesManager: Hilt unavailable, using manual instance")
+            PreferencesManager(this)
+        }
+        preferencesManager = resolved
+        return resolved
+    }
+
+    private fun resolveMailboxWsClientFactory(): MailboxWsClientFactory {
+        mailboxWsClientFactory?.let { return it }
+        val resolved = try {
+            EntryPointAccessors.fromApplication(
+                applicationContext,
+                UartServiceEntryPoint::class.java,
+            ).mailboxWsClientFactory()
+        } catch (e: Exception) {
+            Log.d(TAG, "resolveMailboxWsClientFactory: Hilt unavailable, using OkHttp factory")
+            MailboxWsClientFactory.okHttp()
+        }
+        mailboxWsClientFactory = resolved
+        return resolved
     }
 
     private fun discoverAccessoryIfNeeded(action: String?): Pair<UsbAccessory, String?>? {
@@ -292,8 +401,14 @@ class UartForegroundService : Service() {
 
     override fun onDestroy() {
         Log.i(TAG, "onDestroy")
-        ServiceHelper.cancelScheduledServiceStart(this, ServiceHelper.ACTION_OPEN_DEVICE)
-        closeUartIo()
+        val router = transportRouterField
+        if (router != null) {
+            router.shutdown()
+        } else {
+            ServiceHelper.cancelScheduledServiceStart(this, ServiceHelper.ACTION_OPEN_DEVICE)
+            closeUartIo()
+        }
+        transportRouterField = null
         periodicJob?.cancel()
         ioScope.cancel()
         registeredReceivers.forEach { unregisterReceiver(it) }
@@ -496,6 +611,10 @@ class UartForegroundService : Service() {
     }
 
     fun openAccessory(accessory: UsbAccessory): Boolean {
+        if (ensureTransportRouter().activeMode != TransportMode.Usb) {
+            Log.d(TAG, "openAccessory: skipped, activeMode=${ensureTransportRouter().activeMode}")
+            return false
+        }
         val manager = getSystemService(Context.USB_SERVICE) as? UsbManager ?: return false
 
         if (currentPfd != null) {
