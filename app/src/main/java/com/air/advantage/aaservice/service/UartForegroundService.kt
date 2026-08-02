@@ -21,6 +21,8 @@ import com.air.advantage.aaservice.R
 import com.air.advantage.aaservice.data.mailbox.MailboxAckStatus
 import com.air.advantage.aaservice.data.mailbox.MailboxAckTimeoutException
 import com.air.advantage.aaservice.data.mailbox.MailboxConnectionState
+import com.air.advantage.aaservice.data.mailbox.MailboxInbound
+import com.air.advantage.aaservice.data.mailbox.MailboxWsClient
 import com.air.advantage.aaservice.data.mailbox.MailboxWsClientFactory
 import com.air.advantage.aaservice.data.mailbox.MyAir5OutboundMailboxMapper
 import com.air.advantage.aaservice.data.mailbox.OutboundMailboxAction
@@ -28,6 +30,7 @@ import com.air.advantage.aaservice.data.repository.DataCacheRepository
 import com.air.advantage.aaservice.data.uart.UartDataSource
 import com.air.advantage.aaservice.data.uart.UsbAccessoryDataSource
 import com.air.advantage.aaservice.di.UartServiceEntryPoint
+import com.air.advantage.aaservice.domain.mailbox.MailboxBroadcastMapper
 import com.air.advantage.aaservice.domain.state.UartDispatchEngine
 import com.air.advantage.aaservice.domain.state.UartEventSink
 import com.air.advantage.aaservice.receiver.AlertDialogReceiver
@@ -56,6 +59,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -147,6 +151,15 @@ class UartForegroundService : Service() {
     internal var periodicJob: Job? = null
     private val closeUartIoStarted = AtomicBoolean(false)
 
+    /**
+     * A4 (#51): mailbox → `MESSAGE_FROM_CB` collector. Production attaches the
+     * [TransportRouter.mailboxWsClient] after WS mode apply; tests attach a fake
+     * via [attachMailboxWsClient] without needing Hilt.
+     */
+    internal var mailboxWsClient: MailboxWsClient? = null
+        private set
+    private var mailboxCollectionJob: Job? = null
+
     @Volatile private var currentAccessory: UsbAccessory? = null
     private var currentPfd: ParcelFileDescriptor? = null
     private var inputStream: InputStream? = null
@@ -155,6 +168,65 @@ class UartForegroundService : Service() {
 
     internal var uartDataSource: UartDataSource? = null
         private set
+
+    /**
+     * Attaches a [MailboxWsClient] and starts collecting [MailboxWsClient.incoming] for the
+     * lifetime of this attachment (design `41-mailbox-to-message-from-cb.md` §6). Each inbound
+     * `mailbox_snapshot` / `mailbox_event` is mapped to poll-tag payloads via
+     * [MailboxBroadcastMapper], cached, and broadcast the same way the USB [uartEventSink] does.
+     *
+     * Collected on [Dispatchers.Unconfined]: [MailboxWsClient.incoming] is a hot
+     * [kotlinx.coroutines.flow.SharedFlow] with no backpressure concerns here (mapping + a
+     * cache put + an Intent broadcast is cheap), so processing inline on whichever thread
+     * emits — the real client's OkHttp WebSocket reader thread, or directly on the calling
+     * thread in tests via [com.air.advantage.aaservice.data.mailbox.FakeMailboxWsClient] — keeps
+     * behavior synchronous and avoids an extra thread hop.
+     */
+    internal fun attachMailboxWsClient(client: MailboxWsClient) {
+        mailboxWsClient = client
+        mailboxCollectionJob?.cancel()
+        mailboxCollectionJob = ioScope.launch(Dispatchers.Unconfined) {
+            client.incoming.collect { inbound -> onMailboxInbound(inbound) }
+        }
+    }
+
+    /** Maps one mailbox frame to poll-tag broadcasts; safe to call directly from tests. */
+    internal fun onMailboxInbound(inbound: MailboxInbound) {
+        val polls = MailboxBroadcastMapper.map(inbound, cachedPayload = dataCache::get)
+        for (poll in polls) {
+            if (!dataCache.hasChanged(poll.tag, poll.payload)) {
+                Log.d(TAG, "onMailboxInbound: unchanged '${poll.tag}', skipping broadcast")
+                continue
+            }
+            Log.d(TAG, "onMailboxInbound: tag='${poll.tag}' (${poll.payload.size} bytes)")
+            dataCache.put(poll.tag, poll.payload)
+            broadcastData(poll.tag)
+        }
+    }
+
+    /**
+     * WS publish gate (design §6): mailbox broadcasts are allowed once the attached client has
+     * reached [MailboxConnectionState.Connected] — even if the USB accessory was never opened.
+     */
+    private fun isMailboxBroadcastReady(): Boolean =
+        mailboxWsClient?.connectionState?.value is MailboxConnectionState.Connected
+
+    /**
+     * Syncs the inbound collector with [TransportRouter.mailboxWsClient] after mode changes.
+     * Detaches when the router has no client (USB mode).
+     */
+    private fun syncMailboxInboundCollector() {
+        val routerClient = transportRouterField?.mailboxWsClient
+        if (routerClient == null) {
+            mailboxCollectionJob?.cancel()
+            mailboxCollectionJob = null
+            mailboxWsClient = null
+            return
+        }
+        if (mailboxWsClient === routerClient && mailboxCollectionJob?.isActive == true) return
+        attachMailboxWsClient(routerClient)
+        Log.i(TAG, "syncMailboxInboundCollector: collecting TransportRouter mailbox client")
+    }
 
     override fun onCreate() {
         super.onCreate()
@@ -262,6 +334,7 @@ class UartForegroundService : Service() {
             Log.d(TAG, "applyTransportModeFromPrefs: prefs=$prefsMode")
         }
         ensureTransportRouter().applyMode(prefsMode)
+        syncMailboxInboundCollector()
     }
 
     /**
@@ -419,6 +492,7 @@ class UartForegroundService : Service() {
         }
         transportRouterField = null
         periodicJob?.cancel()
+        mailboxCollectionJob?.cancel()
         ioScope.cancel()
         registeredReceivers.forEach { unregisterReceiver(it) }
         registeredReceivers.clear()
@@ -583,8 +657,8 @@ class UartForegroundService : Service() {
     }
 
     fun broadcastData(tag: String) {
-        if (!deviceOpen.get()) {
-            Log.d(TAG, "broadcastData: device not open, skipping '$tag'")
+        if (!deviceOpen.get() && !isMailboxBroadcastReady()) {
+            Log.d(TAG, "broadcastData: device not open and mailbox not ready, skipping '$tag'")
             return
         }
         val lookupTag = if (tag.startsWith("getSystemData")) "getSystemData" else tag

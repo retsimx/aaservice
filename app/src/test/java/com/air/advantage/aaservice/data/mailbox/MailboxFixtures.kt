@@ -8,6 +8,8 @@ import org.json.JSONObject
 object MailboxFixtures {
     fun snapshot(): String = load("mailbox/mailbox_snapshot.json")
 
+    fun event(): String = load("mailbox/mailbox_event.json")
+
     fun ackSuccess(msgId: String): String =
         load("mailbox/ack_success.json").replace("__MSG_ID__", msgId)
 
