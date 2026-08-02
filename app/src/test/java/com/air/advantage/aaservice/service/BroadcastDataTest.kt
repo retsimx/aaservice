@@ -97,4 +97,30 @@ class BroadcastDataTest {
         assertEquals("com.air.advantage.MESSAGE_FROM_CB", captor.firstValue.action)
         verify(service, never()).sendBroadcast(any<Intent>(), anyOrNull())
     }
+
+    @Test
+    fun `getSystemData query tag is normalized for the cache lookup`() {
+        service.deviceOpen.set(true)
+        val systemData = "systemData".toByteArray(Charsets.UTF_8)
+        service.dataCache.put("getSystemData", systemData)
+
+        service.broadcastData("getSystemData?something")
+
+        val captor = argumentCaptor<Intent>()
+        verify(service).sendBroadcast(captor.capture())
+        val sent = captor.firstValue
+        assertEquals("com.air.advantage.MESSAGE_FROM_CB", sent.action)
+        // the request extra keeps the original tag; only the cache lookup is normalized
+        assertEquals("getSystemData?something", sent.getStringExtra("com.air.advantage.GET_DATA_REQUEST"))
+        assertArrayEquals(systemData, sent.getByteArrayExtra("com.air.advantage.MESSAGE_FROM_CB"))
+    }
+
+    @Test
+    fun `getSystemData query tag with no cached data broadcasts nothing`() {
+        service.deviceOpen.set(true)
+
+        service.broadcastData("getSystemData?unknown")
+
+        verify(service, never()).sendBroadcast(any<Intent>())
+    }
 }
