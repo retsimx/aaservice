@@ -6,12 +6,19 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.view.View
+import android.widget.EditText
+import android.widget.RadioButton
+import android.widget.RadioGroup
 import android.widget.TextView
+import androidx.preference.PreferenceManager
 import androidx.test.core.app.ApplicationProvider
 import com.air.advantage.aaservice.R
 import com.air.advantage.aaservice.receiver.DeviceAdminReceiver
 import com.air.advantage.aaservice.service.RebootNotificationService
 import com.air.advantage.aaservice.service.UartForegroundService
+import com.air.advantage.aaservice.util.PreferencesManager
+import com.air.advantage.aaservice.util.ServiceHelper
+import com.air.advantage.aaservice.util.TransportMode
 import org.junit.After
 import org.junit.Assert.*
 import org.junit.Before
@@ -26,8 +33,14 @@ import org.robolectric.annotation.Config
 @Config(sdk = [33], manifest = Config.NONE)
 class MainActivityTest {
 
+    private lateinit var context: Context
+    private lateinit var preferencesManager: PreferencesManager
+
     @Before
     fun setUp() {
+        context = ApplicationProvider.getApplicationContext()
+        preferencesManager = PreferencesManager(context)
+        PreferenceManager.getDefaultSharedPreferences(context).edit().clear().commit()
         RebootNotificationService.rebootRequired.set(false)
         MainActivity.isVisible.set(false)
     }
@@ -36,6 +49,7 @@ class MainActivityTest {
     fun tearDown() {
         RebootNotificationService.rebootRequired.set(false)
         MainActivity.isVisible.set(false)
+        PreferenceManager.getDefaultSharedPreferences(context).edit().clear().commit()
     }
     @Test
     fun `onResume with admin active shows correct UI`() {
@@ -215,5 +229,113 @@ class MainActivityTest {
         assertTrue(R.id.status_icon > 0)
         assertTrue(R.id.permission_description > 0)
         assertTrue(R.id.show_backup > 0)
+        assertTrue(R.id.transport_card > 0)
+        assertTrue(R.id.transport_mode_group > 0)
+        assertTrue(R.id.transport_mode_usb > 0)
+        assertTrue(R.id.transport_mode_ws > 0)
+        assertTrue(R.id.transport_daemon_url > 0)
+        assertTrue(R.id.transport_url_save > 0)
+        assertTrue(R.id.transport_connection_status > 0)
+    }
+
+    @Test
+    fun `main layout shows transport controls`() {
+        RebootNotificationService.rebootRequired.set(false)
+        val controller = Robolectric.buildActivity(MainActivity::class.java).setup()
+        val activity = controller.get()
+
+        assertNotNull(activity.findViewById(R.id.transport_card))
+        assertNotNull(activity.findViewById(R.id.transport_mode_group))
+        assertNotNull(activity.findViewById(R.id.transport_mode_usb))
+        assertNotNull(activity.findViewById(R.id.transport_mode_ws))
+        assertNotNull(activity.findViewById(R.id.transport_daemon_url))
+        assertNotNull(activity.findViewById(R.id.transport_url_save))
+        assertNotNull(activity.findViewById(R.id.transport_connection_status))
+    }
+
+    @Test
+    fun `transport controls load mode and url from prefs`() {
+        preferencesManager.transportMode = TransportMode.Ws
+        preferencesManager.daemonWsUrl = "ws://10.0.0.5:2026/v1/mailbox-stream"
+
+        val controller = Robolectric.buildActivity(MainActivity::class.java).setup()
+        val activity = controller.get()
+
+        assertTrue(activity.findViewById<RadioButton>(R.id.transport_mode_ws).isChecked)
+        assertEquals(
+            "ws://10.0.0.5:2026/v1/mailbox-stream",
+            activity.findViewById<EditText>(R.id.transport_daemon_url).text.toString(),
+        )
+    }
+
+    @Test
+    fun `mode change updates prefs and starts TRANSPORT_MODE_CHANGED service`() {
+        preferencesManager.transportMode = TransportMode.Usb
+        val controller = Robolectric.buildActivity(MainActivity::class.java).setup()
+        val activity = controller.get()
+
+        shadowOf(context as android.app.Application).clearStartedServices()
+
+        activity.findViewById<RadioGroup>(R.id.transport_mode_group)
+            .check(R.id.transport_mode_ws)
+
+        assertEquals(TransportMode.Ws, preferencesManager.transportMode)
+
+        val serviceIntent = shadowOf(context as android.app.Application).nextStartedService
+        assertNotNull(serviceIntent)
+        assertEquals(UartForegroundService::class.java.name, serviceIntent.component?.className)
+        assertEquals(ServiceHelper.ACTION_TRANSPORT_MODE_CHANGED, serviceIntent.action)
+        assertEquals("ws", serviceIntent.getStringExtra(ServiceHelper.EXTRA_TRANSPORT_MODE))
+    }
+
+    @Test
+    fun `same mode selection does not restart service`() {
+        preferencesManager.transportMode = TransportMode.Usb
+        val controller = Robolectric.buildActivity(MainActivity::class.java).setup()
+        val activity = controller.get()
+
+        shadowOf(context as android.app.Application).clearStartedServices()
+
+        activity.findViewById<RadioGroup>(R.id.transport_mode_group)
+            .check(R.id.transport_mode_usb)
+
+        assertNull(shadowOf(context as android.app.Application).nextStartedService)
+        assertEquals(TransportMode.Usb, preferencesManager.transportMode)
+    }
+
+    @Test
+    fun `url save persists daemonWsUrl`() {
+        val controller = Robolectric.buildActivity(MainActivity::class.java).setup()
+        val activity = controller.get()
+
+        val urlField = activity.findViewById<EditText>(R.id.transport_daemon_url)
+        urlField.setText("ws://192.168.1.50:2026/v1/mailbox-stream")
+        activity.findViewById<View>(R.id.transport_url_save).performClick()
+
+        assertEquals(
+            "ws://192.168.1.50:2026/v1/mailbox-stream",
+            preferencesManager.daemonWsUrl,
+        )
+    }
+
+    @Test
+    fun `transport status shows idle`() {
+        val controller = Robolectric.buildActivity(MainActivity::class.java).setup()
+        val activity = controller.get()
+
+        assertEquals(
+            activity.getString(R.string.transport_status_idle),
+            activity.findViewById<TextView>(R.id.transport_connection_status).text.toString(),
+        )
+    }
+
+    @Test
+    fun `reboot layout does not include transport controls`() {
+        RebootNotificationService.rebootRequired.set(true)
+        val controller = Robolectric.buildActivity(MainActivity::class.java).setup()
+        val activity = controller.get()
+
+        assertNull(activity.findViewById(R.id.transport_card))
+        assertNotNull(activity.findViewById(R.id.version_number))
     }
 }
