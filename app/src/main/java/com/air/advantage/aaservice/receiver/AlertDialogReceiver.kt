@@ -6,6 +6,7 @@ import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.Intent
 import android.os.SystemClock
+import androidx.localbroadcastmanager.content.LocalBroadcastManager
 import java.util.concurrent.atomic.AtomicBoolean
 import com.air.advantage.aaservice.ui.alert.AlertActivity
 
@@ -18,12 +19,12 @@ class AlertDialogReceiver : BroadcastReceiver() {
 
     override fun onReceive(context: Context, intent: Intent) {
         if (!alertActive.get()) {
-            context.sendBroadcast(Intent("com.air.advantage.HIDE_WARNING"))
+            LocalBroadcastManager.getInstance(context).sendBroadcast(Intent("com.air.advantage.HIDE_WARNING"))
             return
         }
         val alertIntent = Intent(context, AlertActivity::class.java).apply {
             flags = Intent.FLAG_ACTIVITY_NEW_TASK
-            addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP)
+            addFlags(Intent.FLAG_ACTIVITY_CLEAR_TOP)
             action = "com.air.advantage.SHOW_ALERT"
         }
         context.startActivity(alertIntent)
@@ -44,12 +45,12 @@ class AlertDialogReceiver : BroadcastReceiver() {
 
         if (active) {
             alarmManager.set(
-                AlarmManager.ELAPSED_REALTIME,
+                AlarmManager.ELAPSED_REALTIME_WAKEUP,
                 SystemClock.elapsedRealtime() + delayMs,
                 pendingIntent
             )
         } else {
-            context.sendBroadcast(Intent("com.air.advantage.HIDE_WARNING"))
+            LocalBroadcastManager.getInstance(context).sendBroadcast(Intent("com.air.advantage.HIDE_WARNING"))
         }
     }
 }

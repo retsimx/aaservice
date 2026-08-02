@@ -76,7 +76,7 @@ class AlertActivityTest {
         val shadowAlarm = shadowOf(alarmManager)
         val alarm = shadowAlarm.nextScheduledAlarm
         assertNotNull("Alarm should be scheduled", alarm)
-        assertEquals(AlarmManager.ELAPSED_REALTIME, alarm!!.type)
+        assertEquals(AlarmManager.ELAPSED_REALTIME_WAKEUP, alarm!!.type)
 
         val shadowPendingIntent = shadowOf(alarm.operation)
         assertEquals(AlertDialogReceiver::class.java.name, shadowPendingIntent.savedIntent.component?.className)

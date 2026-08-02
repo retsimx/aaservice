@@ -1,12 +1,15 @@
 package com.air.advantage.aaservice.service
 
 import android.app.NotificationManager
+import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.ContextWrapper
 import android.content.Intent
+import android.content.IntentFilter
 import android.hardware.usb.UsbAccessory
 import android.hardware.usb.UsbManager
 import android.os.ParcelFileDescriptor
+import androidx.localbroadcastmanager.content.LocalBroadcastManager
 import com.air.advantage.aaservice.data.protocol.CrcCalculator
 import com.air.advantage.aaservice.util.ServiceHelper
 import kotlinx.coroutines.delay
@@ -23,6 +26,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
+import org.robolectric.shadows.ShadowLooper
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [33], manifest = Config.NONE)
@@ -30,6 +34,8 @@ class UartForegroundServiceTest {
 
     private lateinit var service: UartForegroundService
     private lateinit var controller: org.robolectric.android.controller.ServiceController<UartForegroundService>
+    private var localReceiver: BroadcastReceiver? = null
+    private val localReceivedIntents = mutableListOf<Intent>()
 
     @Before
     fun setUp() {
@@ -41,12 +47,29 @@ class UartForegroundServiceTest {
 
     @After
     fun tearDown() {
+        localReceiver?.let {
+            LocalBroadcastManager.getInstance(RuntimeEnvironment.getApplication()).unregisterReceiver(it)
+        }
+        localReceiver = null
+        localReceivedIntents.clear()
         service.onDestroy()
         UartForegroundService.instance = null
     }
 
     private fun sentBroadcasts(): List<Intent> =
         shadowOf(RuntimeEnvironment.getApplication() as ContextWrapper).broadcastIntents
+
+    private fun registerLocalReceiver() {
+        val filter = IntentFilter("com.air.advantage.HIDE_WARNING")
+        val broadcastReceiver = object : BroadcastReceiver() {
+            override fun onReceive(context: Context, intent: Intent) {
+                localReceivedIntents.add(intent)
+            }
+        }
+        LocalBroadcastManager.getInstance(RuntimeEnvironment.getApplication())
+            .registerReceiver(broadcastReceiver, filter)
+        localReceiver = broadcastReceiver
+    }
 
     // ── startUartIo ──────────────────────────────────────────────
 
@@ -419,14 +442,24 @@ class UartForegroundServiceTest {
     fun `showNotification duplicate call does not repeat side effects`() {
         val app = service.application as android.app.Application
         shadowOf(app).clearBroadcastIntents()
+        registerLocalReceiver()
 
         service.showNotification(connected = true)
         service.showNotification(connected = true)
+        ShadowLooper.idleMainLooper()
 
-        val hideWarnings = shadowOf(app).broadcastIntents.count {
+        val hideWarnings = localReceivedIntents.count {
             it.action == "com.air.advantage.HIDE_WARNING"
         }
-        assertEquals(1, hideWarnings)
+        assertEquals(
+            "second call should not repeat side effects",
+            1,
+            hideWarnings
+        )
+        assertFalse(
+            "HIDE_WARNING must be a local broadcast, not a system broadcast",
+            shadowOf(app).broadcastIntents.any { it.action == "com.air.advantage.HIDE_WARNING" }
+        )
     }
 
     @Test
