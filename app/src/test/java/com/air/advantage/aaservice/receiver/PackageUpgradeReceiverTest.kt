@@ -54,10 +54,11 @@ class PackageUpgradeReceiverTest {
         assertEquals(MainActivity::class.java.name, startedActivity.component?.className)
         assertEquals(
             Intent.FLAG_ACTIVITY_NEW_TASK or
-                    Intent.FLAG_ACTIVITY_CLEAR_TASK or
-                    Intent.FLAG_ACTIVITY_RESET_TASK_IF_NEEDED,
+                    Intent.FLAG_ACTIVITY_SINGLE_TOP or
+                    Intent.FLAG_ACTIVITY_CLEAR_TOP,
             startedActivity.flags
         )
+        assertEquals(872415232, startedActivity.flags)
     }
 
     @Test
