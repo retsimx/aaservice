@@ -1,11 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <!--
+      Omit version so we match both stock filter "1" and live CB "1.0".
+      AOSP UsbAccessoryFilter requires an exact version string match when set;
+      mismatch means no handler → system shows the accessory URI / Vinculum popup.
+    -->
     <usb-accessory
         manufacturer="FTDI"
-        model="FTDIUARTDemo"
-        version="1"/>
+        model="FTDIUARTDemo"/>
     <usb-accessory
         manufacturer="FTDI"
-        model="Android Accessory FT312D"
-        version="1"/>
+        model="Android Accessory FT312D"/>
 </resources>

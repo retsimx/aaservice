@@ -84,14 +84,24 @@ class UartDispatchEngine(
             }
 
             if (canWanted || canInUse) {
-                val frame = if (canRetry || canMessageArmed) {
-                    lastCanFrame ?: buildSetCanFrame()
-                } else {
-                    buildSetCanFrame()
+                val retryOrArmed = canRetry || canMessageArmed
+                val hasQueued = canQueue.isNotEmpty() || broadcastCanQueue.isNotEmpty()
+                if (retryOrArmed || hasQueued) {
+                    val frame = if (retryOrArmed) {
+                        lastCanFrame ?: buildSetCanFrame()
+                    } else {
+                        buildSetCanFrame()
+                    }
+                    canWanted = false
+                    expectingAck = true
+                    return frame
                 }
+                // Stock still emits empty `setCAN `, which on live hardware leaves the CB in
+                // "CAN2 in use" and permanently starves getSystemData. Skip the empty frame.
                 canWanted = false
-                expectingAck = true
-                return frame
+                if (canInUse) {
+                    logger("CAN2 in use but CAN queues empty — skipping empty setCAN")
+                }
             }
 
             expectingAck = true
@@ -107,6 +117,7 @@ class UartDispatchEngine(
                     directResendCount = 0
                 }
                 if (directResendCount > 2) {
+                    logger("direct message resend limit exceeded, dropping: $head")
                     directQueue.removeFirst()
                     return null
                 }
@@ -115,6 +126,7 @@ class UartDispatchEngine(
                     directRetryCount++
                     return head.toByteArray(StandardCharsets.UTF_8)
                 }
+                logger("direct message retry limit reached, falling back to poll: $head")
                 pollIndex = 0
                 canUnsupported = false
             }
@@ -151,6 +163,10 @@ class UartDispatchEngine(
             if (parser.isGetCan(payload) >= 0) {
                 ackCanPending = true
                 canMessageArmed = false
+                // CAN transaction finished (or empty getCAN) — bus is free for poll again.
+                // Stock never clears f4154g; without this, a single "CAN2 in use" poll reply
+                // permanently starves getSystemData / zone polls.
+                canInUse = false
                 if (payload.size <= 9) {
                     return
                 }
@@ -158,6 +174,7 @@ class UartDispatchEngine(
                 if (retryNeeded && canRetryCount < 3) {
                     canRetryCount++
                     canRetry = true
+                    logger("CAN retry needed (count=$canRetryCount)")
                     return
                 }
                 canRetryCount = 0
@@ -176,6 +193,7 @@ class UartDispatchEngine(
                     }
                 } else if (text == CAN2_IN_USE) {
                     canInUse = true
+                    logger("CAN2 in use (direct path)")
                 } else {
                     logger("request and returned value don't match - $expectedTag $text")
                 }
@@ -188,6 +206,7 @@ class UartDispatchEngine(
                 if (expectedTag != requestContent) {
                     if (text == CAN2_IN_USE) {
                         canInUse = true
+                        logger("CAN2 in use (poll path, expected=$expectedTag)")
                     } else {
                         logger("poll request and returned value don't match - $expectedTag $text")
                     }
@@ -233,30 +252,30 @@ class UartDispatchEngine(
     }
 
     /**
-     * Adds CAN ids to the CAN queue, skipping ids already queued.
+     * Adds CAN tokens to the CAN queue, skipping tokens already queued.
+     * Tokens are opaque wire strings (decimal ids or hex blobs like
+     * `0701000000600000000000000`), matching stock `C.a` / `ServiceUart.i()`.
      */
-    fun enqueueCanIds(ids: List<Int>) {
+    fun enqueueCanIds(ids: List<String>) {
         synchronized(lock) {
             for (id in ids) {
-                val idStr = id.toString()
-                if (!canQueue.contains(idStr)) {
-                    canQueue.addLast(idStr)
+                if (!canQueue.contains(id)) {
+                    canQueue.addLast(id)
                 }
             }
         }
     }
 
     /**
-     * Adds broadcast CAN ids to the dedicated broadcast queue, skipping ids already queued.
-     * Mirrors the reference `ServiceUart.f4131f` list, which is only consulted as a fallback
-     * when the CAN queue is empty.
+     * Adds broadcast CAN tokens to the dedicated broadcast queue, skipping tokens already
+     * queued. Mirrors the reference `ServiceUart.f4131f` list, which is only consulted as a
+     * fallback when the CAN queue is empty.
      */
-    fun enqueueBroadcastCanIds(ids: List<Int>) {
+    fun enqueueBroadcastCanIds(ids: List<String>) {
         synchronized(lock) {
             for (id in ids) {
-                val idStr = id.toString()
-                if (!broadcastCanQueue.contains(idStr)) {
-                    broadcastCanQueue.addLast(idStr)
+                if (!broadcastCanQueue.contains(id)) {
+                    broadcastCanQueue.addLast(id)
                 }
             }
         }

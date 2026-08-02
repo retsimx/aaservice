@@ -34,8 +34,8 @@ class BroadcastCanQueueTest {
     @Test
     fun `broadcast CAN ids are held back while the CAN queue is non-empty`() {
         val e = engine()
-        e.enqueueCanIds((1..30).toList())
-        e.enqueueBroadcastCanIds((1000..1010).toList())
+        e.enqueueCanIds((1..30).map { it.toString() })
+        e.enqueueBroadcastCanIds((1000..1010).map { it.toString() })
 
         val frame = firstSetCan(e)
         assertEquals(frameOf("setCAN ${(1..25).joinToString(" ")}"), frame)
@@ -45,7 +45,7 @@ class BroadcastCanQueueTest {
     @Test
     fun `broadcast CAN id is sent as a fallback when the CAN queue is empty`() {
         val e = engine()
-        e.enqueueBroadcastCanIds(listOf(1000))
+        e.enqueueBroadcastCanIds(listOf("1000"))
 
         assertEquals(frameOf("setCAN 1000"), firstSetCan(e))
     }
@@ -53,8 +53,8 @@ class BroadcastCanQueueTest {
     @Test
     fun `CAN queue drains before the broadcast fallback is consulted`() {
         val e = engine()
-        e.enqueueCanIds((1..3).toList())
-        e.enqueueBroadcastCanIds(listOf(2000))
+        e.enqueueCanIds((1..3).map { it.toString() })
+        e.enqueueBroadcastCanIds(listOf("2000"))
 
         assertEquals(frameOf("setCAN 1 2 3"), firstSetCan(e))
 
@@ -66,7 +66,7 @@ class BroadcastCanQueueTest {
     @Test
     fun `duplicate broadcast ids are enqueued once`() {
         val e = engine()
-        e.enqueueBroadcastCanIds(listOf(3000, 3000, 3001))
+        e.enqueueBroadcastCanIds(listOf("3000", "3000", "3001"))
 
         assertEquals(frameOf("setCAN 3000"), firstSetCan(e))
 

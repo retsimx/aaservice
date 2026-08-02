@@ -25,7 +25,7 @@ class BroadcastDataTest {
         val controller = Robolectric.buildService(UartForegroundService::class.java)
         service = spy(controller.get())
 
-        doReturn("com.air.advantage.aaservice").whenever(service).packageName
+        doReturn("com.air.advantage.aaservice2").whenever(service).packageName
         whenever(service.registerReceiver(any(), any())).thenReturn(null)
         whenever(service.registerReceiver(any(), any(), anyOrNull(), anyOrNull())).thenReturn(null)
         doNothing().whenever(service).unregisterReceiver(any())

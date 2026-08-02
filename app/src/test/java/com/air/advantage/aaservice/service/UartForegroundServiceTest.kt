@@ -143,7 +143,18 @@ class UartForegroundServiceTest {
     }
 
     @Test
-    fun `enqueueCanIds ignores non-numeric tokens`() {
+    fun `enqueueCanIds preserves hex CAN tokens`() {
+        service.enqueueCanIds("0701000000600000000000000 0201000000000360000000000")
+        service.dispatchEngine.onPing()
+        val frame = service.dispatchEngine.onPing()
+        assertNotNull(frame)
+        val text = String(frame!!, Charsets.UTF_8)
+        assertTrue(text.contains("0701000000600000000000000"))
+        assertTrue(text.contains("0201000000000360000000000"))
+    }
+
+    @Test
+    fun `enqueueCanIds keeps non-numeric tokens for wire parity`() {
         service.enqueueCanIds("1 abc 2")
         service.dispatchEngine.onPing()
         val frame = service.dispatchEngine.onPing()
@@ -151,7 +162,7 @@ class UartForegroundServiceTest {
         val text = String(frame!!, Charsets.UTF_8)
         assertTrue(text.contains("1"))
         assertTrue(text.contains("2"))
-        assertFalse(text.contains("abc"))
+        assertTrue(text.contains("abc"))
     }
 
     // ── uartEventSink: onPollData ────────────────────────────────

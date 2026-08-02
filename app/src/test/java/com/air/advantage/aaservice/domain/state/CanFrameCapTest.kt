@@ -32,7 +32,7 @@ class CanFrameCapTest {
     @Test
     fun `setCAN caps at 25 ids and drains the remainder on re-arm`() {
         val e = engine()
-        e.enqueueCanIds((1..30).toList())
+        e.enqueueCanIds((1..30).map { it.toString() })
 
         val first = firstSetCan(e)
         assertEquals(frameOf("setCAN ${(1..25).joinToString(" ")}"), first)

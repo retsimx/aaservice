@@ -79,7 +79,7 @@ class PollAdvanceTest {
         e.onFrame(systemDataPayload())
         e.onFrame(clockPayload()) // wrap to 0, canUnsupported cleared
         assertEquals(0, e.currentPollIndex())
-        e.enqueueCanIds(listOf(5))
+        e.enqueueCanIds(listOf("5"))
         e.onPing() // poll entry re-arms canWanted
         val frame = String(e.onPing()!!, Charsets.UTF_8)
         assertTrue(frame.startsWith("<U>setCAN "))
