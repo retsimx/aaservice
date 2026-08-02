@@ -67,6 +67,14 @@ class FrameParser {
         return result
     }
 
+    fun removeRange(data: ByteArray, startTag: String, endTag: String): ByteArray {
+        return removeRange(data, startTag.toByteArray(Charsets.UTF_8), endTag.toByteArray(Charsets.UTF_8))
+    }
+
+    fun removeRange(data: ByteArray, startTag: ByteArray, endTag: ByteArray): ByteArray {
+        return removeTag(data, startTag, endTag)
+    }
+
     fun removeTag(data: ByteArray, tag: ByteArray, replacement: ByteArray): ByteArray {
         val openTag = openTag(tag)
         val openPos = indexOf(0, data, openTag)

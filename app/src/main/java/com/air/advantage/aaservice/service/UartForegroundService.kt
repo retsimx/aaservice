@@ -9,6 +9,7 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.os.Build
 import android.os.IBinder
 import android.os.ParcelFileDescriptor
 import android.util.Log
@@ -17,15 +18,12 @@ import java.io.FileOutputStream
 import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicReference
 import com.air.advantage.aaservice.R
-import com.air.advantage.aaservice.data.protocol.CrcCalculator
-import com.air.advantage.aaservice.data.protocol.FrameParser
 import com.air.advantage.aaservice.data.repository.DataCacheRepository
 import com.air.advantage.aaservice.data.repository.PollQueueRepository
 import com.air.advantage.aaservice.data.uart.UartDataSource
 import com.air.advantage.aaservice.data.uart.UsbAccessoryDataSource
-import com.air.advantage.aaservice.domain.model.CanMessage
-import com.air.advantage.aaservice.domain.state.CanMessageQueue
-import com.air.advantage.aaservice.domain.state.UartStateMachine
+import com.air.advantage.aaservice.domain.state.UartDispatchEngine
+import com.air.advantage.aaservice.domain.state.UartEventSink
 import com.air.advantage.aaservice.receiver.BackupMessageNoPermissionReceiver
 import com.air.advantage.aaservice.receiver.BackupMessageReceiver
 import com.air.advantage.aaservice.receiver.BroadcastCanToCbNoPermissionReceiver
@@ -40,22 +38,19 @@ import android.hardware.usb.UsbAccessory
 import android.hardware.usb.UsbManager
 import com.air.advantage.aaservice.util.CryptoHelper
 import com.air.advantage.aaservice.util.FujitsuDetector
+import com.air.advantage.aaservice.util.HardwareDetector
 import com.air.advantage.aaservice.util.ServiceHelper
-import android.os.Build
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 
 class UartForegroundService : Service() {
 
     internal val pollQueue = PollQueueRepository()
-    internal val canQueue = CanMessageQueue()
-    internal val stateMachine = UartStateMachine()
     internal val dataCache = DataCacheRepository()
     internal val registeredReceivers = mutableListOf<BroadcastReceiver>()
     internal val deviceOpen = AtomicBoolean(false)
@@ -86,6 +81,26 @@ class UartForegroundService : Service() {
         "getZoneData?zone=9",
         "getZoneData?zone=10"
     )
+
+    internal val uartEventSink: UartEventSink = object : UartEventSink {
+        override fun onPollData(tag: String, payload: ByteArray) {
+            dataCache.put(tag, payload)
+            broadcastData(tag)
+        }
+
+        override fun onRawCan(payload: ByteArray) {
+            handleGetCan(String(payload, Charsets.UTF_8))
+        }
+    }
+
+    internal val dispatchEngine by lazy {
+        UartDispatchEngine(
+            pollTags = POLL_TAGS,
+            typeBytes = HardwareDetector.typeBytes(),
+            appStoreBytes = HardwareDetector.appStoreBytes(),
+            sink = uartEventSink
+        )
+    }
 
     override fun onCreate() {
         super.onCreate()
@@ -130,8 +145,6 @@ class UartForegroundService : Service() {
     override fun onDestroy() {
         deviceOpen.set(false)
         uartIoJob?.cancel()
-        pollJob?.cancel()
-        canJob?.cancel()
         ioScope.cancel()
         registeredReceivers.forEach { unregisterReceiver(it) }
         registeredReceivers.clear()
@@ -139,24 +152,12 @@ class UartForegroundService : Service() {
         super.onDestroy()
     }
 
-    fun requestFullPoll() {
-        POLL_TAGS.forEach { tag ->
-            requestSinglePoll(tag)
-        }
-    }
-
     fun requestSinglePoll(tag: String) {
-        val crc = CrcCalculator.computeHex(tag)
-        val frame = "<U>$tag</U=$crc>"
-        val canMessage = CanMessage(id = 0, data = frame)
-        canQueue.enqueue(canMessage)
+        dispatchEngine.enqueueDirectMessage(tag)
     }
 
     fun enqueueUartMessage(message: String) {
-        val crc = CrcCalculator.computeHex(message)
-        val frame = "<U>$message</U=$crc>"
-        val canMessage = CanMessage(id = 0, data = frame)
-        canQueue.enqueue(canMessage)
+        dispatchEngine.enqueueDirectMessage(message)
     }
 
     private fun parseCanIds(canIds: String): List<Int> {
@@ -165,29 +166,11 @@ class UartForegroundService : Service() {
     }
 
     fun enqueueCanIds(canIds: String) {
-        parseCanIds(canIds).forEach { id ->
-            val canMessage = CanMessage(id = id, data = "")
-            canQueue.enqueue(canMessage)
-        }
+        dispatchEngine.enqueueCanIds(parseCanIds(canIds))
     }
 
-    fun processPollResponse(tag: String) {
-        val data = if (tag == "getSystemData") {
-            val parser = FrameParser()
-            var result = "<type>17</type><AppStore>MyAir5</AppStore><dhcp>auto</dhcp><gateway>192.168.1.1</gateway><MyAppRev>14.150</MyAppRev>".toByteArray(Charsets.UTF_8)
-            result = parser.replaceTagContent(result, "type".toByteArray(Charsets.UTF_8), "17".toByteArray(Charsets.UTF_8))
-            result = parser.replaceTagContent(result, "AppStore".toByteArray(Charsets.UTF_8), "MyAir5".toByteArray(Charsets.UTF_8))
-            result = parser.removeTag(result, "dhcp".toByteArray(Charsets.UTF_8), "dhcp".toByteArray(Charsets.UTF_8))
-            result = parser.removeTag(result, "gateway".toByteArray(Charsets.UTF_8), "gateway".toByteArray(Charsets.UTF_8))
-            result = parser.replaceTagContent(result, "MyAppRev".toByteArray(Charsets.UTF_8), "14.150".toByteArray(Charsets.UTF_8))
-            result
-        } else {
-            tag.toByteArray(Charsets.UTF_8)
-        }
-
-        dataCache.put(tag, data)
-        broadcastData(tag)
-        stateMachine.onValidResponse(tag)
+    fun processCanIds(canIds: String) {
+        dispatchEngine.enqueueCanIds(parseCanIds(canIds))
     }
 
     fun broadcastData(tag: String) {
@@ -213,7 +196,7 @@ class UartForegroundService : Service() {
         return true
     }
 
-    private fun handleGetCan(frame: String) {
+    internal fun handleGetCan(frame: String) {
         if (!updateLastRawCan(frame)) return
 
         val isFujitsu = FujitsuDetector.isFujitsuVariant(this)
@@ -296,14 +279,8 @@ class UartForegroundService : Service() {
         }
     }
 
-    fun processCanIds(canIds: String) {
-        stateMachine.onCanQueued(parseCanIds(canIds))
-    }
-
     private val ioScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private var uartIoJob: Job? = null
-    private var pollJob: Job? = null
-    private var canJob: Job? = null
 
     internal var uartDataSource: UartDataSource? = null
         private set
@@ -311,7 +288,8 @@ class UartForegroundService : Service() {
     fun startUartIo(pfd: ParcelFileDescriptor) {
         val dataSource = UsbAccessoryDataSource(
             inputStreamFactory = { FileInputStream(it.fileDescriptor) },
-            outputStreamFactory = { FileOutputStream(it.fileDescriptor) }
+            outputStreamFactory = { FileOutputStream(it.fileDescriptor) },
+            engine = dispatchEngine
         )
         uartDataSource = dataSource
         uartIoJob = ioScope.launch {
@@ -319,102 +297,6 @@ class UartForegroundService : Service() {
                 FileInputStream(pfd.fileDescriptor),
                 FileOutputStream(pfd.fileDescriptor)
             )
-            handleReadStream(dataSource)
-        }
-    }
-
-    internal suspend fun handleReadStream(dataSource: UartDataSource) {
-        dataSource.read().collect { buffer ->
-            processIncomingData(buffer)
-        }
-    }
-
-    internal fun processIncomingData(buffer: ByteArray) {
-        val parser = FrameParser()
-        val startMarker = parser.findStartMarker(buffer)
-        if (startMarker < 0) return
-
-        if (parser.isAck(buffer) >= 0) {
-            Log.d(TAG, "Received ACK")
-            return
-        }
-
-        if (parser.isNack(buffer) >= 0) {
-            Log.d(TAG, "Received NACK")
-            return
-        }
-
-        val frameEnd = parser.findFrameEnd(startMarker, buffer)
-        if (frameEnd < 0) return
-
-        val frame = parser.extractPayload(buffer, startMarker, frameEnd) ?: return
-        val frameStr = String(frame, Charsets.UTF_8)
-
-        if (parser.isGetCan(frame) >= 0) {
-            handleGetCan(frameStr)
-            return
-        }
-
-        if (parser.isUnknown(frame) >= 0) {
-            Log.d(TAG, "Received Unknown frame")
-            return
-        }
-
-        if (frameStr.contains("Ping")) {
-            Log.d(TAG, "Received Ping")
-            return
-        }
-
-        if (frameStr.contains("CAN2 in use")) {
-            Log.d(TAG, "Received CAN2 in use")
-            return
-        }
-
-        dataCache.put("lastFrame", frame)
-    }
-
-    fun handlePollCycle(dataSource: UartDataSource) {
-        pollJob = ioScope.launch {
-            while (true) {
-                // Check CAN queue first
-                if (!canQueue.isEmpty()) {
-                    val canFrame = canQueue.buildCanFrame()
-                    if (canFrame.length > 17) {
-                        val frameBytes = canFrame.toByteArray(Charsets.UTF_8)
-                        dataSource.write(frameBytes)
-                        Log.d(TAG, "Sent CAN frame: $canFrame")
-                        canQueue.clear()
-                        delay(50)
-                        continue
-                    }
-                }
-
-                val currentPoll = pollQueue.currentPoll()
-                if (currentPoll != null) {
-                    val frameBytes = currentPoll.frameTag.toByteArray(Charsets.UTF_8)
-                    dataSource.write(frameBytes)
-                    Log.d(TAG, "Sent poll: ${currentPoll.tag}")
-                    stateMachine.onSendPoll(currentPoll.tag, frameBytes)
-                }
-
-                pollQueue.advanceToNext()
-                delay(50)
-            }
-        }
-    }
-
-    fun sendCanMessages(dataSource: UartDataSource) {
-        canJob = ioScope.launch {
-            val canFrame = canQueue.buildCanFrame()
-            if (canFrame.length <= 17) {
-                Log.d(TAG, "CAN frame too short, skipping")
-                return@launch
-            }
-
-            val frameBytes = canFrame.toByteArray(Charsets.UTF_8)
-            dataSource.write(frameBytes)
-            Log.d(TAG, "Sent CAN frame: $canFrame")
-            canQueue.clear()
         }
     }
 
