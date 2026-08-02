@@ -38,10 +38,26 @@ class MessageToCbReceiverTest {
     @Test
     fun `onReceive with device closed does nothing`() {
         whenever(service.deviceOpen).thenReturn(AtomicBoolean(false))
+        whenever(service.isWsMode()).thenReturn(false)
 
         receiver.onReceive(context, intentWithMessage("setZoneData?zone=1"))
 
         verify(service, never()).enqueueUartMessage(anyString())
+    }
+
+    @Test
+    fun `onReceive WS mode enqueues setAircon when device closed`() {
+        whenever(service.deviceOpen).thenReturn(AtomicBoolean(false))
+        whenever(service.isWsMode()).thenReturn(true)
+
+        receiver.onReceive(
+            context,
+            intentWithMessage("""setAircon?json={"aircons":{"ac1":{"info":{"state":"on"}}}}"""),
+        )
+
+        verify(service).enqueueUartMessage(
+            """setAircon?json={"aircons":{"ac1":{"info":{"state":"on"}}}}""",
+        )
     }
 
     @Test
