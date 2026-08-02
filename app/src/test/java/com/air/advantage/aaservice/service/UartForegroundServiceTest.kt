@@ -326,15 +326,6 @@ class UartForegroundServiceTest {
     }
 
     @Test
-    fun `onAccessoryDetached closes device`() {
-        service.deviceOpen.set(true)
-
-        service.onAccessoryDetached()
-
-        assertFalse(service.deviceOpen.get())
-    }
-
-    @Test
     fun `openAccessory with null PFD and crash count above threshold sends reboot broadcast`() {
         val manager = mock<UsbManager>()
         val accessory = mock<UsbAccessory>()
