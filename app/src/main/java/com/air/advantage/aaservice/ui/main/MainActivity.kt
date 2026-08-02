@@ -2,6 +2,7 @@ package com.air.advantage.aaservice.ui.main
 
 import androidx.activity.ComponentActivity
 import androidx.activity.viewModels
+import androidx.lifecycle.lifecycleScope
 import android.app.AlertDialog
 import android.app.admin.DevicePolicyManager
 import android.content.ComponentName
@@ -17,12 +18,15 @@ import android.widget.Toast
 import com.air.advantage.aaservice.R
 import com.air.advantage.aaservice.receiver.DeviceAdminReceiver
 import com.air.advantage.aaservice.service.RebootNotificationService
+import com.air.advantage.aaservice.service.TransportStatusStore
 import com.air.advantage.aaservice.util.PreferencesManager
 import com.air.advantage.aaservice.util.ServiceHelper
 import com.air.advantage.aaservice.util.TransportMode
 import dagger.hilt.android.AndroidEntryPoint
 import java.util.concurrent.atomic.AtomicBoolean
 import javax.inject.Inject
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity(), View.OnClickListener {
@@ -42,6 +46,8 @@ class MainActivity : ComponentActivity(), View.OnClickListener {
 
     /** Suppress RadioGroup callbacks while syncing controls from prefs. */
     private var suppressTransportModeCallback = false
+
+    private var transportStatusJob: Job? = null
 
     override fun onCreate(bundle: Bundle?) {
         super.onCreate(bundle)
@@ -72,6 +78,8 @@ class MainActivity : ComponentActivity(), View.OnClickListener {
     public override fun onPause() {
         super.onPause()
         isVisible.set(false)
+        transportStatusJob?.cancel()
+        transportStatusJob = null
     }
 
     private fun updateUI() {
@@ -114,7 +122,16 @@ class MainActivity : ComponentActivity(), View.OnClickListener {
         suppressTransportModeCallback = false
 
         urlField.setText(preferencesManager.daemonWsUrl)
-        statusView.setText(statusStringRes(viewModel.transportConnectionStatus.value))
+        applyTransportStatusToView(statusView, viewModel.transportConnectionStatus.value)
+
+        transportStatusJob?.cancel()
+        transportStatusJob = lifecycleScope.launch {
+            TransportStatusStore.status.collect { modeStatus ->
+                val ui = modeStatus.toTransportConnectionStatus()
+                viewModel.setTransportConnectionStatus(ui)
+                applyTransportStatusToView(statusView, ui)
+            }
+        }
 
         modeGroup.setOnCheckedChangeListener { _, checkedId ->
             if (suppressTransportModeCallback) return@setOnCheckedChangeListener
@@ -141,6 +158,13 @@ class MainActivity : ComponentActivity(), View.OnClickListener {
             // Reflect any default applied by PreferencesManager (e.g. blank → default URL).
             urlField.setText(preferencesManager.daemonWsUrl)
         }
+    }
+
+    private fun applyTransportStatusToView(
+        statusView: TextView,
+        status: TransportConnectionStatus,
+    ) {
+        statusView.setText(statusStringRes(status))
     }
 
     private fun statusStringRes(status: TransportConnectionStatus): Int = when (status) {
