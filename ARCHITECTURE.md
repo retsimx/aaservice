@@ -15,8 +15,8 @@ The app communicates with Advantage Air MyAir5 HVAC systems over USB UART using 
   │  Data Layer                                                 │
   │  UartDataSource · FrameParser · CrcCalculator               │
   │  MessageReceiver · DataBroadcaster                          │
-  │  DataCacheRepository · CanStateRepository                   │
-  │  PollQueueRepository · PreferencesManager                   │
+  │  DataCacheRepository · PollQueueRepository                  │
+  │  PreferencesManager                                         │
   └───────────────────────────┬─────────────────────────────────┘
                               │ domain types
                               ▼

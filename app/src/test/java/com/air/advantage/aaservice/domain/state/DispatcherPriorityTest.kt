@@ -56,7 +56,7 @@ class DispatcherPriorityTest {
     @Test
     fun `getCAN retry needed sets canRetry without broadcasting`() {
         val e = engine()
-        e.onFrame("getCAN 0".toByteArray(Charsets.UTF_8))
+        e.onFrame("getCAN 0000".toByteArray(Charsets.UTF_8))
         assertTrue(sink.rawCan.isEmpty())
         // ackCAN is still armed by the inbound getCAN
         assertEquals(frameOf("ackCAN 1"), String(e.onPing()!!, Charsets.UTF_8))
@@ -65,7 +65,7 @@ class DispatcherPriorityTest {
     @Test
     fun `getCAN retry broadcasts after three retries`() {
         val e = engine()
-        val payload = "getCAN 0".toByteArray(Charsets.UTF_8)
+        val payload = "getCAN 0000".toByteArray(Charsets.UTF_8)
         repeat(3) { e.onFrame(payload) }
         assertTrue(sink.rawCan.isEmpty())
         e.onFrame(payload)
@@ -94,7 +94,7 @@ class DispatcherPriorityTest {
         e.onPing() // prime canWanted
         val first = String(e.onPing()!!, Charsets.UTF_8)
         assertTrue(first.startsWith("<U>setCAN "))
-        e.onFrame("getCAN 0".toByteArray(Charsets.UTF_8)) // retry-needed
+        e.onFrame("getCAN 0000".toByteArray(Charsets.UTF_8)) // retry-needed
         assertEquals(frameOf("ackCAN 1"), String(e.onPing()!!, Charsets.UTF_8))
         e.onPing() // poll re-arms canWanted
         assertEquals(first, String(e.onPing()!!, Charsets.UTF_8))
