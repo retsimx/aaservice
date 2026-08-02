@@ -22,7 +22,7 @@ import org.junit.Test
  *
  * The retry state is observed only through onPing()/onFrame(): when retry is armed, onPing()
  * resends the stored setCAN frame byte-for-byte; when cleared, it builds a fresh one from the
- * remaining queue. Frames are seeded with `enqueueCanIds(listOf(1, 2))` so the stored frame is
+ * remaining queue. Frames are seeded with `enqueueCanIds(listOf("1", "2"))` so the stored frame is
  * `setCAN 1 2` and any rebuilt frame is observably different.
  */
 class NackRetryTest {
@@ -48,7 +48,7 @@ class NackRetryTest {
      * CAN branch builds the setCAN from the seeded ids.
      */
     private fun storedSetCan(e: UartDispatchEngine): String {
-        e.enqueueCanIds(listOf(1, 2))
+        e.enqueueCanIds(listOf("1", "2"))
         e.onPing() // poll entry re-arms canWanted
         val frame = String(e.onPing()!!, Charsets.UTF_8)
         assertTrue("expected setCAN but was $frame", frame.startsWith("<U>setCAN "))
@@ -118,15 +118,20 @@ class NackRetryTest {
         assertArrayEquals(okPayload, sink.rawCan[0])
 
         assertEquals(frameOf("ackCAN 1"), String(e.onPing()!!, Charsets.UTF_8))
-        val rebuilt = nextCanFrame(e)
-        assertNotEquals("non-NACK getCAN must clear the armed state", stored, rebuilt)
-        assertTrue("a new setCAN must be built", rebuilt.startsWith("<U>setCAN "))
+        // Queues are empty and armed state cleared — do not emit empty setCAN; resume poll.
+        val afterClear = nextCanFrame(e)
+        assertNotEquals("non-NACK getCAN must clear the armed state", stored, afterClear)
+        assertEquals(
+            "empty CAN queues must fall through to poll instead of empty setCAN",
+            frameOf("getClock"),
+            afterClear
+        )
     }
 
     @Test
     fun `getCAN NACK retry polarity matches reference h c`() {
         val e = engine()
-        e.enqueueCanIds((1..30).toList())
+        e.enqueueCanIds((1..30).map { it.toString() })
         e.onPing() // poll entry re-arms canWanted
         val stored = String(e.onPing()!!, Charsets.UTF_8)
         assertEquals(frameOf("setCAN ${(1..25).joinToString(" ")}"), stored)

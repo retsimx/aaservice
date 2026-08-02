@@ -10,11 +10,11 @@ android {
     compileSdk = 34
 
     defaultConfig {
-        applicationId = "com.air.advantage.aaservice"
+        applicationId = "com.air.advantage.aaservice2"
         minSdk = 19
         targetSdk = 30
-        versionCode = 1
-        versionName = "1.0.0"
+        versionCode = 4151
+        versionName = "14.150-rebuild.1"
         vectorDrawables {
             useSupportLibrary = true
         }

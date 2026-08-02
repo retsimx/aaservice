@@ -106,7 +106,7 @@ class MockUartDataSource : UartDataSource {
         "<U>$payload</U=${CrcCalculator.computeHex(payload)}>"
 
     companion object {
-        private const val TAG = "MockUartDataSource"
+        private const val TAG = "AAService2/Mock"
         private const val ACK_PAYLOAD = "<ack>1</ack>"
         const val PING_FRAME: String = "<U>Ping</U=db>"
     }
