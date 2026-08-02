@@ -2,25 +2,14 @@ package com.air.advantage.aaservice.service
 
 import android.app.NotificationManager
 import android.content.Context
+import android.content.ContextWrapper
 import android.content.Intent
 import android.hardware.usb.UsbAccessory
 import android.hardware.usb.UsbManager
 import android.os.ParcelFileDescriptor
 import com.air.advantage.aaservice.data.protocol.CrcCalculator
-import com.air.advantage.aaservice.data.repository.CanStateRepository
-import com.air.advantage.aaservice.data.repository.DataCacheRepository
-import com.air.advantage.aaservice.data.repository.PollQueueRepository
-import com.air.advantage.aaservice.data.uart.UartDataSource
-import com.air.advantage.aaservice.domain.model.CanMessage
-import com.air.advantage.aaservice.domain.state.CanMessageQueue
-import com.air.advantage.aaservice.domain.state.UartState
-import com.air.advantage.aaservice.domain.state.UartStateMachine
-import com.air.advantage.aaservice.util.CryptoHelper
-import com.air.advantage.aaservice.util.FujitsuDetector
 import com.air.advantage.aaservice.util.ServiceHelper
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.MutableSharedFlow
-import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import org.junit.After
@@ -29,10 +18,9 @@ import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.mockito.kotlin.*
-import org.mockito.ArgumentMatchers
-import org.mockito.Mockito.mockStatic
 import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.RuntimeEnvironment
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
 
@@ -40,8 +28,7 @@ import org.robolectric.annotation.Config
 @Config(sdk = [33], manifest = Config.NONE)
 class UartForegroundServiceTest {
 
-private lateinit var service: UartForegroundService
-
+    private lateinit var service: UartForegroundService
     private lateinit var controller: org.robolectric.android.controller.ServiceController<UartForegroundService>
 
     @Before
@@ -58,6 +45,9 @@ private lateinit var service: UartForegroundService
         UartForegroundService.instance = null
     }
 
+    private fun sentBroadcasts(): List<Intent> =
+        shadowOf(RuntimeEnvironment.getApplication() as ContextWrapper).broadcastIntents
+
     // ── startUartIo ──────────────────────────────────────────────
 
     @Test
@@ -71,218 +61,160 @@ private lateinit var service: UartForegroundService
         assertNotNull(service.uartDataSource)
     }
 
-    // ── handleReadStream ─────────────────────────────────────────
+    // ── engine delegation: direct queue ──────────────────────────
 
     @Test
-    fun `handleReadStream collects all frames from data source`() {
-        runBlocking {
-            val dataSource = mock<UartDataSource>()
-            val flow = MutableSharedFlow<ByteArray>(replay = 1)
-            whenever(dataSource.read()).thenReturn(flow.asSharedFlow())
-
-            val buffer = "<U>getSystemData</U=ab>".toByteArray()
-            flow.emit(buffer)
-
-            val job = launch {
-                service.handleReadStream(dataSource)
-            }
-            delay(50)
-            job.cancel()
-
-            verify(service).processIncomingData(eq(buffer))
-        }
-    }
-
-    @Test
-    fun `handleReadStream with empty flow does nothing`() {
-        runBlocking {
-            val dataSource = mock<UartDataSource>()
-            val flow = MutableSharedFlow<ByteArray>(replay = 0)
-            whenever(dataSource.read()).thenReturn(flow.asSharedFlow())
-
-            val job = launch {
-                service.handleReadStream(dataSource)
-            }
-            delay(50)
-            job.cancel()
-
-            verify(dataSource).read()
-        }
-    }
-
-    // ── processIncomingData ──────────────────────────────────────
-
-    @Test
-    fun `processIncomingData handles Ack frame`() {
-        val buffer = "<ack>1</ack>".toByteArray()
-        service.processIncomingData(buffer)
-        assertNull(service.dataCache.get("lastFrame"))
-    }
-
-    @Test
-    fun `processIncomingData handles Nack frame`() {
-        val buffer = "<ack>0</ack>".toByteArray()
-        service.processIncomingData(buffer)
-        assertNull(service.dataCache.get("lastFrame"))
-    }
-
-    @Test
-    fun `processIncomingData handles DataFrame with getSystemData`() {
-        val tag = "getSystemData"
-        val crc = CrcCalculator.computeHex(tag)
-        val frame = "<U>$tag</U=$crc>".toByteArray()
-        service.processIncomingData(frame)
-        val cached = service.dataCache.get("lastFrame")
-        assertNotNull(cached)
-        assertArrayEquals(frame, cached)
-    }
-
-    @Test
-    fun `processIncomingData handles GetCan frame`() {
-        val buffer = "<U>getCAN zone1</U=00>".toByteArray()
-        service.processIncomingData(buffer)
-        assertNull(service.dataCache.get("lastFrame"))
-    }
-
-    @Test
-    fun `processIncomingData handles Ping frame`() {
-        val buffer = "<U>Ping</U=db>".toByteArray()
-        service.processIncomingData(buffer)
-        assertNull(service.dataCache.get("lastFrame"))
-    }
-
-    @Test
-    fun `processIncomingData handles Unknown frame`() {
-        val buffer = "<U><request>Unknown</request></U=00>".toByteArray()
-        service.processIncomingData(buffer)
-        assertNull(service.dataCache.get("lastFrame"))
-    }
-
-    @Test
-    fun `processIncomingData with no start marker returns early`() {
-        val buffer = "noStartMarkerHere".toByteArray()
-        service.processIncomingData(buffer)
-        assertNull(service.dataCache.get("lastFrame"))
-    }
-
-    @Test
-    fun `processIncomingData with CAN2 in use frame`() {
-        val buffer = "<U>CAN2 in use</U=00>".toByteArray()
-        service.processIncomingData(buffer)
-        assertNull(service.dataCache.get("lastFrame"))
-    }
-
-    // ── handlePollCycle ──────────────────────────────────────────
-
-    @Test
-    fun `handlePollCycle sends current poll and advances`() {
-        runBlocking {
-            val dataSource = mock<UartDataSource>()
-            service.pollQueue.initialize(isMyAir5 = true)
-
-            service.handlePollCycle(dataSource)
-            delay(120)
-
-            verify(dataSource, atLeastOnce()).write(any())
-        }
-    }
-
-    @Test
-    fun `handlePollCycle with empty queue does not write`() {
-        runBlocking {
-            val dataSource = mock<UartDataSource>()
-
-            service.handlePollCycle(dataSource)
-            delay(120)
-
-            verify(dataSource, never()).write(any())
-        }
-    }
-
-    // ── sendCanMessages ──────────────────────────────────────────
-
-    @Test
-    fun `sendCanMessages with short frame skips write`() {
-        runBlocking {
-            val dataSource = mock<UartDataSource>()
-            service.canQueue.enqueue(CanMessage(id = 1, data = "hi"))
-
-            service.sendCanMessages(dataSource)
-            delay(50)
-
-            verify(dataSource, never()).write(any())
-        }
-    }
-
-    @Test
-    fun `sendCanMessages with valid frame writes to data source and clears queue`() {
-        runBlocking {
-            val dataSource = mock<UartDataSource>()
-            (1..10).forEach { id ->
-                service.canQueue.enqueue(CanMessage(id = id, data = ""))
-            }
-
-            service.sendCanMessages(dataSource)
-            delay(50)
-
-            verify(dataSource).write(any())
-            assertTrue(service.canQueue.isEmpty())
-        }
-    }
-
-    // ── requestFullPoll ──────────────────────────────────────────
-
-    @Test
-    fun `requestFullPoll iterates all 12 POLL_TAGS`() {
-        service.requestFullPoll()
-        assertEquals(12, service.canQueue.size())
-        verify(service, times(12)).requestSinglePoll(any())
-    }
-
-    @Test
-    fun `requestSinglePoll with getSystemData tag`() {
-        service.requestSinglePoll("getSystemData")
-        val msg = service.canQueue.dequeue()
-        assertNotNull(msg)
-        assertEquals(0, msg?.id)
-        val expectedCrc = CrcCalculator.computeHex("getSystemData")
-        assertEquals("<U>getSystemData</U=$expectedCrc>", msg?.data)
-    }
-
-    // ── enqueueUartMessage ───────────────────────────────────────
-
-    @Test
-    fun `enqueueUartMessage with Temperature message`() {
+    fun `enqueueUartMessage feeds the engine direct queue`() {
         service.enqueueUartMessage("Temperature")
-        val msg = service.canQueue.dequeue()
-        assertNotNull(msg)
-        assertEquals(0, msg?.id)
+        val frame = service.dispatchEngine.onPing()
+        assertNotNull(frame)
         val expectedCrc = CrcCalculator.computeHex("Temperature")
-        assertEquals("<U>Temperature</U=$expectedCrc>", msg?.data)
+        assertEquals("<U>Temperature</U=$expectedCrc>", String(frame!!, Charsets.UTF_8))
     }
 
-    // ── enqueueCanIds ────────────────────────────────────────────
+    @Test
+    fun `enqueueUartMessage with query strips nothing from direct message`() {
+        service.enqueueUartMessage("getZoneData?zone=3")
+        val frame = service.dispatchEngine.onPing()
+        assertNotNull(frame)
+        val expectedCrc = CrcCalculator.computeHex("getZoneData?zone=3")
+        assertEquals("<U>getZoneData?zone=3</U=$expectedCrc>", String(frame!!, Charsets.UTF_8))
+    }
 
     @Test
-    fun `enqueueCanIds with space-separated IDs`() {
+    fun `requestSinglePoll feeds the engine direct queue with raw tag`() {
+        service.requestSinglePoll("getClock")
+        val frame = service.dispatchEngine.onPing()
+        assertNotNull(frame)
+        val expectedCrc = CrcCalculator.computeHex("getClock")
+        assertEquals("<U>getClock</U=$expectedCrc>", String(frame!!, Charsets.UTF_8))
+    }
+
+    // ── engine delegation: CAN queue ─────────────────────────────
+
+    @Test
+    fun `enqueueCanIds feeds the engine CAN queue`() {
         service.enqueueCanIds("1 2 3")
-        assertEquals(3, service.canQueue.size())
-        val msg1 = service.canQueue.dequeue()
-        val msg2 = service.canQueue.dequeue()
-        val msg3 = service.canQueue.dequeue()
-        assertEquals(1, msg1?.id)
-        assertEquals(2, msg2?.id)
-        assertEquals(3, msg3?.id)
+        // First ping arms CAN-wanted and returns the poll entry.
+        service.dispatchEngine.onPing()
+        // Second ping prefers the CAN branch and emits setCAN with the queued ids.
+        val frame = service.dispatchEngine.onPing()
+        assertNotNull(frame)
+        val text = String(frame!!, Charsets.UTF_8)
+        assertTrue(text.startsWith("<U>setCAN "))
+        assertTrue(text.contains("1"))
+        assertTrue(text.contains("2"))
+        assertTrue(text.contains("3"))
     }
 
-    // ── processCanIds ────────────────────────────────────────────
+    @Test
+    fun `processCanIds feeds the engine CAN queue`() {
+        service.processCanIds("5 6 7")
+        service.dispatchEngine.onPing()
+        val frame = service.dispatchEngine.onPing()
+        assertNotNull(frame)
+        val text = String(frame!!, Charsets.UTF_8)
+        assertTrue(text.startsWith("<U>setCAN "))
+        assertTrue(text.contains("5"))
+        assertTrue(text.contains("7"))
+    }
 
     @Test
-    fun `processCanIds with space-separated IDs`() {
-        service.processCanIds("5 6 7")
-        val state = service.stateMachine.getCurrentState()
-        assertTrue(state is UartState.SendingCan)
-        assertEquals(listOf(5, 6, 7), (state as UartState.SendingCan).messageIds)
+    fun `enqueueCanIds ignores non-numeric tokens`() {
+        service.enqueueCanIds("1 abc 2")
+        service.dispatchEngine.onPing()
+        val frame = service.dispatchEngine.onPing()
+        assertNotNull(frame)
+        val text = String(frame!!, Charsets.UTF_8)
+        assertTrue(text.contains("1"))
+        assertTrue(text.contains("2"))
+        assertFalse(text.contains("abc"))
+    }
+
+    // ── uartEventSink: onPollData ────────────────────────────────
+
+    @Test
+    fun `uartEventSink onPollData writes payload to dataCache`() {
+        val payload = "<request>getClock</request><time>t</time>".toByteArray()
+        service.uartEventSink.onPollData("getClock", payload)
+        assertArrayEquals(payload, service.dataCache.get("getClock"))
+    }
+
+    @Test
+    fun `uartEventSink onPollData replaces previously cached payload`() {
+        service.uartEventSink.onPollData("getClock", "a".toByteArray())
+        service.uartEventSink.onPollData("getClock", "b".toByteArray())
+        assertArrayEquals("b".toByteArray(), service.dataCache.get("getClock"))
+    }
+
+    @Test
+    fun `uartEventSink onPollData triggers broadcastData`() {
+        service.deviceOpen.set(true)
+        service.uartEventSink.onPollData("getClock", "12:00".toByteArray())
+        val sent = sentBroadcasts()
+        assertTrue(sent.any {
+            it.action == "com.air.advantage.MESSAGE_FROM_CB" &&
+                it.getStringExtra("com.air.advantage.GET_DATA_REQUEST") == "getClock"
+        })
+    }
+
+    // ── uartEventSink: onRawCan (reference handleGetCan path) ────
+
+    @Test
+    fun `uartEventSink onRawCan broadcasts secure and encrypted no-permission`() {
+        val payload = "getCAN 1026".toByteArray()
+        service.uartEventSink.onRawCan(payload)
+
+        val sent = sentBroadcasts()
+        assertTrue(sent.any {
+            it.action == "com.air.advantage.MESSAGE_FROM_CB_SECURE" &&
+                it.getStringExtra("com.air.advantage.GET_DATA_REQUEST") == "rawCan" &&
+                it.getStringExtra("com.air.advantage.MESSAGE_FROM_CB_SECURE") == "getCAN 1026"
+        })
+        assertTrue(sent.any { it.action == "com.air.advantage.MESSAGE_TO_CB_NO_PERMISSION_BROADCAST" })
+    }
+
+    @Test
+    fun `handleGetCan broadcasts for each raw CAN payload`() {
+        service.handleGetCan("getCAN 1026")
+        service.handleGetCan("getCAN 1026")
+        val sent = sentBroadcasts()
+        assertEquals(2, sent.count { it.action == "com.air.advantage.MESSAGE_TO_CB_NO_PERMISSION_BROADCAST" })
+        assertEquals(2, sent.count { it.action == "com.air.advantage.MESSAGE_FROM_CB_SECURE" })
+    }
+
+    @Test
+    fun `handleGetCan forwards different consecutive payloads`() {
+        service.handleGetCan("getCAN 1")
+        service.handleGetCan("getCAN 2")
+        val sent = sentBroadcasts()
+        assertEquals(2, sent.count { it.action == "com.air.advantage.MESSAGE_FROM_CB_SECURE" })
+        assertEquals(2, sent.count { it.action == "com.air.advantage.MESSAGE_TO_CB_NO_PERMISSION_BROADCAST" })
+    }
+
+    @Test
+    fun `handleGetCan encrypts the no-permission payload`() {
+        service.handleGetCan("getCAN 1026")
+        val sent = sentBroadcasts()
+        val noPerm = sent.filter { it.action == "com.air.advantage.MESSAGE_TO_CB_NO_PERMISSION_BROADCAST" }
+        assertEquals(1, noPerm.size)
+        val extra = noPerm[0].getByteArrayExtra("com.air.advantage.MESSAGE_TO_CB_NO_PERMISSION_BROADCAST")
+        assertNotNull(extra)
+        assertFalse(extra!!.contentEquals("getCAN 1026".toByteArray()))
+    }
+
+    @Test
+    fun `handleGetCan uses Fujitsu actions on Fujitsu variant`() {
+        doReturn("com.air.advantage.fgassist").whenever(service).packageName
+
+        service.handleGetCan("getCAN 1026")
+
+        verify(service, times(1)).sendBroadcast(argThat<Intent> {
+            action == "com.air.advantage.MESSAGE_FROM_CB_SECURE_FUJITSU"
+        }, anyOrNull())
+        verify(service, times(1)).sendBroadcast(argThat<Intent> {
+            action == "com.air.advantage.MESSAGE_TO_CB_NO_PERMISSION_BROADCAST"
+        })
     }
 
     // ── onCreate ─────────────────────────────────────────────────
@@ -580,7 +512,7 @@ private lateinit var service: UartForegroundService
 
         verify(service, never()).sendBroadcast(argThat<Intent> {
             action == "com.air.advantage.MESSAGE_FROM_CB_SECURE" ||
-            action == "com.air.advantage.MESSAGE_FROM_CB_SECURE_FUJITSU"
+                action == "com.air.advantage.MESSAGE_FROM_CB_SECURE_FUJITSU"
         }, anyOrNull())
     }
 
@@ -648,8 +580,7 @@ private lateinit var service: UartForegroundService
 
         verify(service).sendBroadcast(argThat<Intent> {
             action == "com.air.advantage.MESSAGE_FROM_CB_NO_PERMISSION" ||
-            action == "com.air.advantage.MESSAGE_FROM_CB_NO_PERMISSION_FUJITSU"
+                action == "com.air.advantage.MESSAGE_FROM_CB_NO_PERMISSION_FUJITSU"
         })
     }
-
-    }
+}
