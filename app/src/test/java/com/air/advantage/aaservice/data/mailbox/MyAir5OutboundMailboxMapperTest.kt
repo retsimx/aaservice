@@ -117,10 +117,32 @@ class MyAir5OutboundMailboxMapperTest {
     }
 
     @Test
-    fun `unknown message maps to Ignore`() {
+    fun `unknown command relays as Direct - USB parity`() {
+        assertEquals(
+            listOf(OutboundMailboxAction.Direct("setZoneData?zone=1")),
+            MyAir5OutboundMailboxMapper.mapMessageToCb("setZoneData?zone=1"),
+        )
+    }
+
+    @Test
+    fun `setSystemData relays verbatim as Direct`() {
+        assertEquals(
+            listOf(OutboundMailboxAction.Direct("setSystemData?unitControlTempsSetting=4")),
+            MyAir5OutboundMailboxMapper.mapMessageToCb(
+                "setSystemData?unitControlTempsSetting=4",
+            ),
+        )
+    }
+
+    @Test
+    fun `stock USB block list still ignores Light Aircon Activation MySystem`() {
         assertEquals(
             listOf(OutboundMailboxAction.Ignore),
-            MyAir5OutboundMailboxMapper.mapMessageToCb("setZoneData?zone=1"),
+            MyAir5OutboundMailboxMapper.mapMessageToCb("LightAirconSet?x=1"),
+        )
+        assertEquals(
+            listOf(OutboundMailboxAction.Ignore),
+            MyAir5OutboundMailboxMapper.mapMessageToCb("ActivationCheck?x=1"),
         )
     }
 
@@ -154,24 +176,6 @@ fun writeCanFrameSerializesTokensArray() {
     assertEquals("[\"0701181f30500040232000000\"]", JSONObject(json).get("tokens").toString())
 }
 
-@Test
-fun myZoneMapsToSystemStatusMyzoneId() {
-    val actions = MyAir5OutboundMailboxMapper.mapMessageToCb(
-        "setAircon?json={\"aircons\":{\"ac1\":{\"info\":{\"myZone\":3}}}}",
-    )
-    val update = actions.filterIsInstance<OutboundMailboxAction.Update>().single()
-    assertEquals("system_status", update.register)
-    assertEquals(3, update.payload.getInt("myzone_id"))
-}
-
-@Test
-fun myZoneInactiveMapsToZero() {
-    val actions = MyAir5OutboundMailboxMapper.mapMessageToCb(
-        "setAircon?json={\"aircons\":{\"ac1\":{\"info\":{\"myZone\":\"Inactive\"}}}}",
-    )
-    val update = actions.filterIsInstance<OutboundMailboxAction.Update>().single()
-    assertEquals(0, update.payload.getInt("myzone_id"))
-}
 
 }
 

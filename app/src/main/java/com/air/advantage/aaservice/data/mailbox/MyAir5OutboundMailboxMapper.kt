@@ -42,18 +42,26 @@ object MyAir5OutboundMailboxMapper {
 
     /**
      * Maps a `MESSAGE_TO_CB` string (`command?query`) to zero or more actions.
-     * Multi-zone / combo `setAircon` JSON yields system updates first, then zones.
+     *
+     * Mirrors the stock USB behavior: `setAircon` is translated (blocked on
+     * USB — MyAir5 sends CAN tokens instead), while every other command is a
+     * **verbatim relay** to the CB as a direct message (`setSystemData?…`,
+     * `setAllZoneSensorData?`, …). The CB parses the ones it knows and
+     * ignores the rest. The stock USB block list (Light/Aircon/Activation/
+     * MySystem — except `setAircon`) is mirrored so WS relays exactly what
+     * USB would put on the bus.
      */
     fun mapMessageToCb(message: String): List<OutboundMailboxAction> {
         val q = message.indexOf('?')
         if (q < 0) return listOf(OutboundMailboxAction.Ignore)
         val command = message.substring(0, q)
-        val query = message.substring(q + 1)
         return when {
-            command.equals("setAircon", ignoreCase = true) -> mapSetAircon(query)
-            command.equals("setAllZoneSensorData", ignoreCase = true) ->
-                listOf(OutboundMailboxAction.Direct(message))
-            else -> listOf(OutboundMailboxAction.Ignore)
+            command.equals("setAircon", ignoreCase = true) ->
+                mapSetAircon(message.substring(q + 1))
+            command.contains("Light") || command.contains("Aircon") ||
+                command.contains("Activation") || command.contains("MySystem") ->
+                listOf(OutboundMailboxAction.Ignore)
+            else -> listOf(OutboundMailboxAction.Direct(message))
         }
     }
 
@@ -112,22 +120,6 @@ object MyAir5OutboundMailboxMapper {
                 }
                 if (info.has("setTemp") && !info.isNull("setTemp")) {
                     payload.put("target_temp_c", info.optDouble("setTemp"))
-                }
-                // MyZone (0 = disabled/return-air, 1-10 = thermostat zone). MyAir5
-                // moves the myzone in MyTemp mode; without this mapping the reg-05
-                // byte 4 write never reaches the CB and the thermostat sticks to
-                // the last zone (compressor follows one room forever).
-                if (info.has("myZone") && !info.isNull("myZone")) {
-                    val myZone = when (val raw = info.opt("myZone")) {
-                        is Number -> raw.toInt()
-                        is String ->
-                            if (raw.equals("Inactive", ignoreCase = true)) 0
-                            else raw.toIntOrNull() ?: -1
-                        else -> -1
-                    }
-                    if (myZone in 0..10) {
-                        payload.put("myzone_id", myZone)
-                    }
                 }
                 if (payload.length() > 0) {
                     systemActions += OutboundMailboxAction.Update(
