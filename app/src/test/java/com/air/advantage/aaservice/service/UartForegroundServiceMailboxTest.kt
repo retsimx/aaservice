@@ -9,7 +9,6 @@ import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
-import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -21,9 +20,10 @@ import org.robolectric.annotation.Config
 
 /**
  * A4 (#51) service wiring: [UartForegroundService.attachMailboxWsClient] /
- * [UartForegroundService.onMailboxInbound] map `mailbox_snapshot` / `mailbox_event` frames onto
- * `MESSAGE_FROM_CB` poll-tag broadcasts, and the `deviceOpen || mailbox Connected` publish gate
- * in [UartForegroundService.broadcastData] (design `41-mailbox-to-message-from-cb.md` §6).
+ * [UartForegroundService.onMailboxInbound] map `mailbox_snapshot` → secure rawCan
+ * (USB cold-start parity) and `mailbox_event` → `MESSAGE_FROM_CB` poll-tag updates,
+ * plus the `deviceOpen || mailbox Connected` publish gate in
+ * [UartForegroundService.broadcastData] (design `41-mailbox-to-message-from-cb.md` §6).
  *
  * Uses [FakeMailboxWsClient] (in-memory, no real socket) the same way
  * [com.air.advantage.aaservice.data.mailbox.OkHttpMailboxWsClientTest] documents its surface.
@@ -74,31 +74,43 @@ class UartForegroundServiceMailboxTest {
     private fun zoneEventInbound(): MailboxInbound.Event =
         MailboxInbound.parse(MailboxFixtures.event()) as MailboxInbound.Event
 
-    // ── snapshot → MESSAGE_FROM_CB ───────────────────────────────
+    // ── snapshot → secure rawCan only (USB cold-start parity) ────
 
     @Test
-    fun `snapshot maps to getSystemData and zone MESSAGE_FROM_CB broadcasts with ByteArray extras`() {
+    fun `snapshot does not emit MESSAGE_FROM_CB poll tags`() {
         service.attachMailboxWsClient(fakeClient)
         fakeClient.emitState(MailboxConnectionState.Connected)
 
         fakeClient.emitIncoming(snapshotInbound())
 
-        val sent = sentMessageFromCb()
-        val tags = sent.map { it.getStringExtra("com.air.advantage.GET_DATA_REQUEST") }
-        assertTrue("getSystemData broadcast, got tags=$tags", tags.contains("getSystemData"))
-        assertTrue("zone 1 broadcast, got tags=$tags", tags.contains("getZoneData?zone=1"))
-        assertTrue("zone 2 broadcast, got tags=$tags", tags.contains("getZoneData?zone=2"))
-
-        sent.forEach { intent ->
-            val tag = intent.getStringExtra("com.air.advantage.GET_DATA_REQUEST")
-            val extra = intent.getByteArrayExtra("com.air.advantage.MESSAGE_FROM_CB")
-            assertNotNull("extra must be a ByteArray for tag=$tag", extra)
-            assertNull("extra must not be a String for tag=$tag", intent.getStringExtra("com.air.advantage.MESSAGE_FROM_CB"))
-        }
+        assertTrue(
+            "snapshot must not flood MESSAGE_FROM_CB (USB cold-start = rawCan only)",
+            sentMessageFromCb().isEmpty(),
+        )
     }
 
     @Test
-    fun `snapshot caches poll payloads by tag`() {
+    fun `snapshot emits MESSAGE_FROM_CB_SECURE rawCan from can_records`() {
+        service.attachMailboxWsClient(fakeClient)
+        fakeClient.emitState(MailboxConnectionState.Connected)
+
+        fakeClient.emitIncoming(snapshotInbound())
+
+        val secure = capturedIntents.filter {
+            it.action == "com.air.advantage.MESSAGE_FROM_CB_SECURE"
+        }
+        assertTrue("expected rawCan secure broadcast", secure.isNotEmpty())
+        assertEquals(
+            "rawCan",
+            secure.first().getStringExtra("com.air.advantage.GET_DATA_REQUEST"),
+        )
+        val frame = secure.first().getStringExtra("com.air.advantage.MESSAGE_FROM_CB_SECURE")
+        assertNotNull(frame)
+        assertTrue(frame!!.startsWith("getCAN 1 "))
+    }
+
+    @Test
+    fun `snapshot caches poll payloads by tag without broadcasting them`() {
         service.attachMailboxWsClient(fakeClient)
         fakeClient.emitState(MailboxConnectionState.Connected)
 
@@ -107,35 +119,20 @@ class UartForegroundServiceMailboxTest {
         assertNotNull(service.dataCache.get("getSystemData"))
         assertNotNull(service.dataCache.get("getZoneData?zone=1"))
         assertNotNull(service.dataCache.get("getZoneData?zone=2"))
+        assertTrue(sentMessageFromCb().isEmpty())
     }
 
     @Test
-    fun `snapshot does not emit MESSAGE_FROM_CB_SECURE (no synthetic secure or rawCan from mailbox)`() {
+    fun `duplicate snapshot still skips MESSAGE_FROM_CB poll tags`() {
         service.attachMailboxWsClient(fakeClient)
         fakeClient.emitState(MailboxConnectionState.Connected)
 
         fakeClient.emitIncoming(snapshotInbound())
-
-        assertTrue(capturedIntents.none {
-            it.action == "com.air.advantage.MESSAGE_FROM_CB_SECURE" ||
-                it.action == "com.air.advantage.MESSAGE_FROM_CB_SECURE_FUJITSU"
-        })
-    }
-
-    @Test
-    fun `duplicate snapshot does not rebroadcast unchanged payloads`() {
-        service.attachMailboxWsClient(fakeClient)
-        fakeClient.emitState(MailboxConnectionState.Connected)
-
         fakeClient.emitIncoming(snapshotInbound())
-        val firstCount = sentMessageFromCb().size
-        assertTrue(firstCount > 0)
 
-        fakeClient.emitIncoming(snapshotInbound())
-        assertEquals(
-            "unchanged mailbox payloads must not rebroadcast",
-            firstCount,
-            sentMessageFromCb().size
+        assertTrue(sentMessageFromCb().isEmpty())
+        assertTrue(
+            capturedIntents.any { it.action == "com.air.advantage.MESSAGE_FROM_CB_SECURE" },
         )
     }
 
@@ -153,8 +150,8 @@ class UartForegroundServiceMailboxTest {
             it.getStringExtra("com.air.advantage.GET_DATA_REQUEST") == "getZoneData?zone=1"
         }
         assertTrue(
-            "snapshot + incremental event both broadcast the zone tag, got ${zoneBroadcasts.size}",
-            zoneBroadcasts.size >= 2
+            "incremental event broadcasts the zone tag, got ${zoneBroadcasts.size}",
+            zoneBroadcasts.size >= 1
         )
 
         val latestXml = String(
@@ -210,7 +207,7 @@ class UartForegroundServiceMailboxTest {
         service.deviceOpen.set(false)
         service.attachMailboxWsClient(fakeClient)
         fakeClient.emitState(MailboxConnectionState.Connected)
-        fakeClient.emitIncoming(snapshotInbound())
+        fakeClient.emitIncoming(zoneEventInbound())
         assertTrue(sentMessageFromCb().isNotEmpty())
         capturedIntents.clear()
 

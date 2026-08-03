@@ -31,6 +31,7 @@ import com.air.advantage.aaservice.data.uart.UartDataSource
 import com.air.advantage.aaservice.data.uart.UsbAccessoryDataSource
 import com.air.advantage.aaservice.di.UartServiceEntryPoint
 import com.air.advantage.aaservice.domain.mailbox.MailboxBroadcastMapper
+import com.air.advantage.aaservice.domain.mailbox.MailboxRawCanEncoder
 import com.air.advantage.aaservice.domain.state.UartDispatchEngine
 import com.air.advantage.aaservice.domain.state.UartEventSink
 import com.air.advantage.aaservice.receiver.AlertDialogReceiver
@@ -214,6 +215,12 @@ class UartForegroundService : Service() {
 
     /** Maps one mailbox frame to poll-tag broadcasts; safe to call directly from tests. */
     internal fun onMailboxInbound(inbound: MailboxInbound) {
+        // MyAir5/:2025 aircons are filled from secure rawCan (USB handleGetCan), not
+        // getSystemData XML. USB cold-start only delivers MESSAGE_FROM_CB_SECURE
+        // rawCan + aaServiceInfo — no MESSAGE_FROM_CB poll tags.
+        if (inbound is MailboxInbound.Snapshot) {
+            MailboxRawCanEncoder.encodeGetCan(inbound.raw)?.let { handleGetCan(it) }
+        }
         val polls = MailboxBroadcastMapper.map(inbound, cachedPayload = dataCache::get)
         for (poll in polls) {
             if (!dataCache.hasChanged(poll.tag, poll.payload)) {
@@ -222,7 +229,11 @@ class UartForegroundService : Service() {
             }
             Log.d(TAG, "onMailboxInbound: tag='${poll.tag}' (${poll.payload.size} bytes)")
             dataCache.put(poll.tag, poll.payload)
-            broadcastData(poll.tag)
+            // Snapshot-mapped XML poisoned WS cold-start vs USB. Cache for event merge;
+            // only broadcast incremental mailbox_event updates after MyAir5 is up.
+            if (inbound is MailboxInbound.Event) {
+                broadcastData(poll.tag)
+            }
         }
     }
 
@@ -277,6 +288,18 @@ class UartForegroundService : Service() {
             is MailboxConnectionState.Error -> ModeSwitchStatus.Error
         }
         TransportStatusStore.publish(mapped)
+        // USB sets connected via onPingObserved; WS has no accessory pings. Without this,
+        // showNotification(false) from onStartCommand leaves the "Not connected" alert
+        // armed and MyAir5 cold-start stays on the version banner forever.
+        when (state) {
+            is MailboxConnectionState.Connected -> showNotification(true)
+            is MailboxConnectionState.Disconnected,
+            is MailboxConnectionState.Rejected,
+            is MailboxConnectionState.Error -> {
+                if (!deviceOpen.get()) showNotification(false)
+            }
+            else -> Unit
+        }
     }
 
     override fun onCreate() {
@@ -326,6 +349,9 @@ class UartForegroundService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         super.onStartCommand(intent, flags, startId)
         Log.d(TAG, "onStartCommand: action=${intent?.action} flags=$flags startId=$startId")
+        // Must promote to foreground before any early-return / stopSelf path —
+        // otherwise Android kills us with RemoteServiceException ("AA Service keeps stopping").
+        showNotification(deviceOpen.get())
         startPeriodicBroadcastIfNeeded()
         ensureDeviceAdmin()?.let { return it }
         handleNullAction(intent)?.let { return it }
@@ -702,11 +728,23 @@ class UartForegroundService : Service() {
     }
 
     /**
-     * WS-mode GET_ALL_DATA: request a mailbox resync (no UART schedule polls).
-     * USB path remains in [GetAllDataReceiver].
+     * WS-mode GET_ALL_DATA: force secure rawCan + mailbox resync.
+     *
+     * Do **not** rebroadcast cached `MESSAGE_FROM_CB` poll tags. USB cold-start
+     * only delivers `MESSAGE_FROM_CB_SECURE` rawCan + aaServiceInfo;
+     * flooding getSystemData/getZoneData XML on WS was the cold-start mismatch.
+     * MyAir5 fills `:2025` from rawCan; resync refreshes the dump for a new frame.
      */
     fun handleGetAllDataWs() {
-        Log.d(TAG, "handleGetAllDataWs: resync_mailbox")
+        Log.d(TAG, "handleGetAllDataWs: force rawCan + resync_mailbox (USB cold-start parity)")
+        // Force rawCan rebroadcast (MyAir5 may have missed the earlier secure
+        // broadcast while starting up). Clear so handleGetCan does not treat it
+        // as a duplicate of the still-cached frame.
+        val cachedRawCan = lastRawCan.get()
+        if (cachedRawCan.isNotEmpty()) {
+            lastRawCan.set("")
+            handleGetCan(cachedRawCan)
+        }
         dispatchOutboundMailboxActions(listOf(MyAir5OutboundMailboxMapper.mapGetAllData()))
     }
 
