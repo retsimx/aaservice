@@ -204,11 +204,17 @@ class ModeSwitchCoordinatorTest {
         val failJob = coordinator.switchTo(TransportMode.Ws)
         runCurrent()
         assertEquals(1, wsClient.connectCalls)
-        advanceTimeBy(timeoutMs)
+        // All internal retry attempts exhaust -> Error (no operator intervention needed).
+        advanceTimeBy(
+            timeoutMs * ModeSwitchCoordinator.WS_CONNECT_ATTEMPTS +
+                ModeSwitchCoordinator.WS_RETRY_DELAY_MS *
+                (ModeSwitchCoordinator.WS_CONNECT_ATTEMPTS - 1) + 1_000,
+        )
         runCurrent()
         failJob.join()
 
         assertEquals(ModeSwitchStatus.Error, statuses.last())
+        assertEquals(ModeSwitchCoordinator.WS_CONNECT_ATTEMPTS, wsClient.connectCalls)
         assertEquals(TransportMode.Ws, router.activeMode)
         assertTrue(coordinator.needsSwitch(TransportMode.Ws))
 
@@ -217,7 +223,6 @@ class ModeSwitchCoordinatorTest {
         wsClient = FakeMailboxWsClient()
         val retryJob = coordinator.switchTo(TransportMode.Ws)
         runCurrent()
-        assertEquals(2, daemon.startCalls)
         assertTrue(callOrder.contains("connect"))
 
         wsClient.emitState(MailboxConnectionState.Connected)
@@ -291,12 +296,18 @@ class ModeSwitchCoordinatorTest {
         assertEquals(1, wsClient.connectCalls)
         assertEquals(MailboxConnectionState.Connecting, wsClient.connectionState.value)
 
-        advanceTimeBy(timeoutMs)
+        // All internal retry attempts exhaust -> Error (no operator intervention needed).
+        advanceTimeBy(
+            timeoutMs * ModeSwitchCoordinator.WS_CONNECT_ATTEMPTS +
+                ModeSwitchCoordinator.WS_RETRY_DELAY_MS *
+                (ModeSwitchCoordinator.WS_CONNECT_ATTEMPTS - 1) + 1_000,
+        )
         runCurrent()
         job.join()
 
         assertTrue(callOrder.contains("disconnect"))
         assertEquals(ModeSwitchStatus.Error, statuses.last())
+        assertEquals(ModeSwitchCoordinator.WS_CONNECT_ATTEMPTS, wsClient.connectCalls)
         assertEquals(0, usb.activateCalls)
         assertFalse(statuses.contains(ModeSwitchStatus.Connected))
         assertTrue(wsClient.disconnectCalls >= 1)
@@ -304,14 +315,22 @@ class ModeSwitchCoordinatorTest {
 
     @Test
     fun `WS disconnect during snapshot wait yields Error with no USB activate`() = runTest {
+        val timeoutMs = 10_000L
         val router = newRouter(initialMode = TransportMode.Usb)
-        val coordinator = newCoordinator(scope = this, router = router, snapshotTimeoutMs = 10_000)
+        val coordinator = newCoordinator(scope = this, router = router, snapshotTimeoutMs = timeoutMs)
 
         val job = coordinator.switchTo(TransportMode.Ws)
         runCurrent()
         assertEquals(1, wsClient.connectCalls)
 
         wsClient.emitState(MailboxConnectionState.Disconnected)
+        runCurrent()
+        // All internal retry attempts exhaust -> Error (no operator intervention needed).
+        advanceTimeBy(
+            timeoutMs * ModeSwitchCoordinator.WS_CONNECT_ATTEMPTS +
+                ModeSwitchCoordinator.WS_RETRY_DELAY_MS *
+                (ModeSwitchCoordinator.WS_CONNECT_ATTEMPTS - 1) + 1_000,
+        )
         runCurrent()
         job.join()
 
@@ -324,15 +343,24 @@ class ModeSwitchCoordinatorTest {
 
     @Test
     fun `WS Error during snapshot wait yields Error with no USB activate`() = runTest {
-        val coordinator = newCoordinator(scope = this, snapshotTimeoutMs = 10_000)
+        val timeoutMs = 10_000L
+        val coordinator = newCoordinator(scope = this, snapshotTimeoutMs = timeoutMs)
 
         val job = coordinator.switchTo(TransportMode.Ws)
         runCurrent()
         wsClient.emitState(MailboxConnectionState.Error("boom"))
         runCurrent()
+        // All internal retry attempts exhaust -> Error (no operator intervention needed).
+        advanceTimeBy(
+            timeoutMs * ModeSwitchCoordinator.WS_CONNECT_ATTEMPTS +
+                ModeSwitchCoordinator.WS_RETRY_DELAY_MS *
+                (ModeSwitchCoordinator.WS_CONNECT_ATTEMPTS - 1) + 1_000,
+        )
+        runCurrent()
         job.join()
 
         assertEquals(ModeSwitchStatus.Error, statuses.last())
+        assertEquals(ModeSwitchCoordinator.WS_CONNECT_ATTEMPTS, wsClient.connectCalls)
         assertEquals(0, usb.activateCalls)
         assertFalse(statuses.contains(ModeSwitchStatus.Connected))
     }

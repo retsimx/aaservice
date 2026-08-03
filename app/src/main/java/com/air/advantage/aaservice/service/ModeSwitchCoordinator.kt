@@ -11,6 +11,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.TimeoutCancellationException
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -112,26 +113,39 @@ class ModeSwitchCoordinator(
     private suspend fun switchToWs() {
         emitStatus(ModeSwitchStatus.Connecting)
         transportRouter.prepareWs()
-        try {
-            if (!startMagiskIfLoopback()) return
-            transportRouter.connectWs()
-            val client = transportRouter.mailboxWsClient
-            if (client == null) {
-                Log.e(
+        // The daemon's boot retry can leave a zombie process (engine dead) or an
+        // unnegotiated link that the first connect attempt binds to and times out
+        // on. Never give up after one attempt — retry the whole start/connect/
+        // await cycle so the aaservice self-heals into the daemon's boot window.
+        for (attempt in 1..WS_CONNECT_ATTEMPTS) {
+            if (attempt > 1) {
+                Log.w(
                     TAG,
-                    "WS connect produced no client; no USB activate. " +
-                        "Retry: ${SuDaemonLifecycle.AM_RETRY_TRANSPORT_MODE}",
+                    "switchToWs: retry $attempt/$WS_CONNECT_ATTEMPTS in ${WS_RETRY_DELAY_MS}ms",
                 )
-                emitStatus(ModeSwitchStatus.Error)
-                return
+                delay(WS_RETRY_DELAY_MS)
             }
-            awaitMailboxConnected(client)
-        } catch (e: CancellationException) {
-            // Job cancel (not snapshot timeout — that is handled inside awaitMailboxConnected).
-            Log.w(TAG, "switchToWs cancelled; disconnecting WS (no USB activate)")
-            transportRouter.disconnectWs()
-            throw e
+            try {
+                if (!startMagiskIfLoopback()) return
+                transportRouter.connectWs()
+                val client = transportRouter.mailboxWsClient
+                if (client == null) {
+                    Log.e(
+                        TAG,
+                        "WS connect produced no client (attempt $attempt/$WS_CONNECT_ATTEMPTS); " +
+                            "retry: ${SuDaemonLifecycle.AM_RETRY_TRANSPORT_MODE}",
+                    )
+                    continue
+                }
+                if (awaitMailboxConnected(client, attempt)) return
+            } catch (e: CancellationException) {
+                // Job cancel (not snapshot timeout — that is handled inside awaitMailboxConnected).
+                Log.w(TAG, "switchToWs cancelled; disconnecting WS (no USB activate)")
+                transportRouter.disconnectWs()
+                throw e
+            }
         }
+        emitStatus(ModeSwitchStatus.Error)
     }
 
     /** Loopback URL ⇒ Magisk start; remote skips. Failure leaves USB down (no silent fallback). */
@@ -151,7 +165,8 @@ class ModeSwitchCoordinator(
         return false
     }
 
-    private suspend fun awaitMailboxConnected(client: MailboxWsClient) {
+    /** Returns `true` when Connected; on failure disconnects and returns `false` (caller retries). */
+    private suspend fun awaitMailboxConnected(client: MailboxWsClient, attempt: Int): Boolean {
         val ready = try {
             withTimeout(snapshotTimeoutMs) {
                 client.connectionState.first { state ->
@@ -164,26 +179,27 @@ class ModeSwitchCoordinator(
         } catch (_: TimeoutCancellationException) {
             Log.e(
                 TAG,
-                "Timed out waiting for mailbox_snapshot (Connected) after ${snapshotTimeoutMs}ms; " +
-                    "disconnecting WS, no USB activate. Retry: ${SuDaemonLifecycle.AM_RETRY_TRANSPORT_MODE}",
+                "Timed out waiting for mailbox_snapshot (Connected) after ${snapshotTimeoutMs}ms " +
+                    "(attempt $attempt/$WS_CONNECT_ATTEMPTS); disconnecting WS, no USB activate. " +
+                    "Retry: ${SuDaemonLifecycle.AM_RETRY_TRANSPORT_MODE}",
             )
             transportRouter.disconnectWs()
-            emitStatus(ModeSwitchStatus.Error)
-            return
+            return false
         }
 
         if (ready !is MailboxConnectionState.Connected) {
             Log.e(
                 TAG,
-                "WS path ended in $ready before Connected; disconnecting, no USB activate " +
-                    "(no silent WS→USB fallback). Retry: ${SuDaemonLifecycle.AM_RETRY_TRANSPORT_MODE}",
+                "WS path ended in $ready before Connected (attempt $attempt/$WS_CONNECT_ATTEMPTS); " +
+                    "disconnecting, no USB activate (no silent WS→USB fallback). " +
+                    "Retry: ${SuDaemonLifecycle.AM_RETRY_TRANSPORT_MODE}",
             )
             transportRouter.disconnectWs()
-            emitStatus(ModeSwitchStatus.Error)
-            return
+            return false
         }
 
         emitStatus(ModeSwitchStatus.Connected)
+        return true
     }
 
     private suspend fun switchToUsb() {
@@ -207,5 +223,11 @@ class ModeSwitchCoordinator(
     companion object {
         private const val TAG = "ModeSwitchCoordinator"
         const val DEFAULT_SNAPSHOT_TIMEOUT_MS: Long = 10_000L
+
+        /** Max attempts to reach WS Connected; covers the daemon's boot-retry window. */
+        const val WS_CONNECT_ATTEMPTS: Int = 5
+
+        /** Delay between failed WS connect attempts. */
+        const val WS_RETRY_DELAY_MS: Long = 5_000L
     }
 }
