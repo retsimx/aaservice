@@ -112,14 +112,14 @@ class SuDaemonLifecycleTest {
         )
         assertEquals(
             "am start-foreground-service " +
-                "-n com.air.advantage.aaservice/.service.UartForegroundService " +
+                "-n com.air.advantage.aaservice2/com.air.advantage.aaservice.service.UartForegroundService " +
                 "-a com.air.advantage.TRANSPORT_MODE_CHANGED " +
                 "--es transport_mode ws",
             SuDaemonLifecycle.AM_RETRY_TRANSPORT_MODE,
         )
         assertEquals(
             "am start-foreground-service " +
-                "-n com.air.advantage.aaservice/.service.UartForegroundService " +
+                "-n com.air.advantage.aaservice2/com.air.advantage.aaservice.service.UartForegroundService " +
                 "-a com.air.advantage.TRANSPORT_MODE_CHANGED " +
                 "--es transport_mode usb",
             SuDaemonLifecycle.AM_RETRY_USB_MODE,

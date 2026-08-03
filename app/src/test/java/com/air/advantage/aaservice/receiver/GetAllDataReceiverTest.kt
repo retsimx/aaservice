@@ -66,6 +66,7 @@ class GetAllDataReceiverTest {
         receiver.onReceive(context, Intent("com.air.advantage.GET_ALL_DATA"))
 
         verify(service).handleGetAllDataWs()
+        // Cached rebroadcast is owned by handleGetAllDataWs (USB parity), not the receiver.
         verify(service, never()).broadcastData(anyString())
         verify(service, never()).requestSinglePoll(anyString())
     }

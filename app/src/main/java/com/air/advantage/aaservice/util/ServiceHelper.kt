@@ -18,7 +18,7 @@ import com.air.advantage.aaservice.service.UartForegroundService
  * Programmatic transport toggle for SSH/deploy operators (extras win when present):
  * ```
  * am start-foreground-service \
- *   -n com.air.advantage.aaservice/.service.UartForegroundService \
+ *   -n com.air.advantage.aaservice2/com.air.advantage.aaservice.service.UartForegroundService \
  *   -a com.air.advantage.TRANSPORT_MODE_CHANGED \
  *   --es transport_mode ws \
  *   --es daemon_ws_url ws://127.0.0.1:2026/v1/mailbox-stream
