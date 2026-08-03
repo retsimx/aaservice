@@ -842,6 +842,9 @@ class UartForegroundService : Service() {
             return
         }
         Log.d(TAG, "handleGetCan: raw CAN frame (${frame.length} chars)")
+        if (frame.length > 400) {
+            Log.d(TAG, "handleGetCan: RAW CAN CONTENT: $frame")
+        }
 
         val isFujitsu = FujitsuDetector.isFujitsuVariant(this)
         val secureAction = if (isFujitsu)
