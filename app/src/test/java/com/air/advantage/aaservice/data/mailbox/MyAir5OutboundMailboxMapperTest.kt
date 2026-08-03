@@ -154,4 +154,24 @@ fun writeCanFrameSerializesTokensArray() {
     assertEquals("[\"0701181f30500040232000000\"]", JSONObject(json).get("tokens").toString())
 }
 
+@Test
+fun myZoneMapsToSystemStatusMyzoneId() {
+    val actions = MyAir5OutboundMailboxMapper.mapMessageToCb(
+        "setAircon?json={\"aircons\":{\"ac1\":{\"info\":{\"myZone\":3}}}}",
+    )
+    val update = actions.filterIsInstance<OutboundMailboxAction.Update>().single()
+    assertEquals("system_status", update.register)
+    assertEquals(3, update.payload.getInt("myzone_id"))
 }
+
+@Test
+fun myZoneInactiveMapsToZero() {
+    val actions = MyAir5OutboundMailboxMapper.mapMessageToCb(
+        "setAircon?json={\"aircons\":{\"ac1\":{\"info\":{\"myZone\":\"Inactive\"}}}}",
+    )
+    val update = actions.filterIsInstance<OutboundMailboxAction.Update>().single()
+    assertEquals(0, update.payload.getInt("myzone_id"))
+}
+
+}
+
