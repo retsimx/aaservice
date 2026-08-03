@@ -26,6 +26,7 @@ import com.air.advantage.aaservice.data.mailbox.MailboxWsClient
 import com.air.advantage.aaservice.data.mailbox.MailboxWsClientFactory
 import com.air.advantage.aaservice.data.mailbox.MyAir5OutboundMailboxMapper
 import com.air.advantage.aaservice.data.mailbox.OutboundMailboxAction
+import com.air.advantage.aaservice.data.protocol.FrameParser
 import com.air.advantage.aaservice.data.repository.DataCacheRepository
 import com.air.advantage.aaservice.data.uart.UartDataSource
 import com.air.advantage.aaservice.data.uart.UsbAccessoryDataSource
@@ -221,6 +222,19 @@ class UartForegroundService : Service() {
         if (inbound is MailboxInbound.Snapshot) {
             MailboxRawCanEncoder.encodeGetCan(inbound.raw)?.let { handleGetCan(it) }
         }
+        // Steady-state getCAN deltas (USB rawCan parity).
+        if (inbound is MailboxInbound.RawCan && inbound.payload.isNotEmpty()) {
+            handleGetCan(inbound.payload)
+        }
+        // One-shot direct request reply: re-broadcast as a poll-tag payload.
+        if (inbound is MailboxInbound.DirectReply && inbound.payload.isNotEmpty()) {
+            val tag = extractRequestTag(inbound.payload)
+            if (tag != null) {
+                val payload = inbound.payload.toByteArray(Charsets.UTF_8)
+                dataCache.put(tag, payload)
+                broadcastData(tag)
+            }
+        }
         val polls = MailboxBroadcastMapper.map(inbound, cachedPayload = dataCache::get)
         for (poll in polls) {
             if (!dataCache.hasChanged(poll.tag, poll.payload)) {
@@ -235,6 +249,12 @@ class UartForegroundService : Service() {
                 broadcastData(poll.tag)
             }
         }
+    }
+
+    private fun extractRequestTag(payload: String): String? = try {
+        FrameParser().extractTag(payload.toByteArray(Charsets.UTF_8), REQUEST_TAG_BYTES)
+    } catch (e: IllegalArgumentException) {
+        null
     }
 
     /**
@@ -661,7 +681,8 @@ class UartForegroundService : Service() {
 
     fun requestSinglePoll(tag: String) {
         if (isWsMode()) {
-            Log.d(TAG, "requestSinglePoll: WS mode, ignoring UART poll '$tag'")
+            Log.d(TAG, "requestSinglePoll: WS mode direct poll '$tag'")
+            dispatchOutboundMailboxActions(listOf(OutboundMailboxAction.Direct(tag)))
             return
         }
         Log.d(TAG, "requestSinglePoll: '$tag'")
@@ -691,6 +712,10 @@ class UartForegroundService : Service() {
         when (val action = MyAir5OutboundMailboxMapper.mapCanTokens(canIds)) {
             OutboundMailboxAction.Resync -> {
                 Log.d(TAG, "$label: WS mode reg-06 flush → resync")
+                dispatchOutboundMailboxActions(listOf(action))
+            }
+            is OutboundMailboxAction.WriteCan -> {
+                Log.d(TAG, "$label: WS mode forwarding ${action.tokens.size} CAN tokens")
                 dispatchOutboundMailboxActions(listOf(action))
             }
             else -> Log.d(TAG, "$label: WS mode ignoring CAN tokens '$canIds'")
@@ -799,6 +824,38 @@ class UartForegroundService : Service() {
                                 Log.e(TAG, "resync_mailbox ack timeout msg_id=${e.msgId}", e)
                             } catch (e: Exception) {
                                 Log.e(TAG, "resync_mailbox failed", e)
+                            }
+                        }
+                        is OutboundMailboxAction.WriteCan -> {
+                            try {
+                                val ack = client.sendWriteCan(action.tokens)
+                                if (ack.status != MailboxAckStatus.SUCCESS) {
+                                    Log.e(
+                                        TAG,
+                                        "write_can ack failure status=${ack.status} " +
+                                            "reason=${ack.reason}",
+                                    )
+                                }
+                            } catch (e: MailboxAckTimeoutException) {
+                                Log.e(TAG, "write_can ack timeout msg_id=${e.msgId}", e)
+                            } catch (e: Exception) {
+                                Log.e(TAG, "write_can failed", e)
+                            }
+                        }
+                        is OutboundMailboxAction.Direct -> {
+                            try {
+                                val ack = client.sendDirect(action.payload)
+                                if (ack.status != MailboxAckStatus.SUCCESS) {
+                                    Log.e(
+                                        TAG,
+                                        "direct ack failure payload=${action.payload} " +
+                                            "status=${ack.status} reason=${ack.reason}",
+                                    )
+                                }
+                            } catch (e: MailboxAckTimeoutException) {
+                                Log.e(TAG, "direct ack timeout payload=${action.payload}", e)
+                            } catch (e: Exception) {
+                                Log.e(TAG, "direct failed payload=${action.payload}", e)
                             }
                         }
                         OutboundMailboxAction.Ignore -> Unit
@@ -1041,6 +1098,7 @@ class UartForegroundService : Service() {
     companion object {
         private const val TAG = "AAService2/Uart"
         private const val MYAIR5_PACKAGE = "com.air.advantage.myair5"
+        private val REQUEST_TAG_BYTES: ByteArray = "request".toByteArray(Charsets.UTF_8)
         /**
          * Upper bound for joining a mode-switch job in [applyTransportModeFromPrefs].
          * Covers Magisk [com.air.advantage.aaservice.service.daemon.RuntimeProcessRunner]

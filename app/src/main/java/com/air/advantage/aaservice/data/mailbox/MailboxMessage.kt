@@ -1,5 +1,6 @@
 package com.air.advantage.aaservice.data.mailbox
 
+import org.json.JSONArray
 import org.json.JSONException
 import org.json.JSONObject
 
@@ -11,6 +12,10 @@ object MailboxMessageType {
     const val ERROR = "error"
     const val MAILBOX_UPDATE = "mailbox_update"
     const val COMMAND = "command"
+    const val WRITE_CAN = "write_can"
+    const val DIRECT = "direct"
+    const val RAW_CAN = "raw_can"
+    const val DIRECT_REPLY = "direct_reply"
 }
 
 /** Known `action` values for outbound `command` frames. */
@@ -64,6 +69,22 @@ sealed class MailboxInbound {
         override val type: String get() = MailboxMessageType.MAILBOX_EVENT
     }
 
+    /** Raw steady-state `getCAN` frame (`getCAN 1 <records…>`) — USB rawCan parity. */
+    data class RawCan(
+        val payload: String,
+        override val raw: JSONObject,
+    ) : MailboxInbound() {
+        override val type: String get() = MailboxMessageType.RAW_CAN
+    }
+
+    /** Reply to a one-shot [`MailboxOutbound.Direct`] request (CB XML/raw payload). */
+    data class DirectReply(
+        val payload: String,
+        override val raw: JSONObject,
+    ) : MailboxInbound() {
+        override val type: String get() = MailboxMessageType.DIRECT_REPLY
+    }
+
     data class Ack(
         val msgId: String?,
         val status: MailboxAckStatus?,
@@ -100,6 +121,14 @@ sealed class MailboxInbound {
                 MailboxMessageType.MAILBOX_EVENT -> Event(
                     register = json.optStringOrNull("register"),
                     payload = json.optJSONObject("payload"),
+                    raw = json,
+                )
+                MailboxMessageType.RAW_CAN -> RawCan(
+                    payload = json.optString("payload", ""),
+                    raw = json,
+                )
+                MailboxMessageType.DIRECT_REPLY -> DirectReply(
+                    payload = json.optString("payload", ""),
                     raw = json,
                 )
                 MailboxMessageType.ACK -> Ack(
@@ -158,11 +187,45 @@ sealed class MailboxOutbound {
         }
     }
 
+    /** Raw CAN2 token write (25-char hex records) — CAN_TO_CB / BROADCAST_CAN_TO_CB parity. */
+    data class WriteCan(
+        override val msgId: String,
+        val tokens: List<String>,
+    ) : MailboxOutbound() {
+        override val type: String get() = MailboxMessageType.WRITE_CAN
+
+        override fun toJson(): JSONObject = JSONObject().apply {
+            put("type", type)
+            put("msg_id", msgId)
+            put("tokens", JSONArray(tokens))
+        }
+    }
+
+    /** One-shot raw request (poll tag / `setAllZoneSensorData?`); reply is a DirectReply. */
+    data class Direct(
+        override val msgId: String,
+        val payload: String,
+    ) : MailboxOutbound() {
+        override val type: String get() = MailboxMessageType.DIRECT
+
+        override fun toJson(): JSONObject = JSONObject().apply {
+            put("type", type)
+            put("msg_id", msgId)
+            put("payload", payload)
+        }
+    }
+
     companion object {
         fun update(msgId: String, register: String, payload: JSONObject): Update =
             Update(msgId = msgId, register = register, payload = payload)
 
         fun resyncMailbox(msgId: String): Resync = Resync(msgId = msgId)
+
+        fun writeCan(msgId: String, tokens: List<String>): WriteCan =
+            WriteCan(msgId = msgId, tokens = tokens)
+
+        fun direct(msgId: String, payload: String): Direct =
+            Direct(msgId = msgId, payload = payload)
     }
 }
 

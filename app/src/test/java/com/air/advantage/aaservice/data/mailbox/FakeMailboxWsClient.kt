@@ -27,9 +27,13 @@ class FakeMailboxWsClient : MailboxWsClient {
         private set
     val sentUpdates = mutableListOf<Pair<String, JSONObject>>()
     val sentResyncs = mutableListOf<Unit>()
+    val sentWriteCan = mutableListOf<List<String>>()
+    val sentDirects = mutableListOf<String>()
 
     var nextUpdateAck: MailboxInbound.Ack = successAck("fake-update")
     var nextResyncAck: MailboxInbound.Ack = successAck("fake-resync")
+    var nextWriteCanAck: MailboxInbound.Ack = successAck("fake-write-can")
+    var nextDirectAck: MailboxInbound.Ack = successAck("fake-direct")
 
     /**
      * When true, [connect] moves straight to [MailboxConnectionState.Connected]
@@ -68,6 +72,16 @@ class FakeMailboxWsClient : MailboxWsClient {
     override suspend fun sendResync(): MailboxInbound.Ack {
         sentResyncs += Unit
         return nextResyncAck
+    }
+
+    override suspend fun sendWriteCan(tokens: List<String>): MailboxInbound.Ack {
+        sentWriteCan += tokens
+        return nextWriteCanAck
+    }
+
+    override suspend fun sendDirect(payload: String): MailboxInbound.Ack {
+        sentDirects += payload
+        return nextDirectAck
     }
 
     companion object {
