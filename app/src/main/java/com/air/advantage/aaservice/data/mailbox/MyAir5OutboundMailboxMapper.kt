@@ -9,6 +9,16 @@ sealed class OutboundMailboxAction {
         val payload: JSONObject,
     ) : OutboundMailboxAction()
 
+    /** Raw CAN2 token write (sensor pairing, unit flushes, …). */
+    data class WriteCan(
+        val tokens: List<String>,
+    ) : OutboundMailboxAction()
+
+    /** One-shot raw request; the CB reply is delivered as a DirectReply. */
+    data class Direct(
+        val payload: String,
+    ) : OutboundMailboxAction()
+
     data object Resync : OutboundMailboxAction()
 
     data object Ignore : OutboundMailboxAction()
@@ -41,19 +51,31 @@ object MyAir5OutboundMailboxMapper {
         val query = message.substring(q + 1)
         return when {
             command.equals("setAircon", ignoreCase = true) -> mapSetAircon(query)
+            command.equals("setAllZoneSensorData", ignoreCase = true) ->
+                listOf(OutboundMailboxAction.Direct(message))
             else -> listOf(OutboundMailboxAction.Ignore)
         }
     }
 
     /**
-     * Maps a space-separated CAN token string. Reg-06 flush → [Resync]; else [Ignore].
+     * Maps a space-separated CAN token string. Reg-06 flush → [Resync]; aircon
+     * tokens (unit 07/08: sensor pairing, unit flushes) → [WriteCan]; lights
+     * (02) and anything else → [Ignore].
      */
     fun mapCanTokens(canIds: String): OutboundMailboxAction {
         val tokens = canIds.replace("  ", " ").split(" ").filter { it.isNotEmpty() }
-        return if (tokens.any { it.equals(REG06_FLUSH_TOKEN, ignoreCase = true) }) {
-            OutboundMailboxAction.Resync
-        } else {
+        if (tokens.any { it.equals(REG06_FLUSH_TOKEN, ignoreCase = true) }) {
+            return OutboundMailboxAction.Resync
+        }
+        val aircon = tokens.filter { token ->
+            val t = token.lowercase()
+            t.length == 25 && t.all { it in "0123456789abcdef" } &&
+                (t.startsWith("07") || t.startsWith("08"))
+        }
+        return if (aircon.isEmpty()) {
             OutboundMailboxAction.Ignore
+        } else {
+            OutboundMailboxAction.WriteCan(aircon)
         }
     }
 

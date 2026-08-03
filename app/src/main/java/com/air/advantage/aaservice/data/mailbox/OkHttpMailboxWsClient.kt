@@ -146,6 +146,18 @@ class OkHttpMailboxWsClient(
         return sendAndAwaitAck(msgId, frame.toJsonString())
     }
 
+    override suspend fun sendWriteCan(tokens: List<String>): MailboxInbound.Ack {
+        val msgId = newMsgId()
+        val frame = MailboxOutbound.writeCan(msgId, tokens)
+        return sendAndAwaitAck(msgId, frame.toJsonString())
+    }
+
+    override suspend fun sendDirect(payload: String): MailboxInbound.Ack {
+        val msgId = newMsgId()
+        val frame = MailboxOutbound.direct(msgId, payload)
+        return sendAndAwaitAck(msgId, frame.toJsonString())
+    }
+
     private suspend fun sendAndAwaitAck(msgId: String, json: String): MailboxInbound.Ack {
         val socket = activeSocket.get()
             ?: throw IllegalStateException("Mailbox WebSocket is not open")
@@ -252,6 +264,8 @@ class OkHttpMailboxWsClient(
                 Log.w(TAG, "Mailbox protocol error: ${inbound.message}")
             }
             is MailboxInbound.Event -> Unit
+            is MailboxInbound.RawCan -> Unit
+            is MailboxInbound.DirectReply -> Unit
         }
 
         if (!_incoming.tryEmit(inbound)) {

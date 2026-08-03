@@ -56,6 +56,12 @@ interface MailboxWsClient {
      * @throws IllegalStateException if the socket is not open
      */
     suspend fun sendResync(): MailboxInbound.Ack
+
+    /** Forward raw CAN2 tokens (25-char hex records) to the CB via the daemon. */
+    suspend fun sendWriteCan(tokens: List<String>): MailboxInbound.Ack
+
+    /** One-shot raw request (poll tag / `setAllZoneSensorData?`); reply is a DirectReply. */
+    suspend fun sendDirect(payload: String): MailboxInbound.Ack
 }
 
 /** Thrown when [MailboxWsClient.sendUpdate] / [sendResync] exceed [MailboxWsConfig.ackTimeoutMs]. */

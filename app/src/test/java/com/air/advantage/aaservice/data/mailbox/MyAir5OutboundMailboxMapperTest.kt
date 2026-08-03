@@ -90,6 +90,33 @@ class MyAir5OutboundMailboxMapperTest {
     }
 
     @Test
+    fun `aircon can tokens map to WriteCan`() {
+        val tokens = "0701181f3120052a601000000 0801000000600000000000000"
+        assertEquals(
+            OutboundMailboxAction.WriteCan(
+                listOf("0701181f3120052a601000000", "0801000000600000000000000"),
+            ),
+            MyAir5OutboundMailboxMapper.mapCanTokens(tokens),
+        )
+    }
+
+    @Test
+    fun `lights can tokens map to Ignore`() {
+        assertEquals(
+            OutboundMailboxAction.Ignore,
+            MyAir5OutboundMailboxMapper.mapCanTokens("0201000000000360000000000 0201000000236000000000000"),
+        )
+    }
+
+    @Test
+    fun `setAllZoneSensorData maps to Direct`() {
+        assertEquals(
+            listOf(OutboundMailboxAction.Direct("setAllZoneSensorData?")),
+            MyAir5OutboundMailboxMapper.mapMessageToCb("setAllZoneSensorData?"),
+        )
+    }
+
+    @Test
     fun `unknown message maps to Ignore`() {
         assertEquals(
             listOf(OutboundMailboxAction.Ignore),
@@ -117,4 +144,14 @@ class MyAir5OutboundMailboxMapperTest {
             MyAir5OutboundMailboxMapper.mapMessageToCb("Temperature"),
         )
     }
+
+@Test
+fun writeCanFrameSerializesTokensArray() {
+    val frame = MailboxOutbound.writeCan("abc", listOf("0701181f30500040232000000"))
+    val json = frame.toJsonString()
+    println("WRITECAN_JSON: $json")
+    // Must be a JSON array, not a stringified List (daemon serde requires Vec<String>).
+    assertEquals("[\"0701181f30500040232000000\"]", JSONObject(json).get("tokens").toString())
+}
+
 }
