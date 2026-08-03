@@ -113,6 +113,22 @@ object MyAir5OutboundMailboxMapper {
                 if (info.has("setTemp") && !info.isNull("setTemp")) {
                     payload.put("target_temp_c", info.optDouble("setTemp"))
                 }
+                // MyZone (0 = disabled/return-air, 1-10 = thermostat zone). MyAir5
+                // moves the myzone in MyTemp mode; without this mapping the reg-05
+                // byte 4 write never reaches the CB and the thermostat sticks to
+                // the last zone (compressor follows one room forever).
+                if (info.has("myZone") && !info.isNull("myZone")) {
+                    val myZone = when (val raw = info.opt("myZone")) {
+                        is Number -> raw.toInt()
+                        is String ->
+                            if (raw.equals("Inactive", ignoreCase = true)) 0
+                            else raw.toIntOrNull() ?: -1
+                        else -> -1
+                    }
+                    if (myZone in 0..10) {
+                        payload.put("myzone_id", myZone)
+                    }
+                }
                 if (payload.length() > 0) {
                     systemActions += OutboundMailboxAction.Update(
                         register = REGISTER_SYSTEM_STATUS,
