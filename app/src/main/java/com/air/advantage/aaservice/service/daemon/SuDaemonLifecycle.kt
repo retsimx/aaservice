@@ -67,14 +67,14 @@ class SuDaemonLifecycle(
          */
         const val AM_RETRY_TRANSPORT_MODE =
             "am start-foreground-service " +
-                "-n com.air.advantage.aaservice/.service.UartForegroundService " +
+                "-n com.air.advantage.aaservice2/com.air.advantage.aaservice.service.UartForegroundService " +
                 "-a com.air.advantage.TRANSPORT_MODE_CHANGED " +
                 "--es transport_mode ws"
 
         /** Example `am` one-liner to retry USB mode after a failed Magisk stop. */
         const val AM_RETRY_USB_MODE =
             "am start-foreground-service " +
-                "-n com.air.advantage.aaservice/.service.UartForegroundService " +
+                "-n com.air.advantage.aaservice2/com.air.advantage.aaservice.service.UartForegroundService " +
                 "-a com.air.advantage.TRANSPORT_MODE_CHANGED " +
                 "--es transport_mode usb"
     }

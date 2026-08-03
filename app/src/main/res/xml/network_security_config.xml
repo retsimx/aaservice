@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Allow cleartext ws:// to loopback Magisk/bring-up cb-daemon (default URL).
+     Remote Pi hosts should use a LAN IP/hostname with cleartext domain entry
+     or switch to wss later; loopback is the first bring-up path. -->
+<network-security-config>
+    <base-config cleartextTrafficPermitted="false" />
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="false">127.0.0.1</domain>
+        <domain includeSubdomains="false">localhost</domain>
+    </domain-config>
+</network-security-config>

@@ -144,6 +144,44 @@ class OutboundMailboxGatewayTest {
     }
 
     @Test
+    fun `WS GET_ALL_DATA does not rebroadcast MESSAGE_FROM_CB poll tags`() {
+        injectWsConnected()
+        service.attachMailboxWsClient(fakeWs)
+        fakeWs.emitState(MailboxConnectionState.Connected)
+        service.dataCache.put("getSystemData", """<systemData/>""".toByteArray())
+        service.dataCache.put("getZoneData?zone=1", """<zoneData/>""".toByteArray())
+
+        service.handleGetAllDataWs()
+        awaitOutbound()
+
+        val pollTags = org.robolectric.Shadows.shadowOf(service).broadcastIntents
+            .filter { it.action == "com.air.advantage.MESSAGE_FROM_CB" }
+        assertTrue(
+            "WS GetAllData must not flood poll XML (USB cold-start parity), got ${pollTags.size}",
+            pollTags.isEmpty(),
+        )
+        assertEquals(1, fakeWs.sentResyncs.size)
+    }
+
+    @Test
+    fun `WS GET_ALL_DATA rebroadcasts cached rawCan before resync`() {
+        injectWsConnected()
+        service.attachMailboxWsClient(fakeWs)
+        fakeWs.emitState(MailboxConnectionState.Connected)
+        // Seed lastRawCan the same way a prior mailbox snapshot would.
+        service.handleGetCan("getCAN 1 0703181f30a00000000000000")
+        org.robolectric.Shadows.shadowOf(service).broadcastIntents.clear()
+
+        service.handleGetAllDataWs()
+        awaitOutbound()
+
+        val secure = org.robolectric.Shadows.shadowOf(service).broadcastIntents
+            .filter { it.action == "com.air.advantage.MESSAGE_FROM_CB_SECURE" }
+        assertTrue("expected forced rawCan rebroadcast", secure.isNotEmpty())
+        assertEquals(1, fakeWs.sentResyncs.size)
+    }
+
+    @Test
     fun `WS normal CAN ids do not send`() {
         injectWsConnected()
         service.processCanIds("5 6 7")
