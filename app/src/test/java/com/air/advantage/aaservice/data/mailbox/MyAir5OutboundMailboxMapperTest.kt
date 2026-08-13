@@ -20,7 +20,7 @@ class MyAir5OutboundMailboxMapperTest {
         val msg = """setAircon?json={"aircons":{"ac1":{"info":{"state":"on"}}}}"""
         val actions = MyAir5OutboundMailboxMapper.mapMessageToCb(msg)
         assertEquals(1, actions.size)
-        val update = actions[0] as OutboundMailboxAction.Update
+        val update = actions[0] as OutboundMailboxAction.Write
         assertEquals("system_status", update.register)
         assertEquals("on", update.payload.getString("power"))
     }
@@ -30,7 +30,7 @@ class MyAir5OutboundMailboxMapperTest {
         val msg =
             """setAircon?json={"aircons":{"ac1":{"info":{"mode":"cool","fan":"high","setTemp":23.0}}}}"""
         val actions = MyAir5OutboundMailboxMapper.mapMessageToCb(msg)
-        val update = actions.single() as OutboundMailboxAction.Update
+        val update = actions.single() as OutboundMailboxAction.Write
         assertEquals("cool", update.payload.getString("mode"))
         assertEquals("high", update.payload.getString("fan"))
         assertEquals(23.0, update.payload.getDouble("target_temp_c"), 0.001)
@@ -42,7 +42,7 @@ class MyAir5OutboundMailboxMapperTest {
         val msg =
             """setAircon?json={"aircons":{"ac1":{"zones":{"z02":{"state":"open"}}}}}"""
         val update = MyAir5OutboundMailboxMapper.mapMessageToCb(msg)
-            .single() as OutboundMailboxAction.Update
+            .single() as OutboundMailboxAction.Write
         assertEquals("zone_state", update.register)
         assertEquals(2, update.payload.getInt("zone_id"))
         assertEquals(true, update.payload.getBoolean("open"))
@@ -53,7 +53,7 @@ class MyAir5OutboundMailboxMapperTest {
         val msg =
             """setAircon?json={"aircons":{"ac1":{"zones":{"z01":{"value":80,"setTemp":22}}}}}"""
         val update = MyAir5OutboundMailboxMapper.mapMessageToCb(msg)
-            .single() as OutboundMailboxAction.Update
+            .single() as OutboundMailboxAction.Write
         assertEquals(1, update.payload.getInt("zone_id"))
         assertEquals(80, update.payload.getInt("damper_pct"))
         assertEquals(22.0, update.payload.getDouble("target_temp_c"), 0.001)
@@ -65,8 +65,8 @@ class MyAir5OutboundMailboxMapperTest {
             """setAircon?json={"aircons":{"ac1":{"info":{"state":"on","mode":"cool"},"zones":{"z01":{"state":"open"}}}}}"""
         val actions = MyAir5OutboundMailboxMapper.mapMessageToCb(msg)
         assertEquals(2, actions.size)
-        val sys = actions[0] as OutboundMailboxAction.Update
-        val zone = actions[1] as OutboundMailboxAction.Update
+        val sys = actions[0] as OutboundMailboxAction.Write
+        val zone = actions[1] as OutboundMailboxAction.Write
         assertEquals("system_status", sys.register)
         assertEquals("zone_state", zone.register)
     }
@@ -167,15 +167,20 @@ class MyAir5OutboundMailboxMapperTest {
         )
     }
 
-@Test
-fun writeCanFrameSerializesTokensArray() {
-    val frame = MailboxOutbound.writeCan("abc", listOf("0701181f30500040232000000"))
-    val json = frame.toJsonString()
-    println("WRITECAN_JSON: $json")
-    // Must be a JSON array, not a stringified List (daemon serde requires Vec<String>).
-    assertEquals("[\"0701181f30500040232000000\"]", JSONObject(json).get("tokens").toString())
-}
-
+    @Test
+    fun `write with raw hex payload serializes payload as bare string`() {
+        val frame = MailboxOutbound.Write(
+            msgId = "abc",
+            register = "sensor_pairing",
+            payload = MailboxPayload.RawHex("0701181f30500040232000000"),
+        )
+        val json = JSONObject(frame.toJsonString())
+        // Raw-hex payloads are emitted as a plain JSON string, not a nested object
+        // (daemon serde requires a raw payload string).
+        assertEquals("0701181f30500040232000000", json.getString("payload"))
+        assertEquals("write", json.getString("type"))
+        assertEquals("sensor_pairing", json.getString("register"))
+    }
 
 }
 

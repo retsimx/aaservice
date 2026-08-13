@@ -29,8 +29,8 @@ package com.air.advantage.aaservice.data.mailbox
  *   until [reconnectMaxDelayMs].
  * @property reconnectMaxDelayMs Cap for exponential reconnect backoff;
  *   default [DEFAULT_RECONNECT_MAX_DELAY_MS] (30s).
- * @property ackTimeoutMs Max wait for a matching ack after [MailboxWsClient.sendUpdate]
- *   / [MailboxWsClient.sendResync]; default [DEFAULT_ACK_TIMEOUT_MS] (10s).
+ * @property ackTimeoutMs Max wait for a matching ack after [MailboxWsClient.sendWrite]
+ *   / [MailboxWsClient.sendCommand]; default [DEFAULT_ACK_TIMEOUT_MS] (10s).
  */
 data class MailboxWsConfig(
     val url: String = DEFAULT_URL,
