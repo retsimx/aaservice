@@ -39,6 +39,13 @@ object MailboxRawCanEncoder {
      * sorted, zone maps numeric-sorted — so the `lastRawCan` dedup in
      * UartForegroundService stays stable.
      *
+     * Typed object registers encode as today; raw-hex string registers from
+     * [MailboxInbound.Snapshot.rawUnits] pass through verbatim when they were
+     * not already emitted from the typed map (and when a typed encode returns
+     * null for a register that also has raw hex, the raw passthrough wins so
+     * no record is lost). Raw string values on zone-bearing registers (03/04)
+     * are malformed by contract and ignored.
+     *
      * @return `getCAN 1 <records…>` or `null` when nothing usable is present.
      */
     fun encodeGetCan(snapshot: MailboxInbound.Snapshot): String? {
@@ -47,6 +54,8 @@ object MailboxRawCanEncoder {
             val unitType = parseRegister(unitKey.substringBefore(':', "")) ?: UNIT_TYPE_AIRCON
             val unitId = parseUnitId(unitKey.substringAfter(':', "")) ?: continue
             val registers = snapshot.units.getValue(unitKey)
+            val rawRegisters = snapshot.rawUnits[unitKey] ?: emptyMap()
+            val emitted = mutableSetOf<Int>()
             for (registerKey in registers.keys.sorted()) {
                 val reg = parseRegister(registerKey) ?: continue
                 val payload = registers.getValue(registerKey)
@@ -61,9 +70,18 @@ object MailboxRawCanEncoder {
                         }
                     }
                 } else {
-                    encodeData(reg, payload, 0)?.let { data ->
+                    val data = encodeData(reg, payload, 0)
+                    if (data != null) {
                         records += recordHex(unitType, unitId, reg, data)
+                        emitted += reg
                     }
+                }
+            }
+            for (rawKey in rawRegisters.keys.sorted()) {
+                val reg = parseRegister(rawKey) ?: continue
+                if (reg in zoneBearingRegs || reg in emitted) continue
+                rawHexData(rawRegisters.getValue(rawKey))?.let { data ->
+                    records += recordHex(unitType, unitId, reg, data)
                 }
             }
         }
@@ -78,23 +96,68 @@ object MailboxRawCanEncoder {
     }
 
     /**
+     * Rebuilds a single record as `getCAN 1 <record>` from a broker `read_result`
+     * reply. Known registers encode from the typed payload; a payload that is a raw
+     * 14-char lowercase hex string passes those bytes through verbatim.
+     *
+     * Zone-bearing registers (03/04) whose `read_result` omits `zone` encode with
+     * zone 0 — the daemon's echo of the requested zone is unverified, but
+     * reconciliation always sends the zone, so the fallback is expected to be
+     * unused in practice.
+     *
+     * @return `getCAN 1 <record>` or `null` when the result cannot form a record.
+     */
+    fun encodeReadResultToCan(result: MailboxInbound.ReadResult): String? =
+        encodeSingleRecordToCan(
+            unitType = result.unitType,
+            unitId = result.unitId,
+            register = result.register,
+            payload = result.payload,
+            zone = result.zone,
+            raw = result.raw,
+        )
+
+    /**
      * Rebuilds a single record as `getCAN 1 <record>` from a broker event.
      * Known registers encode from the typed payload; events whose payload is
      * a raw 14-char lowercase hex string pass those bytes through verbatim.
      *
      * @return `getCAN 1 <record>` or `null` when the event cannot form a record.
      */
-    fun encodeEventToCan(event: MailboxInbound.Event): String? {
-        val unitType = parseRegister(event.unitType) ?: UNIT_TYPE_AIRCON
-        val unitId = parseUnitId(event.unitId) ?: return null
-        val reg = parseRegister(event.register) ?: return null
-        val payload = event.payload
+    fun encodeEventToCan(event: MailboxInbound.Event): String? =
+        encodeSingleRecordToCan(
+            unitType = event.unitType,
+            unitId = event.unitId,
+            register = event.register,
+            payload = event.payload,
+            zone = event.zone,
+            raw = event.raw,
+        )
+
+    /**
+     * Shared single-record codec for events and read results: known registers
+     * encode from the typed [payload]; a missing payload falls back to a raw
+     * 14-char lowercase hex string on [raw] passed through verbatim.
+     *
+     * @return `getCAN 1 <record>` or `null` when the frame cannot form a record.
+     */
+    private fun encodeSingleRecordToCan(
+        unitType: String?,
+        unitId: String?,
+        register: String?,
+        payload: JSONObject?,
+        zone: Int?,
+        raw: JSONObject,
+    ): String? {
+        val resolvedUnitType = parseRegister(unitType) ?: UNIT_TYPE_AIRCON
+        val resolvedUnitId = parseUnitId(unitId) ?: return null
+        val reg = parseRegister(register) ?: return null
         val data = if (payload != null) {
-            encodeData(reg, payload, event.zone ?: 0)
+            encodeData(reg, payload, zone ?: 0)
         } else {
-            rawHexData(event.raw.optString("payload", ""))
+            rawHexData(raw.optString("payload", ""))
         } ?: return null
-        return "getCAN 1 " + recordHex(unitType, unitId, reg, data)
+        return "getCAN 1 " + recordHex(resolvedUnitType, resolvedUnitId, reg, data)
     }
 
     private fun encodeData(reg: Int, payload: JSONObject, zone: Int): ByteArray? = when (reg) {

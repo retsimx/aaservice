@@ -26,12 +26,14 @@ import com.air.advantage.aaservice.data.mailbox.MailboxWsClient
 import com.air.advantage.aaservice.data.mailbox.MailboxWsClientFactory
 import com.air.advantage.aaservice.data.mailbox.MyAir5OutboundMailboxMapper
 import com.air.advantage.aaservice.data.mailbox.OutboundMailboxAction
+import com.air.advantage.aaservice.data.mailbox.ReadOutcome
 import com.air.advantage.aaservice.data.repository.DataCacheRepository
 import com.air.advantage.aaservice.data.uart.UartDataSource
 import com.air.advantage.aaservice.data.uart.UsbAccessoryDataSource
 import com.air.advantage.aaservice.di.UartServiceEntryPoint
 import com.air.advantage.aaservice.domain.mailbox.MailboxBroadcastMapper
 import com.air.advantage.aaservice.domain.mailbox.MailboxRawCanEncoder
+import com.air.advantage.aaservice.domain.mailbox.MappedPoll
 import com.air.advantage.aaservice.domain.state.UartDispatchEngine
 import com.air.advantage.aaservice.domain.state.UartEventSink
 import com.air.advantage.aaservice.receiver.AlertDialogReceiver
@@ -182,6 +184,10 @@ class UartForegroundService : Service() {
         private set
     private var mailboxCollectionJob: Job? = null
     private var mailboxStatusJob: Job? = null
+    private var daemonStatusJob: Job? = null
+
+    /** Dedupes [armTransientErrorAlert]; reset when a connected state arrives. */
+    private val transientErrorAlertArmed = AtomicBoolean(false)
 
     @Volatile private var currentAccessory: UsbAccessory? = null
     private var currentPfd: ParcelFileDescriptor? = null
@@ -215,13 +221,56 @@ class UartForegroundService : Service() {
 
     /** Maps one mailbox frame to poll-tag broadcasts; safe to call directly from tests. */
     internal fun onMailboxInbound(inbound: MailboxInbound) {
-        // MyAir5/:2025 aircons are filled from secure rawCan (USB handleGetCan), not
-        // getSystemData XML. USB cold-start only delivers MESSAGE_FROM_CB_SECURE
-        // rawCan + aaServiceInfo — no MESSAGE_FROM_CB poll tags.
-        if (inbound is MailboxInbound.Snapshot) {
-            MailboxRawCanEncoder.encodeGetCan(inbound)?.let { handleGetCan(it) }
+        when (inbound) {
+            is MailboxInbound.Snapshot -> {
+                // Full register bank as secure rawCan (typed + raw-hex passthrough merged),
+                // then the mapped XML poll tags — broadcast per the B-6 AC (D1).
+                MailboxRawCanEncoder.encodeGetCan(inbound)?.let { handleGetCan(it) }
+                dispatchMappedPolls(
+                    MailboxBroadcastMapper.map(inbound, cachedPayload = dataCache::get),
+                )
+            }
+            is MailboxInbound.Event -> {
+                MailboxRawCanEncoder.encodeEventToCan(inbound)?.let { handleGetCan(it) }
+                dispatchMappedPolls(
+                    MailboxBroadcastMapper.map(inbound, cachedPayload = dataCache::get),
+                )
+            }
+            is MailboxInbound.ReadResult -> {
+                // Reconciliation rawCan delivery — the daemon already applied the read.
+                MailboxRawCanEncoder.encodeReadResultToCan(inbound)?.let { handleGetCan(it) }
+                    ?: Log.d(
+                        TAG,
+                        "onMailboxInbound: read_result not encodable register=${inbound.register}",
+                    )
+            }
+            is MailboxInbound.Status -> Log.d(
+                TAG,
+                "onMailboxInbound: status state=${inbound.state} " +
+                    "(real handling in the daemonStatus collector)",
+            )
+            is MailboxInbound.Ack -> Log.d(
+                TAG,
+                "onMailboxInbound: stray ack msg_id=${inbound.msgId} " +
+                    "status=${inbound.status} (awaiters correlate by msg_id)",
+            )
+            is MailboxInbound.Error -> {
+                Log.e(
+                    TAG,
+                    "onMailboxInbound: protocol error message=${inbound.message} " +
+                        "reason=${inbound.reason}",
+                )
+                armTransientErrorAlert()
+            }
+            is MailboxInbound.Unknown -> Log.d(
+                TAG,
+                "onMailboxInbound: unknown type=${inbound.type}",
+            )
         }
-        val polls = MailboxBroadcastMapper.map(inbound, cachedPayload = dataCache::get)
+    }
+
+    /** Caches mapped polls and broadcasts them (deduped via [DataCacheRepository.hasChanged]). */
+    private fun dispatchMappedPolls(polls: List<MappedPoll>) {
         for (poll in polls) {
             if (!dataCache.hasChanged(poll.tag, poll.payload)) {
                 Log.d(TAG, "onMailboxInbound: unchanged '${poll.tag}', skipping broadcast")
@@ -229,11 +278,7 @@ class UartForegroundService : Service() {
             }
             Log.d(TAG, "onMailboxInbound: tag='${poll.tag}' (${poll.payload.size} bytes)")
             dataCache.put(poll.tag, poll.payload)
-            // Snapshot-mapped XML poisoned WS cold-start vs USB. Cache for event merge;
-            // only broadcast incremental mailbox_event updates after MyAir5 is up.
-            if (inbound is MailboxInbound.Event) {
-                broadcastData(poll.tag)
-            }
+            broadcastData(poll.tag)
         }
     }
 
@@ -247,15 +292,18 @@ class UartForegroundService : Service() {
     /**
      * Syncs the inbound collector with [TransportRouter.mailboxWsClient] after mode changes.
      * Detaches when the router has no client (USB mode). Also mirrors
-     * [MailboxConnectionState] into [TransportStatusStore] for A1 UI.
+     * [MailboxConnectionState] and the broker [MailboxWsClient.daemonStatus] into
+     * [TransportStatusStore] for A1 UI.
      */
-    private fun syncMailboxInboundCollector() {
+    internal fun syncMailboxInboundCollector() {
         val routerClient = transportRouterField?.mailboxWsClient
         if (routerClient == null) {
             mailboxCollectionJob?.cancel()
             mailboxCollectionJob = null
             mailboxStatusJob?.cancel()
             mailboxStatusJob = null
+            daemonStatusJob?.cancel()
+            daemonStatusJob = null
             mailboxWsClient = null
             return
         }
@@ -263,17 +311,59 @@ class UartForegroundService : Service() {
             attachMailboxWsClient(routerClient)
             Log.i(TAG, "syncMailboxInboundCollector: collecting TransportRouter mailbox client")
         }
-        if (mailboxStatusJob?.isActive == true && mailboxWsClient === routerClient) return
+        val collectorsActive = mailboxStatusJob?.isActive == true && daemonStatusJob?.isActive == true
+        if (collectorsActive && mailboxWsClient === routerClient) return
         mailboxStatusJob?.cancel()
         mailboxStatusJob = ioScope.launch {
+            var previous: MailboxConnectionState? = null
+            // StateFlow already conflates repeated emissions; the previous-state
+            // tracking guards the reconnect case (Disconnected → Connected).
             routerClient.connectionState.collect { state ->
                 publishMailboxConnectionStatus(state)
+                // Reconciliation reads fire once per Connected transition, not per
+                // status tick.
+                val enteringConnected = state is MailboxConnectionState.Connected &&
+                    (previous == null || previous !is MailboxConnectionState.Connected)
+                previous = state
+                if (enteringConnected) {
+                    Log.d(TAG, "connectionState: entered Connected, triggering reconciliation reads")
+                    reconcileRegisters()
+                }
             }
+        }
+        daemonStatusJob?.cancel()
+        daemonStatusJob = ioScope.launch {
+            routerClient.daemonStatus.collect { status -> publishDaemonStatus(status) }
         }
     }
 
     private fun publishModeSwitchStatus(status: ModeSwitchStatus) {
         TransportStatusStore.publish(status)
+    }
+
+    /**
+     * Maps broker link state (B-6 D2) to the A1 connection UI. The socket-level
+     * [MailboxConnectionState] collector stays untouched — last write wins, races accepted.
+     */
+    private fun publishDaemonStatus(status: MailboxInbound.Status) {
+        when (status.state) {
+            "synced" -> {
+                transientErrorAlertArmed.set(false)
+                TransportStatusStore.publish(ModeSwitchStatus.Connected)
+                showNotification(true)
+            }
+            "link_down" -> {
+                TransportStatusStore.publish(ModeSwitchStatus.Error)
+                if (!deviceOpen.get()) showNotification(false)
+            }
+            "resyncing", "negotiating" -> {
+                TransportStatusStore.publish(ModeSwitchStatus.Connecting)
+            }
+            else -> Log.w(
+                TAG,
+                "publishDaemonStatus: unhandled state=${status.state} detail=${status.detail}",
+            )
+        }
     }
 
     private fun publishMailboxConnectionStatus(state: MailboxConnectionState) {
@@ -292,7 +382,11 @@ class UartForegroundService : Service() {
         // showNotification(false) from onStartCommand leaves the "Not connected" alert
         // armed and MyAir5 cold-start stays on the version banner forever.
         when (state) {
-            is MailboxConnectionState.Connected -> showNotification(true)
+            is MailboxConnectionState.Connected -> {
+                // A connected state is a success signal: re-arm the next transient error alert.
+                transientErrorAlertArmed.set(false)
+                showNotification(true)
+            }
             is MailboxConnectionState.Disconnected,
             is MailboxConnectionState.Rejected,
             is MailboxConnectionState.Error -> {
@@ -632,6 +726,7 @@ class UartForegroundService : Service() {
         periodicJob?.cancel()
         mailboxCollectionJob?.cancel()
         mailboxStatusJob?.cancel()
+        daemonStatusJob?.cancel()
         TransportStatusStore.reset()
         ioScope.cancel()
         registeredReceivers.forEach { unregisterReceiver(it) }
@@ -745,11 +840,85 @@ class UartForegroundService : Service() {
             handleGetCan(cachedRawCan)
         }
         dispatchOutboundMailboxActions(listOf(MyAir5OutboundMailboxMapper.mapGetAllData()))
+        reconcileRegisters()
+    }
+
+    /**
+     * Reconciliation reads (B-6 D4): one-shot `read` frames for the primary unit's
+     * registers 01 / 05 / 08 and 03 × zones 1..10 (no unitType/unitId — the daemon
+     * defaults to the primary unit). Fire-and-forget on [ioScope], serialized via
+     * [outboundWsMutex]; outcomes are logged and the rawCan delivery happens through
+     * the inbound [MailboxInbound.ReadResult] dispatch, never re-encoded here.
+     */
+    internal fun reconcileRegisters() {
+        val client = mailboxWsClient
+        if (client == null ||
+            client.connectionState.value !is MailboxConnectionState.Connected
+        ) {
+            Log.d(TAG, "reconcileRegisters: mailbox not Connected, skipping")
+            return
+        }
+        Log.d(TAG, "reconcileRegisters: reading 01/05/08 + 03×zones 1..10")
+        ioScope.launch {
+            outboundWsMutex.withLock {
+                for (register in listOf("01", "05", "08")) {
+                    sendReadWithOutcomeLogging(client, register, null)
+                }
+                for (zone in 1..10) {
+                    sendReadWithOutcomeLogging(client, "03", zone)
+                }
+            }
+        }
+    }
+
+    /**
+     * Sends a one-shot read and logs the outcome. Error acks arm the transient
+     * alert (D5); timeouts / transport failures stay Log.e. Shared by the outbound
+     * [OutboundMailboxAction.Read] path and [reconcileRegisters] (B-6 D4).
+     */
+    private suspend fun sendReadWithOutcomeLogging(
+        client: MailboxWsClient,
+        register: String,
+        zone: Int?,
+    ) {
+        try {
+            when (val outcome = client.sendRead(register, zone)) {
+                is ReadOutcome.Value -> Unit
+                is ReadOutcome.Error -> {
+                    Log.e(
+                        TAG,
+                        "read failure register=$register zone=$zone " +
+                            "reason=${outcome.ack.reason}",
+                    )
+                    armTransientErrorAlert()
+                }
+            }
+        } catch (e: MailboxAckTimeoutException) {
+            Log.e(TAG, "read ack timeout register=$register zone=$zone msg_id=${e.msgId}", e)
+        } catch (e: Exception) {
+            Log.e(TAG, "read failed register=$register zone=$zone", e)
+        }
+    }
+
+    /**
+     * B-6 D5: surfaces protocol errors / failed acks as a transient alert, deduped so
+     * repeated error frames do not re-arm the dialog. Cleared when a connected state
+     * arrives: the Connected connection-state branch and the `synced` daemon-status
+     * branch both reset it, so the next error cycle can re-arm.
+     */
+    private fun armTransientErrorAlert() {
+        if (!transientErrorAlertArmed.compareAndSet(false, true)) {
+            Log.d(TAG, "armTransientErrorAlert: already armed, skipping")
+            return
+        }
+        Log.w(TAG, "armTransientErrorAlert: arming transient error alert")
+        AlertDialogReceiver().setAlert(this, active = true, delayMs = 60_000)
     }
 
     /**
      * Sends mapped mailbox actions on [ioScope], serialized via [outboundWsMutex].
-     * Ack `error` / timeout are logged; never treated as success.
+     * Ack `error` / timeout are logged (plus a transient alert for error acks);
+     * never treated as success.
      */
     internal fun dispatchOutboundMailboxActions(actions: List<OutboundMailboxAction>) {
         val meaningful = actions.filter { it !is OutboundMailboxAction.Ignore }
@@ -781,6 +950,7 @@ class UartForegroundService : Service() {
                                         "write ack failure register=${action.register} " +
                                             "status=${ack.status} reason=${ack.reason}",
                                     )
+                                    armTransientErrorAlert()
                                 }
                             } catch (e: MailboxAckTimeoutException) {
                                 Log.e(TAG, "write ack timeout msg_id=${e.msgId}", e)
@@ -788,10 +958,9 @@ class UartForegroundService : Service() {
                                 Log.e(TAG, "write failed register=${action.register}", e)
                             }
                         }
-                        is OutboundMailboxAction.Read -> Log.d(
-                            TAG,
-                            "read not wired until B-2 register=${action.register}",
-                        )
+                        is OutboundMailboxAction.Read -> {
+                            sendReadWithOutcomeLogging(client, action.register, action.zone)
+                        }
                         is OutboundMailboxAction.Command -> {
                             try {
                                 val ack = client.sendCommand(action.action)
@@ -801,6 +970,7 @@ class UartForegroundService : Service() {
                                         "command ack failure action=${action.action} " +
                                             "status=${ack.status} reason=${ack.reason}",
                                     )
+                                    armTransientErrorAlert()
                                 }
                             } catch (e: MailboxAckTimeoutException) {
                                 Log.e(TAG, "command ack timeout msg_id=${e.msgId}", e)
