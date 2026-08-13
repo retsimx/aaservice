@@ -4,14 +4,16 @@ import android.app.Activity
 import android.app.AlarmManager
 import android.app.PendingIntent
 import android.content.Context
-import android.content.Intent
 import android.hardware.usb.UsbAccessory
 import android.hardware.usb.UsbManager
 import android.widget.TextView
 import androidx.test.core.app.ApplicationProvider
 import com.air.advantage.aaservice.R
 import com.air.advantage.aaservice.service.UartForegroundService
-import org.junit.Assert.*
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -24,7 +26,6 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [33], manifest = Config.NONE)
 class ServiceHelperTest {
-
     private lateinit var context: Context
 
     @Before
@@ -109,9 +110,10 @@ class ServiceHelperTest {
     @Test
     fun setVersionText_setsTextView() {
         val activity = Robolectric.buildActivity(Activity::class.java).create().get()
-        val textView = TextView(activity).apply {
-            id = R.id.version_number
-        }
+        val textView =
+            TextView(activity).apply {
+                id = R.id.version_number
+            }
         activity.setContentView(textView)
 
         ServiceHelper.setVersionText(activity)

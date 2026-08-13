@@ -1,12 +1,13 @@
 package com.air.advantage.aaservice.util
 
 import android.content.Context
-import org.junit.Assert.*
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
-import org.mockito.Mockito.*
+import org.mockito.Mockito.mock
+import org.mockito.Mockito.`when`
 
 class FujitsuDetectorTest {
-
     @Test
     fun `isFujitsuVariant returns true when package contains fgassist`() {
         val context = mock(Context::class.java)

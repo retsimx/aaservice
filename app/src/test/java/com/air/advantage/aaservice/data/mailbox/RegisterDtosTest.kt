@@ -15,7 +15,6 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [28])
 class RegisterDtosTest {
-
     private fun <T> assertRoundTrip(
         json: JSONObject,
         fromJson: (JSONObject) -> T,
@@ -26,7 +25,10 @@ class RegisterDtosTest {
         assertEquals(expected, fromJson(toJson(fromJson(json))))
     }
 
-    private fun assertJsonKeys(json: JSONObject, vararg keys: String) {
+    private fun assertJsonKeys(
+        json: JSONObject,
+        vararg keys: String,
+    ) {
         assertEquals(listOf(*keys).sorted(), json.keys().asSequence().toList().sorted())
     }
 
@@ -35,21 +37,23 @@ class RegisterDtosTest {
     @Test
     fun `ZoneConfigDto round trips including constant_zone_ids`() {
         assertRoundTrip(
-            json = JSONObject()
-                .put("header", 0x20)
-                .put("total_zones", 4)
-                .put("constant_zones", 1)
-                .put("constant_zone_ids", org.json.JSONArray(listOf(1, 3)))
-                .put("filter_clean_required", true),
+            json =
+                JSONObject()
+                    .put("header", 0x20)
+                    .put("total_zones", 4)
+                    .put("constant_zones", 1)
+                    .put("constant_zone_ids", org.json.JSONArray(listOf(1, 3)))
+                    .put("filter_clean_required", true),
             fromJson = ZoneConfigDto::fromJson,
             toJson = ZoneConfigDto::toJson,
-            expected = ZoneConfigDto(
-                header = 0x20,
-                totalZones = 4,
-                constantZones = 1,
-                constantZoneIds = listOf(1, 3),
-                filterCleanRequired = true,
-            ),
+            expected =
+                ZoneConfigDto(
+                    header = 0x20,
+                    totalZones = 4,
+                    constantZones = 1,
+                    constantZoneIds = listOf(1, 3),
+                    filterCleanRequired = true,
+                ),
         )
     }
 
@@ -58,19 +62,21 @@ class RegisterDtosTest {
     @Test
     fun `UnitActivationDto round trips`() {
         assertRoundTrip(
-            json = JSONObject()
-                .put("unit_type", "daikin")
-                .put("activation_status", "code_enabled")
-                .put("dict_fw_major", 3)
-                .put("dict_fw_minor", 4),
+            json =
+                JSONObject()
+                    .put("unit_type", "daikin")
+                    .put("activation_status", "code_enabled")
+                    .put("dict_fw_major", 3)
+                    .put("dict_fw_minor", 4),
             fromJson = UnitActivationDto::fromJson,
             toJson = UnitActivationDto::toJson,
-            expected = UnitActivationDto(
-                unitType = "daikin",
-                activationStatus = "code_enabled",
-                dictFwMajor = 3,
-                dictFwMinor = 4,
-            ),
+            expected =
+                UnitActivationDto(
+                    unitType = "daikin",
+                    activationStatus = "code_enabled",
+                    dictFwMajor = 3,
+                    dictFwMinor = 4,
+                ),
         )
     }
 
@@ -79,21 +85,23 @@ class RegisterDtosTest {
     @Test
     fun `ZoneStateDto round trips with doubles`() {
         assertRoundTrip(
-            json = JSONObject()
-                .put("open", true)
-                .put("damper_pct", 80)
-                .put("sensor_type", "rf")
-                .put("target_temp_c", 22.5)
-                .put("measured_temp_c", 23.1),
+            json =
+                JSONObject()
+                    .put("open", true)
+                    .put("damper_pct", 80)
+                    .put("sensor_type", "rf")
+                    .put("target_temp_c", 22.5)
+                    .put("measured_temp_c", 23.1),
             fromJson = ZoneStateDto::fromJson,
             toJson = ZoneStateDto::toJson,
-            expected = ZoneStateDto(
-                open = true,
-                damperPct = 80,
-                sensorType = "rf",
-                targetTempC = 22.5,
-                measuredTempC = 23.1,
-            ),
+            expected =
+                ZoneStateDto(
+                    open = true,
+                    damperPct = 80,
+                    sensorType = "rf",
+                    targetTempC = 22.5,
+                    measuredTempC = 23.1,
+                ),
         )
     }
 
@@ -102,23 +110,25 @@ class RegisterDtosTest {
     @Test
     fun `ZoneLimitsDto round trips`() {
         assertRoundTrip(
-            json = JSONObject()
-                .put("min_damper", 0)
-                .put("max_damper", 100)
-                .put("motion_status", 1)
-                .put("motion_config", 0)
-                .put("zone_error", 0)
-                .put("rssi", -63),
+            json =
+                JSONObject()
+                    .put("min_damper", 0)
+                    .put("max_damper", 100)
+                    .put("motion_status", 1)
+                    .put("motion_config", 0)
+                    .put("zone_error", 0)
+                    .put("rssi", -63),
             fromJson = ZoneLimitsDto::fromJson,
             toJson = ZoneLimitsDto::toJson,
-            expected = ZoneLimitsDto(
-                minDamper = 0,
-                maxDamper = 100,
-                motionStatus = 1,
-                motionConfig = 0,
-                zoneError = 0,
-                rssi = -63,
-            ),
+            expected =
+                ZoneLimitsDto(
+                    minDamper = 0,
+                    maxDamper = 100,
+                    motionStatus = 1,
+                    motionConfig = 0,
+                    zoneError = 0,
+                    rssi = -63,
+                ),
         )
     }
 
@@ -126,40 +136,49 @@ class RegisterDtosTest {
 
     @Test
     fun `SystemStatusDto round trips with exact snake_case keys`() {
-        val json = JSONObject()
-            .put("power", "on")
-            .put("mode", "cool")
-            .put("fan", "auto")
-            .put("target_temp_c", 22.5)
-            .put("myzone_id", 1)
-            .put("fresh_air", "off")
-            .put("rf_sys_id", 3)
-        val expected = SystemStatusDto(
-            power = "on",
-            mode = "cool",
-            fan = "auto",
-            targetTempC = 22.5,
-            myzoneId = 1,
-            freshAir = "off",
-            rfSysId = 3,
-        )
+        val json =
+            JSONObject()
+                .put("power", "on")
+                .put("mode", "cool")
+                .put("fan", "auto")
+                .put("target_temp_c", 22.5)
+                .put("myzone_id", 1)
+                .put("fresh_air", "off")
+                .put("rf_sys_id", 3)
+        val expected =
+            SystemStatusDto(
+                power = "on",
+                mode = "cool",
+                fan = "auto",
+                targetTempC = 22.5,
+                myzoneId = 1,
+                freshAir = "off",
+                rfSysId = 3,
+            )
         assertRoundTrip(json, SystemStatusDto::fromJson, SystemStatusDto::toJson, expected)
         assertJsonKeys(
             expected.toJson(),
-            "power", "mode", "fan", "target_temp_c", "myzone_id", "fresh_air", "rf_sys_id",
+            "power",
+            "mode",
+            "fan",
+            "target_temp_c",
+            "myzone_id",
+            "fresh_air",
+            "rf_sys_id",
         )
     }
 
     @Test
     fun `SystemStatusDto tolerates legacy boolean fresh_air`() {
-        val json = JSONObject()
-            .put("power", "on")
-            .put("mode", "cool")
-            .put("fan", "auto")
-            .put("target_temp_c", 22.5)
-            .put("myzone_id", 1)
-            .put("fresh_air", true)
-            .put("rf_sys_id", 3)
+        val json =
+            JSONObject()
+                .put("power", "on")
+                .put("mode", "cool")
+                .put("fan", "auto")
+                .put("target_temp_c", 22.5)
+                .put("myzone_id", 1)
+                .put("fresh_air", true)
+                .put("rf_sys_id", 3)
         val dto = SystemStatusDto.fromJson(json)
         assertEquals("on", dto.freshAir)
         assertEquals("on", dto.toJson().getString("fresh_air"))
@@ -170,19 +189,21 @@ class RegisterDtosTest {
     @Test
     fun `FirmwareDto round trips`() {
         assertRoundTrip(
-            json = JSONObject()
-                .put("fw_major", 14)
-                .put("fw_minor", 150)
-                .put("cb_type", 2)
-                .put("rf_fw_major", 1),
+            json =
+                JSONObject()
+                    .put("fw_major", 14)
+                    .put("fw_minor", 150)
+                    .put("cb_type", 2)
+                    .put("rf_fw_major", 1),
             fromJson = FirmwareDto::fromJson,
             toJson = FirmwareDto::toJson,
-            expected = FirmwareDto(
-                fwMajor = 14,
-                fwMinor = 150,
-                cbType = 2,
-                rfFwMajor = 1,
-            ),
+            expected =
+                FirmwareDto(
+                    fwMajor = 14,
+                    fwMinor = 150,
+                    cbType = 2,
+                    rfFwMajor = 1,
+                ),
         )
     }
 
@@ -203,17 +224,19 @@ class RegisterDtosTest {
     @Test
     fun `ActivationCodeDto round trips`() {
         assertRoundTrip(
-            json = JSONObject()
-                .put("action", "set_code")
-                .put("unlock_code", "1234")
-                .put("activation_days", 30),
+            json =
+                JSONObject()
+                    .put("action", "set_code")
+                    .put("unlock_code", "1234")
+                    .put("activation_days", 30),
             fromJson = ActivationCodeDto::fromJson,
             toJson = ActivationCodeDto::toJson,
-            expected = ActivationCodeDto(
-                action = "set_code",
-                unlockCode = "1234",
-                activationDays = 30,
-            ),
+            expected =
+                ActivationCodeDto(
+                    action = "set_code",
+                    unlockCode = "1234",
+                    activationDays = 30,
+                ),
         )
     }
 
@@ -232,32 +255,36 @@ class RegisterDtosTest {
     @Test
     fun `SensorPairingReadDto round trips`() {
         assertRoundTrip(
-            json = JSONObject()
-                .put("sensor_uid", "a1b2c3")
-                .put("pairing", true)
-                .put("sensor_rev", 2),
+            json =
+                JSONObject()
+                    .put("sensor_uid", "a1b2c3")
+                    .put("pairing", true)
+                    .put("sensor_rev", 2),
             fromJson = SensorPairingReadDto::fromJson,
             toJson = SensorPairingReadDto::toJson,
-            expected = SensorPairingReadDto(
-                sensorUid = "a1b2c3",
-                pairing = true,
-                sensorRev = 2,
-            ),
+            expected =
+                SensorPairingReadDto(
+                    sensorUid = "a1b2c3",
+                    pairing = true,
+                    sensorRev = 2,
+                ),
         )
     }
 
     @Test
     fun `SensorPairingWriteDto round trips`() {
         assertRoundTrip(
-            json = JSONObject()
-                .put("sensor_uid", "a1b2c3")
-                .put("zone", 4),
+            json =
+                JSONObject()
+                    .put("sensor_uid", "a1b2c3")
+                    .put("zone", 4),
             fromJson = SensorPairingWriteDto::fromJson,
             toJson = SensorPairingWriteDto::toJson,
-            expected = SensorPairingWriteDto(
-                sensorUid = "a1b2c3",
-                zone = 4,
-            ),
+            expected =
+                SensorPairingWriteDto(
+                    sensorUid = "a1b2c3",
+                    zone = 4,
+                ),
         )
     }
 
@@ -278,17 +305,19 @@ class RegisterDtosTest {
     @Test
     fun `RfDevicePairingDto round trips`() {
         assertRoundTrip(
-            json = JSONObject()
-                .put("pairing_control", 1)
-                .put("rf_device_type", 2)
-                .put("zone_channel", 3),
+            json =
+                JSONObject()
+                    .put("pairing_control", 1)
+                    .put("rf_device_type", 2)
+                    .put("zone_channel", 3),
             fromJson = RfDevicePairingDto::fromJson,
             toJson = RfDevicePairingDto::toJson,
-            expected = RfDevicePairingDto(
-                pairingControl = 1,
-                rfDeviceType = 2,
-                zoneChannel = 3,
-            ),
+            expected =
+                RfDevicePairingDto(
+                    pairingControl = 1,
+                    rfDeviceType = 2,
+                    zoneChannel = 3,
+                ),
         )
     }
 
@@ -297,17 +326,19 @@ class RegisterDtosTest {
     @Test
     fun `RfDeviceCalibrationDto round trips`() {
         assertRoundTrip(
-            json = JSONObject()
-                .put("calibration_control", 1)
-                .put("channel", 5)
-                .put("up_down_position", 0),
+            json =
+                JSONObject()
+                    .put("calibration_control", 1)
+                    .put("channel", 5)
+                    .put("up_down_position", 0),
             fromJson = RfDeviceCalibrationDto::fromJson,
             toJson = RfDeviceCalibrationDto::toJson,
-            expected = RfDeviceCalibrationDto(
-                calibrationControl = 1,
-                channel = 5,
-                upDownPosition = 0,
-            ),
+            expected =
+                RfDeviceCalibrationDto(
+                    calibrationControl = 1,
+                    channel = 5,
+                    upDownPosition = 0,
+                ),
         )
     }
 

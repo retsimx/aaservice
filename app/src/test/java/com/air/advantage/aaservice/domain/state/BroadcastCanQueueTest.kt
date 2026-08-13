@@ -11,20 +11,22 @@ import org.junit.Test
  * that is only consulted as a fallback when the CAN queue is empty, one item per setCAN cycle.
  */
 class BroadcastCanQueueTest {
+    private val sink =
+        object : UartEventSink {
+            override fun onPollData(
+                tag: String,
+                payload: ByteArray,
+            ) {}
 
-    private val sink = object : UartEventSink {
-        override fun onPollData(tag: String, payload: ByteArray) {}
-        override fun onRawCan(payload: ByteArray) {}
-    }
+            override fun onRawCan(payload: ByteArray) {}
+        }
 
     private val typeBytes = "17".toByteArray(Charsets.UTF_8)
     private val appStoreBytes = "MyAir5".toByteArray(Charsets.UTF_8)
 
-    private fun engine(): UartDispatchEngine =
-        UartDispatchEngine(listOf("getClock"), typeBytes, appStoreBytes, sink)
+    private fun engine(): UartDispatchEngine = UartDispatchEngine(listOf("getClock"), typeBytes, appStoreBytes, sink)
 
-    private fun frameOf(content: String): String =
-        "<U>$content</U=${CrcCalculator.computeHex(content)}>"
+    private fun frameOf(content: String): String = "<U>$content</U=${CrcCalculator.computeHex(content)}>"
 
     private fun firstSetCan(e: UartDispatchEngine): String =
         generateSequence { e.onPing() }

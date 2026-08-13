@@ -1,5 +1,10 @@
 package com.air.advantage.aaservice.data.uart
 
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -11,14 +16,8 @@ import java.io.ByteArrayOutputStream
 import java.io.InputStream
 import java.io.OutputStream
 import java.lang.reflect.Field
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.launch
 
 class UsbAccessoryDataSourceTest {
-
     private val testScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
     /**
@@ -28,10 +27,13 @@ class UsbAccessoryDataSourceTest {
     private fun connectAsync(
         dataSource: UsbAccessoryDataSource,
         input: InputStream,
-        output: OutputStream
+        output: OutputStream,
     ): Job = testScope.launch { dataSource.connectWithStreams(input, output) }
 
-    private fun await(timeoutMs: Long = 5000, condition: () -> Boolean) {
+    private fun await(
+        timeoutMs: Long = 5000,
+        condition: () -> Boolean,
+    ) {
         val deadline = System.currentTimeMillis() + timeoutMs
         while (System.currentTimeMillis() < deadline) {
             if (condition()) return
@@ -69,9 +71,10 @@ class UsbAccessoryDataSourceTest {
     @Test
     fun `write returns false when no output stream set`() {
         val dataSource = UsbAccessoryDataSource()
-        val result = kotlinx.coroutines.runBlocking {
-            dataSource.write("test".toByteArray())
-        }
+        val result =
+            kotlinx.coroutines.runBlocking {
+                dataSource.write("test".toByteArray())
+            }
         assertFalse(result)
     }
 
@@ -206,9 +209,10 @@ class UsbAccessoryDataSourceTest {
             output.reset()
 
             val data = "hello".toByteArray()
-            val result = kotlinx.coroutines.runBlocking {
-                dataSource.write(data)
-            }
+            val result =
+                kotlinx.coroutines.runBlocking {
+                    dataSource.write(data)
+                }
             assertTrue(result)
             assertArrayEquals(data, output.toByteArray())
         } finally {

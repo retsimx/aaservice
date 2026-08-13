@@ -35,7 +35,6 @@ import java.util.concurrent.TimeUnit
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [33], manifest = Config.NONE)
 class OutboundMailboxGatewayTest {
-
     private lateinit var controller: org.robolectric.android.controller.ServiceController<UartForegroundService>
     private lateinit var service: UartForegroundService
     private lateinit var prefs: PreferencesManager
@@ -118,15 +117,17 @@ class OutboundMailboxGatewayTest {
     @Test
     fun `WS ack error does not pretend success`() {
         injectWsConnected()
-        fakeWs.nextWriteAck = MailboxInbound.Ack(
-            msgId = "err",
-            status = MailboxAckStatus.ERROR,
-            reason = "denied",
-            raw = JSONObject()
-                .put("type", MailboxMessageType.ACK)
-                .put("msg_id", "err")
-                .put("status", "error"),
-        )
+        fakeWs.nextWriteAck =
+            MailboxInbound.Ack(
+                msgId = "err",
+                status = MailboxAckStatus.ERROR,
+                reason = "denied",
+                raw =
+                    JSONObject()
+                        .put("type", MailboxMessageType.ACK)
+                        .put("msg_id", "err")
+                        .put("status", "error"),
+            )
         service.enqueueMailboxMessage(
             """setAircon?json={"aircons":{"ac1":{"info":{"state":"off"}}}}""",
         )
@@ -152,17 +153,19 @@ class OutboundMailboxGatewayTest {
     @Test
     fun `WS read error outcome logs and arms transient alert`() {
         injectWsConnected()
-        fakeWs.nextReadOutcome = ReadOutcome.Error(
-            MailboxInbound.Ack(
-                msgId = "err-read",
-                status = MailboxAckStatus.ERROR,
-                reason = "register 03 has no value",
-                raw = JSONObject()
-                    .put("type", MailboxMessageType.ACK)
-                    .put("msg_id", "err-read")
-                    .put("status", "error"),
-            ),
-        )
+        fakeWs.nextReadOutcome =
+            ReadOutcome.Error(
+                MailboxInbound.Ack(
+                    msgId = "err-read",
+                    status = MailboxAckStatus.ERROR,
+                    reason = "register 03 has no value",
+                    raw =
+                        JSONObject()
+                            .put("type", MailboxMessageType.ACK)
+                            .put("msg_id", "err-read")
+                            .put("status", "error"),
+                ),
+            )
 
         service.dispatchOutboundMailboxActions(
             listOf(OutboundMailboxAction.Read(register = "03", zone = 1)),
@@ -203,8 +206,9 @@ class OutboundMailboxGatewayTest {
         service.handleGetAllDataWs()
         awaitOutbound()
 
-        val pollTags = org.robolectric.Shadows.shadowOf(service).broadcastIntents
-            .filter { it.action == "com.air.advantage.MESSAGE_FROM_CB" }
+        val pollTags =
+            org.robolectric.Shadows.shadowOf(service).broadcastIntents
+                .filter { it.action == "com.air.advantage.MESSAGE_FROM_CB" }
         assertTrue(
             "WS GetAllData must not flood poll XML (USB cold-start parity), got ${pollTags.size}",
             pollTags.isEmpty(),
@@ -224,8 +228,9 @@ class OutboundMailboxGatewayTest {
         service.handleGetAllDataWs()
         awaitOutbound()
 
-        val secure = org.robolectric.Shadows.shadowOf(service).broadcastIntents
-            .filter { it.action == "com.air.advantage.MESSAGE_FROM_CB_SECURE" }
+        val secure =
+            org.robolectric.Shadows.shadowOf(service).broadcastIntents
+                .filter { it.action == "com.air.advantage.MESSAGE_FROM_CB_SECURE" }
         assertTrue("expected forced rawCan rebroadcast", secure.isNotEmpty())
         assertEquals(1, fakeWs.sentCommands.size)
     }
@@ -252,10 +257,11 @@ class OutboundMailboxGatewayTest {
         injectWsConnected()
         service.deviceOpen.set(false)
         val receiver = MessageToCbReceiver()
-        val intent = Intent("com.air.advantage.MESSAGE_TO_CB").putExtra(
-            "com.air.advantage.MESSAGE_TO_CB",
-            """setAircon?json={"aircons":{"ac1":{"info":{"state":"on"}}}}""",
-        )
+        val intent =
+            Intent("com.air.advantage.MESSAGE_TO_CB").putExtra(
+                "com.air.advantage.MESSAGE_TO_CB",
+                """setAircon?json={"aircons":{"ac1":{"info":{"state":"on"}}}}""",
+            )
         receiver.onReceive(service, intent)
         awaitOutbound()
         assertEquals(1, fakeWs.sentWrites.size)

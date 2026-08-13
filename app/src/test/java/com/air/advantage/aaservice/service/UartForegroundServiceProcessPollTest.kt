@@ -4,7 +4,11 @@ import android.content.ContextWrapper
 import android.content.Intent
 import com.air.advantage.aaservice.data.protocol.CrcCalculator
 import org.junit.After
-import org.junit.Assert.*
+import org.junit.Assert.assertArrayEquals
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -17,7 +21,6 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [33], manifest = Config.NONE)
 class UartForegroundServiceProcessPollTest {
-
     private lateinit var service: UartForegroundService
 
     @Before
@@ -70,8 +73,12 @@ class UartForegroundServiceProcessPollTest {
         POLL_TAGS.forEachIndexed { i, tag ->
             assertEquals(i, engine.currentPollIndex())
             val base = tag.substringBefore("?")
-            val payload = if (tag == "getSystemData") SYSTEM_DATA
-            else "<request>$base</request><dummy>1</dummy>".toByteArray()
+            val payload =
+                if (tag == "getSystemData") {
+                    SYSTEM_DATA
+                } else {
+                    "<request>$base</request><dummy>1</dummy>".toByteArray()
+                }
             engine.onFrame(payload)
         }
         assertEquals(0, engine.currentPollIndex())
@@ -146,22 +153,26 @@ class UartForegroundServiceProcessPollTest {
     }
 
     private companion object {
-        val POLL_TAGS = listOf(
-            "getSystemData",
-            "getClock",
-            "getZoneData?zone=1",
-            "getZoneData?zone=2",
-            "getZoneData?zone=3",
-            "getZoneData?zone=4",
-            "getZoneData?zone=5",
-            "getZoneData?zone=6",
-            "getZoneData?zone=7",
-            "getZoneData?zone=8",
-            "getZoneData?zone=9",
-            "getZoneData?zone=10"
-        )
-        val SYSTEM_DATA = ("<request>getSystemData</request><type>00</type><AppStore>x</AppStore>" +
-            "<dhcp>192.168.1.1</dhcp><subnet>255.255.255.0</subnet><gateway>192.168.1.254</gateway>" +
-            "<MyAppRev>14.148</MyAppRev>").toByteArray(Charsets.UTF_8)
+        val POLL_TAGS =
+            listOf(
+                "getSystemData",
+                "getClock",
+                "getZoneData?zone=1",
+                "getZoneData?zone=2",
+                "getZoneData?zone=3",
+                "getZoneData?zone=4",
+                "getZoneData?zone=5",
+                "getZoneData?zone=6",
+                "getZoneData?zone=7",
+                "getZoneData?zone=8",
+                "getZoneData?zone=9",
+                "getZoneData?zone=10",
+            )
+        val SYSTEM_DATA =
+            (
+                "<request>getSystemData</request><type>00</type><AppStore>x</AppStore>" +
+                    "<dhcp>192.168.1.1</dhcp><subnet>255.255.255.0</subnet><gateway>192.168.1.254</gateway>" +
+                    "<MyAppRev>14.148</MyAppRev>"
+            ).toByteArray(Charsets.UTF_8)
     }
 }

@@ -5,12 +5,16 @@ import android.content.Intent
 import android.util.Log
 
 class GetAllDataReceiver : BaseReceiver() {
-    override fun onReceive(context: Context, intent: Intent) {
+    override fun onReceive(
+        context: Context,
+        intent: Intent,
+    ) {
         Log.d(BCAST_TAG, "GetAllData: received")
-        val s = service ?: run {
-            Log.d(BCAST_TAG, "GetAllData: no service instance, dropping")
-            return
-        }
+        val s =
+            service ?: run {
+                Log.d(BCAST_TAG, "GetAllData: no service instance, dropping")
+                return
+            }
         if (s.isWsMode()) {
             Log.d(BCAST_TAG, "GetAllData: WS mode → resync_mailbox")
             s.handleGetAllDataWs()
@@ -21,25 +25,34 @@ class GetAllDataReceiver : BaseReceiver() {
             return
         }
 
-        val baseTags = listOf(
-            "getSystemData", "getClock",
-            "getZoneData?zone=1", "getZoneData?zone=2", "getZoneData?zone=3",
-            "getZoneData?zone=4", "getZoneData?zone=5", "getZoneData?zone=6",
-            "getZoneData?zone=7", "getZoneData?zone=8", "getZoneData?zone=9",
-            "getZoneData?zone=10"
-        )
+        val baseTags =
+            listOf(
+                "getSystemData",
+                "getClock",
+                "getZoneData?zone=1",
+                "getZoneData?zone=2",
+                "getZoneData?zone=3",
+                "getZoneData?zone=4",
+                "getZoneData?zone=5",
+                "getZoneData?zone=6",
+                "getZoneData?zone=7",
+                "getZoneData?zone=8",
+                "getZoneData?zone=9",
+                "getZoneData?zone=10",
+            )
         baseTags.forEach { tag ->
             s.broadcastData(tag)
         }
 
-        val scheduleTags = listOf(
-            "getZoneTimer",
-            "getScheduleData?schedule=1",
-            "getScheduleData?schedule=2",
-            "getScheduleData?schedule=3",
-            "getScheduleData?schedule=4",
-            "getScheduleData?schedule=5"
-        )
+        val scheduleTags =
+            listOf(
+                "getZoneTimer",
+                "getScheduleData?schedule=1",
+                "getScheduleData?schedule=2",
+                "getScheduleData?schedule=3",
+                "getScheduleData?schedule=4",
+                "getScheduleData?schedule=5",
+            )
         scheduleTags.forEach { tag ->
             s.broadcastData(tag)
         }

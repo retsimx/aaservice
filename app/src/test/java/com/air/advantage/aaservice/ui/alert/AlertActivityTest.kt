@@ -7,7 +7,11 @@ import androidx.localbroadcastmanager.content.LocalBroadcastManager
 import com.air.advantage.aaservice.R
 import com.air.advantage.aaservice.receiver.AlertDialogReceiver
 import org.junit.After
-import org.junit.Assert.*
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -19,7 +23,6 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [33], manifest = Config.NONE)
 class AlertActivityTest {
-
     @Before
     fun setUp() {
         AlertDialogReceiver.alertActive.set(false)

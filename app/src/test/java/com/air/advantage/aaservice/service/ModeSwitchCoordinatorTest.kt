@@ -30,7 +30,6 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [33], manifest = Config.NONE)
 class ModeSwitchCoordinatorTest {
-
     private lateinit var callOrder: MutableList<String>
     private lateinit var statuses: MutableList<ModeSwitchStatus>
     private lateinit var daemon: FakeDaemonLifecycle
@@ -49,359 +48,373 @@ class ModeSwitchCoordinatorTest {
     }
 
     @Test
-    fun `usb to ws loopback order is tearDown Magisk start connect Connected`() = runTest {
-        val coordinator = newCoordinator(scope = this, snapshotTimeoutMs = 10_000)
+    fun `usb to ws loopback order is tearDown Magisk start connect Connected`() =
+        runTest {
+            val coordinator = newCoordinator(scope = this, snapshotTimeoutMs = 10_000)
 
-        val job = coordinator.switchTo(TransportMode.Ws)
-        runCurrent()
-        assertEquals(1, wsClient.connectCalls)
-        assertEquals(
-            listOf("status:Connecting", "tearDown", "daemon.start", "connect"),
-            callOrder.toList(),
-        )
+            val job = coordinator.switchTo(TransportMode.Ws)
+            runCurrent()
+            assertEquals(1, wsClient.connectCalls)
+            assertEquals(
+                listOf("status:Connecting", "tearDown", "daemon.start", "connect"),
+                callOrder.toList(),
+            )
 
-        wsClient.emitState(MailboxConnectionState.Connected)
-        runCurrent()
-        job.join()
+            wsClient.emitState(MailboxConnectionState.Connected)
+            runCurrent()
+            job.join()
 
-        assertEquals(
-            listOf(
-                "status:Connecting",
-                "tearDown",
-                "daemon.start",
-                "connect",
-                "status:Connected",
-            ),
-            callOrder.toList(),
-        )
-        assertEquals(ModeSwitchStatus.Connected, statuses.last())
-        assertEquals(0, usb.activateCalls)
-        assertEquals(1, daemon.startCalls)
-        assertEquals(0, daemon.stopCalls)
-    }
-
-    @Test
-    fun `usb to ws remote skips Magisk start`() = runTest {
-        daemonUrl = REMOTE_URL
-        val coordinator = newCoordinator(scope = this, snapshotTimeoutMs = 10_000)
-
-        val job = coordinator.switchTo(TransportMode.Ws)
-        runCurrent()
-        wsClient.emitState(MailboxConnectionState.Connected)
-        runCurrent()
-        job.join()
-
-        assertEquals(
-            listOf(
-                "status:Connecting",
-                "tearDown",
-                "connect",
-                "status:Connected",
-            ),
-            callOrder.toList(),
-        )
-        assertEquals(0, daemon.startCalls)
-        assertEquals(ModeSwitchStatus.Connected, statuses.last())
-    }
+            assertEquals(
+                listOf(
+                    "status:Connecting",
+                    "tearDown",
+                    "daemon.start",
+                    "connect",
+                    "status:Connected",
+                ),
+                callOrder.toList(),
+            )
+            assertEquals(ModeSwitchStatus.Connected, statuses.last())
+            assertEquals(0, usb.activateCalls)
+            assertEquals(1, daemon.startCalls)
+            assertEquals(0, daemon.stopCalls)
+        }
 
     @Test
-    fun `ws to usb order is disconnect Magisk stop activate Idle`() = runTest {
-        val router = newRouter(initialMode = TransportMode.Ws)
-        router.connectWs()
-        callOrder.clear()
+    fun `usb to ws remote skips Magisk start`() =
+        runTest {
+            daemonUrl = REMOTE_URL
+            val coordinator = newCoordinator(scope = this, snapshotTimeoutMs = 10_000)
 
-        val coordinator = newCoordinator(
-            scope = this,
-            router = router,
-            snapshotTimeoutMs = 10_000,
-        )
+            val job = coordinator.switchTo(TransportMode.Ws)
+            runCurrent()
+            wsClient.emitState(MailboxConnectionState.Connected)
+            runCurrent()
+            job.join()
 
-        val job = coordinator.switchTo(TransportMode.Usb)
-        runCurrent()
-        job.join()
-
-        assertEquals(
-            listOf(
-                "status:Connecting",
-                "disconnect",
-                "daemon.stop",
-                "activate",
-                "status:Idle",
-            ),
-            callOrder.toList(),
-        )
-        assertEquals(ModeSwitchStatus.Idle, statuses.last())
-        assertEquals(1, daemon.stopCalls)
-        assertEquals(0, daemon.startCalls)
-        assertEquals(1, usb.activateCalls)
-        assertEquals(TransportMode.Usb, router.activeMode)
-    }
+            assertEquals(
+                listOf(
+                    "status:Connecting",
+                    "tearDown",
+                    "connect",
+                    "status:Connected",
+                ),
+                callOrder.toList(),
+            )
+            assertEquals(0, daemon.startCalls)
+            assertEquals(ModeSwitchStatus.Connected, statuses.last())
+        }
 
     @Test
-    fun `Magisk start fail yields Error no USB activate no connect`() = runTest {
-        daemon.startResult = false
-        val router = newRouter(initialMode = TransportMode.Usb)
-        val coordinator = newCoordinator(scope = this, router = router)
+    fun `ws to usb order is disconnect Magisk stop activate Idle`() =
+        runTest {
+            val router = newRouter(initialMode = TransportMode.Ws)
+            router.connectWs()
+            callOrder.clear()
 
-        coordinator.switchTo(TransportMode.Ws).join()
-        runCurrent()
+            val coordinator =
+                newCoordinator(
+                    scope = this,
+                    router = router,
+                    snapshotTimeoutMs = 10_000,
+                )
 
-        assertEquals(
-            listOf("status:Connecting", "tearDown", "daemon.start", "status:Error"),
-            callOrder.toList(),
-        )
-        assertEquals(ModeSwitchStatus.Error, statuses.last())
-        assertEquals(0, wsClient.connectCalls)
-        assertEquals(0, usb.activateCalls)
-        assertFalse(statuses.contains(ModeSwitchStatus.Connected))
-        assertEquals(TransportMode.Ws, router.activeMode)
-    }
+            val job = coordinator.switchTo(TransportMode.Usb)
+            runCurrent()
+            job.join()
 
-    @Test
-    fun `Magisk start fail then second switchTo Ws retries Magisk start`() = runTest {
-        daemon.startResult = false
-        val router = newRouter(initialMode = TransportMode.Usb)
-        val coordinator = newCoordinator(scope = this, router = router)
-
-        coordinator.switchTo(TransportMode.Ws).join()
-        runCurrent()
-        assertEquals(ModeSwitchStatus.Error, statuses.last())
-        assertEquals(TransportMode.Ws, router.activeMode)
-        assertEquals(1, daemon.startCalls)
-        assertTrue(coordinator.needsSwitch(TransportMode.Ws))
-
-        callOrder.clear()
-        daemon.startResult = true
-        val job = coordinator.switchTo(TransportMode.Ws)
-        runCurrent()
-        assertEquals(2, daemon.startCalls)
-        assertEquals(1, wsClient.connectCalls)
-
-        wsClient.emitState(MailboxConnectionState.Connected)
-        runCurrent()
-        job.join()
-
-        assertEquals(ModeSwitchStatus.Connected, statuses.last())
-        assertEquals(
-            listOf(
-                "status:Connecting",
-                "tearDown",
-                "daemon.start",
-                "connect",
-                "status:Connected",
-            ),
-            callOrder.toList(),
-        )
-        assertFalse(coordinator.needsSwitch(TransportMode.Ws))
-    }
+            assertEquals(
+                listOf(
+                    "status:Connecting",
+                    "disconnect",
+                    "daemon.stop",
+                    "activate",
+                    "status:Idle",
+                ),
+                callOrder.toList(),
+            )
+            assertEquals(ModeSwitchStatus.Idle, statuses.last())
+            assertEquals(1, daemon.stopCalls)
+            assertEquals(0, daemon.startCalls)
+            assertEquals(1, usb.activateCalls)
+            assertEquals(TransportMode.Usb, router.activeMode)
+        }
 
     @Test
-    fun `snapshot timeout then second switchTo Ws retries connect`() = runTest {
-        val timeoutMs = 5_000L
-        val router = newRouter(initialMode = TransportMode.Usb)
-        val coordinator = newCoordinator(scope = this, router = router, snapshotTimeoutMs = timeoutMs)
+    fun `Magisk start fail yields Error no USB activate no connect`() =
+        runTest {
+            daemon.startResult = false
+            val router = newRouter(initialMode = TransportMode.Usb)
+            val coordinator = newCoordinator(scope = this, router = router)
 
-        val failJob = coordinator.switchTo(TransportMode.Ws)
-        runCurrent()
-        assertEquals(1, wsClient.connectCalls)
-        // All internal retry attempts exhaust -> Error (no operator intervention needed).
-        advanceTimeBy(
-            timeoutMs * ModeSwitchCoordinator.WS_CONNECT_ATTEMPTS +
-                ModeSwitchCoordinator.WS_RETRY_DELAY_MS *
-                (ModeSwitchCoordinator.WS_CONNECT_ATTEMPTS - 1) + 1_000,
-        )
-        runCurrent()
-        failJob.join()
+            coordinator.switchTo(TransportMode.Ws).join()
+            runCurrent()
 
-        assertEquals(ModeSwitchStatus.Error, statuses.last())
-        assertEquals(ModeSwitchCoordinator.WS_CONNECT_ATTEMPTS, wsClient.connectCalls)
-        assertEquals(TransportMode.Ws, router.activeMode)
-        assertTrue(coordinator.needsSwitch(TransportMode.Ws))
-
-        callOrder.clear()
-        // Fresh client so retry connect() is observable (factory reads current wsClient).
-        wsClient = FakeMailboxWsClient()
-        val retryJob = coordinator.switchTo(TransportMode.Ws)
-        runCurrent()
-        assertTrue(callOrder.contains("connect"))
-
-        wsClient.emitState(MailboxConnectionState.Connected)
-        runCurrent()
-        retryJob.join()
-
-        assertEquals(ModeSwitchStatus.Connected, statuses.last())
-        assertEquals(0, usb.activateCalls)
-        assertFalse(coordinator.needsSwitch(TransportMode.Ws))
-    }
+            assertEquals(
+                listOf("status:Connecting", "tearDown", "daemon.start", "status:Error"),
+                callOrder.toList(),
+            )
+            assertEquals(ModeSwitchStatus.Error, statuses.last())
+            assertEquals(0, wsClient.connectCalls)
+            assertEquals(0, usb.activateCalls)
+            assertFalse(statuses.contains(ModeSwitchStatus.Connected))
+            assertEquals(TransportMode.Ws, router.activeMode)
+        }
 
     @Test
-    fun `healthy Connected switchTo Ws is no-op no double connect`() = runTest {
-        val coordinator = newCoordinator(scope = this, snapshotTimeoutMs = 10_000)
+    fun `Magisk start fail then second switchTo Ws retries Magisk start`() =
+        runTest {
+            daemon.startResult = false
+            val router = newRouter(initialMode = TransportMode.Usb)
+            val coordinator = newCoordinator(scope = this, router = router)
 
-        val job = coordinator.switchTo(TransportMode.Ws)
-        runCurrent()
-        wsClient.emitState(MailboxConnectionState.Connected)
-        runCurrent()
-        job.join()
+            coordinator.switchTo(TransportMode.Ws).join()
+            runCurrent()
+            assertEquals(ModeSwitchStatus.Error, statuses.last())
+            assertEquals(TransportMode.Ws, router.activeMode)
+            assertEquals(1, daemon.startCalls)
+            assertTrue(coordinator.needsSwitch(TransportMode.Ws))
 
-        assertEquals(ModeSwitchStatus.Connected, statuses.last())
-        assertEquals(1, daemon.startCalls)
-        assertEquals(1, wsClient.connectCalls)
-        assertFalse(coordinator.needsSwitch(TransportMode.Ws))
+            callOrder.clear()
+            daemon.startResult = true
+            val job = coordinator.switchTo(TransportMode.Ws)
+            runCurrent()
+            assertEquals(2, daemon.startCalls)
+            assertEquals(1, wsClient.connectCalls)
 
-        callOrder.clear()
-        coordinator.switchTo(TransportMode.Ws).join()
-        runCurrent()
+            wsClient.emitState(MailboxConnectionState.Connected)
+            runCurrent()
+            job.join()
 
-        assertEquals(emptyList<String>(), callOrder.toList())
-        assertEquals(1, daemon.startCalls)
-        assertEquals(1, wsClient.connectCalls)
-        assertEquals(ModeSwitchStatus.Connected, statuses.last())
-    }
-
-    @Test
-    fun `healthy Usb Idle switchTo Usb is no-op no re-activate`() = runTest {
-        val router = newRouter(initialMode = TransportMode.Usb)
-        val coordinator = newCoordinator(scope = this, router = router)
-
-        // Establish Idle via an explicit USB switch (e.g. after prior WS).
-        router.prepareWs()
-        router.connectWs()
-        callOrder.clear()
-        statuses.clear()
-        coordinator.switchTo(TransportMode.Usb).join()
-        runCurrent()
-
-        assertEquals(ModeSwitchStatus.Idle, statuses.last())
-        assertEquals(1, usb.activateCalls)
-        assertFalse(coordinator.needsSwitch(TransportMode.Usb))
-
-        callOrder.clear()
-        val activateBefore = usb.activateCalls
-        coordinator.switchTo(TransportMode.Usb).join()
-        runCurrent()
-
-        assertEquals(emptyList<String>(), callOrder.toList())
-        assertEquals(activateBefore, usb.activateCalls)
-        assertEquals(ModeSwitchStatus.Idle, coordinator.lastStatus)
-    }
+            assertEquals(ModeSwitchStatus.Connected, statuses.last())
+            assertEquals(
+                listOf(
+                    "status:Connecting",
+                    "tearDown",
+                    "daemon.start",
+                    "connect",
+                    "status:Connected",
+                ),
+                callOrder.toList(),
+            )
+            assertFalse(coordinator.needsSwitch(TransportMode.Ws))
+        }
 
     @Test
-    fun `snapshot timeout disconnects WS sets Error and does not activate USB`() = runTest {
-        val timeoutMs = 5_000L
-        val coordinator = newCoordinator(scope = this, snapshotTimeoutMs = timeoutMs)
+    fun `snapshot timeout then second switchTo Ws retries connect`() =
+        runTest {
+            val timeoutMs = 5_000L
+            val router = newRouter(initialMode = TransportMode.Usb)
+            val coordinator = newCoordinator(scope = this, router = router, snapshotTimeoutMs = timeoutMs)
 
-        val job = coordinator.switchTo(TransportMode.Ws)
-        runCurrent()
-        assertEquals(1, wsClient.connectCalls)
-        assertEquals(MailboxConnectionState.Connecting, wsClient.connectionState.value)
+            val failJob = coordinator.switchTo(TransportMode.Ws)
+            runCurrent()
+            assertEquals(1, wsClient.connectCalls)
+            // All internal retry attempts exhaust -> Error (no operator intervention needed).
+            advanceTimeBy(
+                timeoutMs * ModeSwitchCoordinator.WS_CONNECT_ATTEMPTS +
+                    ModeSwitchCoordinator.WS_RETRY_DELAY_MS *
+                    (ModeSwitchCoordinator.WS_CONNECT_ATTEMPTS - 1) + 1_000,
+            )
+            runCurrent()
+            failJob.join()
 
-        // All internal retry attempts exhaust -> Error (no operator intervention needed).
-        advanceTimeBy(
-            timeoutMs * ModeSwitchCoordinator.WS_CONNECT_ATTEMPTS +
-                ModeSwitchCoordinator.WS_RETRY_DELAY_MS *
-                (ModeSwitchCoordinator.WS_CONNECT_ATTEMPTS - 1) + 1_000,
-        )
-        runCurrent()
-        job.join()
+            assertEquals(ModeSwitchStatus.Error, statuses.last())
+            assertEquals(ModeSwitchCoordinator.WS_CONNECT_ATTEMPTS, wsClient.connectCalls)
+            assertEquals(TransportMode.Ws, router.activeMode)
+            assertTrue(coordinator.needsSwitch(TransportMode.Ws))
 
-        assertTrue(callOrder.contains("disconnect"))
-        assertEquals(ModeSwitchStatus.Error, statuses.last())
-        assertEquals(ModeSwitchCoordinator.WS_CONNECT_ATTEMPTS, wsClient.connectCalls)
-        assertEquals(0, usb.activateCalls)
-        assertFalse(statuses.contains(ModeSwitchStatus.Connected))
-        assertTrue(wsClient.disconnectCalls >= 1)
-    }
+            callOrder.clear()
+            // Fresh client so retry connect() is observable (factory reads current wsClient).
+            wsClient = FakeMailboxWsClient()
+            val retryJob = coordinator.switchTo(TransportMode.Ws)
+            runCurrent()
+            assertTrue(callOrder.contains("connect"))
 
-    @Test
-    fun `WS disconnect during snapshot wait yields Error with no USB activate`() = runTest {
-        val timeoutMs = 10_000L
-        val router = newRouter(initialMode = TransportMode.Usb)
-        val coordinator = newCoordinator(scope = this, router = router, snapshotTimeoutMs = timeoutMs)
+            wsClient.emitState(MailboxConnectionState.Connected)
+            runCurrent()
+            retryJob.join()
 
-        val job = coordinator.switchTo(TransportMode.Ws)
-        runCurrent()
-        assertEquals(1, wsClient.connectCalls)
-
-        wsClient.emitState(MailboxConnectionState.Disconnected)
-        runCurrent()
-        // All internal retry attempts exhaust -> Error (no operator intervention needed).
-        advanceTimeBy(
-            timeoutMs * ModeSwitchCoordinator.WS_CONNECT_ATTEMPTS +
-                ModeSwitchCoordinator.WS_RETRY_DELAY_MS *
-                (ModeSwitchCoordinator.WS_CONNECT_ATTEMPTS - 1) + 1_000,
-        )
-        runCurrent()
-        job.join()
-
-        assertTrue(callOrder.contains("disconnect"))
-        assertEquals(ModeSwitchStatus.Error, statuses.last())
-        assertEquals(0, usb.activateCalls)
-        assertFalse(statuses.contains(ModeSwitchStatus.Connected))
-        assertEquals(TransportMode.Ws, router.activeMode)
-    }
+            assertEquals(ModeSwitchStatus.Connected, statuses.last())
+            assertEquals(0, usb.activateCalls)
+            assertFalse(coordinator.needsSwitch(TransportMode.Ws))
+        }
 
     @Test
-    fun `WS Error during snapshot wait yields Error with no USB activate`() = runTest {
-        val timeoutMs = 10_000L
-        val coordinator = newCoordinator(scope = this, snapshotTimeoutMs = timeoutMs)
+    fun `healthy Connected switchTo Ws is no-op no double connect`() =
+        runTest {
+            val coordinator = newCoordinator(scope = this, snapshotTimeoutMs = 10_000)
 
-        val job = coordinator.switchTo(TransportMode.Ws)
-        runCurrent()
-        wsClient.emitState(MailboxConnectionState.Error("boom"))
-        runCurrent()
-        // All internal retry attempts exhaust -> Error (no operator intervention needed).
-        advanceTimeBy(
-            timeoutMs * ModeSwitchCoordinator.WS_CONNECT_ATTEMPTS +
-                ModeSwitchCoordinator.WS_RETRY_DELAY_MS *
-                (ModeSwitchCoordinator.WS_CONNECT_ATTEMPTS - 1) + 1_000,
-        )
-        runCurrent()
-        job.join()
+            val job = coordinator.switchTo(TransportMode.Ws)
+            runCurrent()
+            wsClient.emitState(MailboxConnectionState.Connected)
+            runCurrent()
+            job.join()
 
-        assertEquals(ModeSwitchStatus.Error, statuses.last())
-        assertEquals(ModeSwitchCoordinator.WS_CONNECT_ATTEMPTS, wsClient.connectCalls)
-        assertEquals(0, usb.activateCalls)
-        assertFalse(statuses.contains(ModeSwitchStatus.Connected))
-    }
+            assertEquals(ModeSwitchStatus.Connected, statuses.last())
+            assertEquals(1, daemon.startCalls)
+            assertEquals(1, wsClient.connectCalls)
+            assertFalse(coordinator.needsSwitch(TransportMode.Ws))
 
-    @Test
-    fun `cancelled in-flight switchToWs disconnects WS without USB activate`() = runTest {
-        val coordinator = newCoordinator(scope = this, snapshotTimeoutMs = 10_000)
+            callOrder.clear()
+            coordinator.switchTo(TransportMode.Ws).join()
+            runCurrent()
 
-        val job = coordinator.switchTo(TransportMode.Ws)
-        runCurrent()
-        assertEquals(1, wsClient.connectCalls)
-        assertEquals(MailboxConnectionState.Connecting, wsClient.connectionState.value)
-
-        job.cancel()
-        runCurrent()
-        job.join()
-
-        assertTrue(callOrder.contains("disconnect"))
-        assertTrue(wsClient.disconnectCalls >= 1)
-        assertEquals(0, usb.activateCalls)
-        assertFalse(statuses.contains(ModeSwitchStatus.Connected))
-        // Connecting remains so same-mode retry / next switch still runs.
-        assertTrue(coordinator.needsSwitch(TransportMode.Ws))
-    }
+            assertEquals(emptyList<String>(), callOrder.toList())
+            assertEquals(1, daemon.startCalls)
+            assertEquals(1, wsClient.connectCalls)
+            assertEquals(ModeSwitchStatus.Connected, statuses.last())
+        }
 
     @Test
-    fun `ws to usb still activates when Magisk stop fails`() = runTest {
-        daemon.stopResult = false
-        val router = newRouter(initialMode = TransportMode.Ws)
-        router.connectWs()
-        callOrder.clear()
+    fun `healthy Usb Idle switchTo Usb is no-op no re-activate`() =
+        runTest {
+            val router = newRouter(initialMode = TransportMode.Usb)
+            val coordinator = newCoordinator(scope = this, router = router)
 
-        val coordinator = newCoordinator(scope = this, router = router)
-        coordinator.switchTo(TransportMode.Usb).join()
-        runCurrent()
+            // Establish Idle via an explicit USB switch (e.g. after prior WS).
+            router.prepareWs()
+            router.connectWs()
+            callOrder.clear()
+            statuses.clear()
+            coordinator.switchTo(TransportMode.Usb).join()
+            runCurrent()
 
-        assertTrue(callOrder.contains("daemon.stop"))
-        assertTrue(callOrder.contains("activate"))
-        assertEquals(1, usb.activateCalls)
-        assertEquals(ModeSwitchStatus.Idle, statuses.last())
-    }
+            assertEquals(ModeSwitchStatus.Idle, statuses.last())
+            assertEquals(1, usb.activateCalls)
+            assertFalse(coordinator.needsSwitch(TransportMode.Usb))
+
+            callOrder.clear()
+            val activateBefore = usb.activateCalls
+            coordinator.switchTo(TransportMode.Usb).join()
+            runCurrent()
+
+            assertEquals(emptyList<String>(), callOrder.toList())
+            assertEquals(activateBefore, usb.activateCalls)
+            assertEquals(ModeSwitchStatus.Idle, coordinator.lastStatus)
+        }
+
+    @Test
+    fun `snapshot timeout disconnects WS sets Error and does not activate USB`() =
+        runTest {
+            val timeoutMs = 5_000L
+            val coordinator = newCoordinator(scope = this, snapshotTimeoutMs = timeoutMs)
+
+            val job = coordinator.switchTo(TransportMode.Ws)
+            runCurrent()
+            assertEquals(1, wsClient.connectCalls)
+            assertEquals(MailboxConnectionState.Connecting, wsClient.connectionState.value)
+
+            // All internal retry attempts exhaust -> Error (no operator intervention needed).
+            advanceTimeBy(
+                timeoutMs * ModeSwitchCoordinator.WS_CONNECT_ATTEMPTS +
+                    ModeSwitchCoordinator.WS_RETRY_DELAY_MS *
+                    (ModeSwitchCoordinator.WS_CONNECT_ATTEMPTS - 1) + 1_000,
+            )
+            runCurrent()
+            job.join()
+
+            assertTrue(callOrder.contains("disconnect"))
+            assertEquals(ModeSwitchStatus.Error, statuses.last())
+            assertEquals(ModeSwitchCoordinator.WS_CONNECT_ATTEMPTS, wsClient.connectCalls)
+            assertEquals(0, usb.activateCalls)
+            assertFalse(statuses.contains(ModeSwitchStatus.Connected))
+            assertTrue(wsClient.disconnectCalls >= 1)
+        }
+
+    @Test
+    fun `WS disconnect during snapshot wait yields Error with no USB activate`() =
+        runTest {
+            val timeoutMs = 10_000L
+            val router = newRouter(initialMode = TransportMode.Usb)
+            val coordinator = newCoordinator(scope = this, router = router, snapshotTimeoutMs = timeoutMs)
+
+            val job = coordinator.switchTo(TransportMode.Ws)
+            runCurrent()
+            assertEquals(1, wsClient.connectCalls)
+
+            wsClient.emitState(MailboxConnectionState.Disconnected)
+            runCurrent()
+            // All internal retry attempts exhaust -> Error (no operator intervention needed).
+            advanceTimeBy(
+                timeoutMs * ModeSwitchCoordinator.WS_CONNECT_ATTEMPTS +
+                    ModeSwitchCoordinator.WS_RETRY_DELAY_MS *
+                    (ModeSwitchCoordinator.WS_CONNECT_ATTEMPTS - 1) + 1_000,
+            )
+            runCurrent()
+            job.join()
+
+            assertTrue(callOrder.contains("disconnect"))
+            assertEquals(ModeSwitchStatus.Error, statuses.last())
+            assertEquals(0, usb.activateCalls)
+            assertFalse(statuses.contains(ModeSwitchStatus.Connected))
+            assertEquals(TransportMode.Ws, router.activeMode)
+        }
+
+    @Test
+    fun `WS Error during snapshot wait yields Error with no USB activate`() =
+        runTest {
+            val timeoutMs = 10_000L
+            val coordinator = newCoordinator(scope = this, snapshotTimeoutMs = timeoutMs)
+
+            val job = coordinator.switchTo(TransportMode.Ws)
+            runCurrent()
+            wsClient.emitState(MailboxConnectionState.Error("boom"))
+            runCurrent()
+            // All internal retry attempts exhaust -> Error (no operator intervention needed).
+            advanceTimeBy(
+                timeoutMs * ModeSwitchCoordinator.WS_CONNECT_ATTEMPTS +
+                    ModeSwitchCoordinator.WS_RETRY_DELAY_MS *
+                    (ModeSwitchCoordinator.WS_CONNECT_ATTEMPTS - 1) + 1_000,
+            )
+            runCurrent()
+            job.join()
+
+            assertEquals(ModeSwitchStatus.Error, statuses.last())
+            assertEquals(ModeSwitchCoordinator.WS_CONNECT_ATTEMPTS, wsClient.connectCalls)
+            assertEquals(0, usb.activateCalls)
+            assertFalse(statuses.contains(ModeSwitchStatus.Connected))
+        }
+
+    @Test
+    fun `cancelled in-flight switchToWs disconnects WS without USB activate`() =
+        runTest {
+            val coordinator = newCoordinator(scope = this, snapshotTimeoutMs = 10_000)
+
+            val job = coordinator.switchTo(TransportMode.Ws)
+            runCurrent()
+            assertEquals(1, wsClient.connectCalls)
+            assertEquals(MailboxConnectionState.Connecting, wsClient.connectionState.value)
+
+            job.cancel()
+            runCurrent()
+            job.join()
+
+            assertTrue(callOrder.contains("disconnect"))
+            assertTrue(wsClient.disconnectCalls >= 1)
+            assertEquals(0, usb.activateCalls)
+            assertFalse(statuses.contains(ModeSwitchStatus.Connected))
+            // Connecting remains so same-mode retry / next switch still runs.
+            assertTrue(coordinator.needsSwitch(TransportMode.Ws))
+        }
+
+    @Test
+    fun `ws to usb still activates when Magisk stop fails`() =
+        runTest {
+            daemon.stopResult = false
+            val router = newRouter(initialMode = TransportMode.Ws)
+            router.connectWs()
+            callOrder.clear()
+
+            val coordinator = newCoordinator(scope = this, router = router)
+            coordinator.switchTo(TransportMode.Usb).join()
+            runCurrent()
+
+            assertTrue(callOrder.contains("daemon.stop"))
+            assertTrue(callOrder.contains("activate"))
+            assertEquals(1, usb.activateCalls)
+            assertEquals(ModeSwitchStatus.Idle, statuses.last())
+        }
 
     private fun recordingClient(): MailboxWsClient =
         object : MailboxWsClient by wsClient {

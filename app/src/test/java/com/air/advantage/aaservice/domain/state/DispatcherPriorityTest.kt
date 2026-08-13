@@ -3,13 +3,11 @@ package com.air.advantage.aaservice.domain.state
 import com.air.advantage.aaservice.data.protocol.CrcCalculator
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class DispatcherPriorityTest {
-
     private val sink = RecordingSink()
     private val typeBytes = "17".toByteArray(Charsets.UTF_8)
     private val appStoreBytes = "MyAir5".toByteArray(Charsets.UTF_8)
@@ -17,11 +15,9 @@ class DispatcherPriorityTest {
     private fun engine(pollTags: List<String> = listOf("getClock")): UartDispatchEngine =
         UartDispatchEngine(pollTags, typeBytes, appStoreBytes, sink)
 
-    private fun frameOf(content: String): String =
-        "<U>$content</U=${CrcCalculator.computeHex(content)}>"
+    private fun frameOf(content: String): String = "<U>$content</U=${CrcCalculator.computeHex(content)}>"
 
-    private fun contentOf(frame: String): String =
-        frame.removePrefix("<U>").substringBefore("</U=")
+    private fun contentOf(frame: String): String = frame.removePrefix("<U>").substringBefore("</U=")
 
     // --- ackCAN priority ---
 
@@ -210,7 +206,10 @@ class DispatcherPriorityTest {
         val pollData = mutableListOf<Pair<String, ByteArray>>()
         val rawCan = mutableListOf<ByteArray>()
 
-        override fun onPollData(tag: String, payload: ByteArray) {
+        override fun onPollData(
+            tag: String,
+            payload: ByteArray,
+        ) {
             pollData.add(tag to payload)
         }
 

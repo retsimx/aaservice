@@ -1,3 +1,11 @@
+@file:Suppress("ktlint:standard:property-naming", "ktlint:standard:max-line-length")
+// Rationale: `POLL_TAGS` mirrors the decompiled reference identifier; renaming it is out of scope
+// for the formatting-only sweep. The overlong lines are single template-literal strings (e.g. the
+// receiver-registration and permission-request log lines) that cannot be wrapped without altering
+// their text. Note: ktlint 1.2.1 ignores `// ktlint-disable`
+// comment directives unless formatter tags are enabled in .editorconfig, so @file:Suppress is
+// the only functional file-level mechanism.
+
 package com.air.advantage.aaservice.service
 
 import android.app.Notification
@@ -84,7 +92,6 @@ import java.util.concurrent.atomic.AtomicReference
  * without Hilt. Deps resolve via [UartServiceEntryPoint] with a manual fallback.
  */
 class UartForegroundService : Service() {
-
     internal val dataCache = DataCacheRepository()
     internal val registeredReceivers = mutableListOf<BroadcastReceiver>()
     internal val deviceOpen = AtomicBoolean(false)
@@ -128,33 +135,38 @@ class UartForegroundService : Service() {
     private val canToCbReceiver = CanToCbReceiver()
     private val canToCbNoPermissionReceiver = CanToCbNoPermissionReceiver()
 
-    private val POLL_TAGS = listOf(
-        "getSystemData",
-        "getClock",
-        "getZoneData?zone=1",
-        "getZoneData?zone=2",
-        "getZoneData?zone=3",
-        "getZoneData?zone=4",
-        "getZoneData?zone=5",
-        "getZoneData?zone=6",
-        "getZoneData?zone=7",
-        "getZoneData?zone=8",
-        "getZoneData?zone=9",
-        "getZoneData?zone=10"
-    )
+    private val POLL_TAGS =
+        listOf(
+            "getSystemData",
+            "getClock",
+            "getZoneData?zone=1",
+            "getZoneData?zone=2",
+            "getZoneData?zone=3",
+            "getZoneData?zone=4",
+            "getZoneData?zone=5",
+            "getZoneData?zone=6",
+            "getZoneData?zone=7",
+            "getZoneData?zone=8",
+            "getZoneData?zone=9",
+            "getZoneData?zone=10",
+        )
 
-    internal val uartEventSink: UartEventSink = object : UartEventSink {
-        override fun onPollData(tag: String, payload: ByteArray) {
-            Log.d(TAG, "onPollData: tag='$tag' (${payload.size} bytes)")
-            dataCache.put(tag, payload)
-            broadcastData(tag)
-            showNotification(true)
-        }
+    internal val uartEventSink: UartEventSink =
+        object : UartEventSink {
+            override fun onPollData(
+                tag: String,
+                payload: ByteArray,
+            ) {
+                Log.d(TAG, "onPollData: tag='$tag' (${payload.size} bytes)")
+                dataCache.put(tag, payload)
+                broadcastData(tag)
+                showNotification(true)
+            }
 
-        override fun onRawCan(payload: ByteArray) {
-            handleGetCan(String(payload, Charsets.UTF_8))
+            override fun onRawCan(payload: ByteArray) {
+                handleGetCan(String(payload, Charsets.UTF_8))
+            }
         }
-    }
 
     internal val dispatchEngine by lazy {
         UartDispatchEngine(
@@ -162,11 +174,12 @@ class UartForegroundService : Service() {
             typeBytes = HardwareDetector.typeBytes(),
             appStoreBytes = HardwareDetector.appStoreBytes(),
             sink = uartEventSink,
-            logger = { message -> Log.d(TAG, "dispatchEngine: $message") }
+            logger = { message -> Log.d(TAG, "dispatchEngine: $message") },
         )
     }
 
     private val ioScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+
     /** Serializes WS outbound sendWrite/sendCommand so acks cannot interleave. */
     private val outboundWsMutex = Mutex()
     internal var uartIoJob: Job? = null
@@ -192,6 +205,7 @@ class UartForegroundService : Service() {
     private var currentPfd: ParcelFileDescriptor? = null
     private var inputStream: InputStream? = null
     private var outputStream: OutputStream? = null
+
     @Volatile private var lastConnectedState: Boolean? = null
 
     internal var uartDataSource: UartDataSource? = null
@@ -213,9 +227,10 @@ class UartForegroundService : Service() {
     internal fun attachMailboxWsClient(client: MailboxWsClient) {
         mailboxWsClient = client
         mailboxCollectionJob?.cancel()
-        mailboxCollectionJob = ioScope.launch(Dispatchers.Unconfined) {
-            client.incoming.collect { inbound -> onMailboxInbound(inbound) }
-        }
+        mailboxCollectionJob =
+            ioScope.launch(Dispatchers.Unconfined) {
+                client.incoming.collect { inbound -> onMailboxInbound(inbound) }
+            }
     }
 
     /** Re-encodes one mailbox frame to secure rawCan broadcasts; safe to call directly from tests. */
@@ -236,16 +251,18 @@ class UartForegroundService : Service() {
                         "onMailboxInbound: read_result not encodable register=${inbound.register}",
                     )
             }
-            is MailboxInbound.Status -> Log.d(
-                TAG,
-                "onMailboxInbound: status state=${inbound.state} " +
-                    "(real handling in the daemonStatus collector)",
-            )
-            is MailboxInbound.Ack -> Log.d(
-                TAG,
-                "onMailboxInbound: stray ack msg_id=${inbound.msgId} " +
-                    "status=${inbound.status} (awaiters correlate by msg_id)",
-            )
+            is MailboxInbound.Status ->
+                Log.d(
+                    TAG,
+                    "onMailboxInbound: status state=${inbound.state} " +
+                        "(real handling in the daemonStatus collector)",
+                )
+            is MailboxInbound.Ack ->
+                Log.d(
+                    TAG,
+                    "onMailboxInbound: stray ack msg_id=${inbound.msgId} " +
+                        "status=${inbound.status} (awaiters correlate by msg_id)",
+                )
             is MailboxInbound.Error -> {
                 Log.e(
                     TAG,
@@ -254,10 +271,11 @@ class UartForegroundService : Service() {
                 )
                 armTransientErrorAlert()
             }
-            is MailboxInbound.Unknown -> Log.d(
-                TAG,
-                "onMailboxInbound: unknown type=${inbound.type}",
-            )
+            is MailboxInbound.Unknown ->
+                Log.d(
+                    TAG,
+                    "onMailboxInbound: unknown type=${inbound.type}",
+                )
         }
     }
 
@@ -293,27 +311,30 @@ class UartForegroundService : Service() {
         val collectorsActive = mailboxStatusJob?.isActive == true && daemonStatusJob?.isActive == true
         if (collectorsActive && mailboxWsClient === routerClient) return
         mailboxStatusJob?.cancel()
-        mailboxStatusJob = ioScope.launch {
-            var previous: MailboxConnectionState? = null
-            // StateFlow already conflates repeated emissions; the previous-state
-            // tracking guards the reconnect case (Disconnected → Connected).
-            routerClient.connectionState.collect { state ->
-                publishMailboxConnectionStatus(state)
-                // Reconciliation reads fire once per Connected transition, not per
-                // status tick.
-                val enteringConnected = state is MailboxConnectionState.Connected &&
-                    (previous == null || previous !is MailboxConnectionState.Connected)
-                previous = state
-                if (enteringConnected) {
-                    Log.d(TAG, "connectionState: entered Connected, triggering reconciliation reads")
-                    reconcileRegisters()
+        mailboxStatusJob =
+            ioScope.launch {
+                var previous: MailboxConnectionState? = null
+                // StateFlow already conflates repeated emissions; the previous-state
+                // tracking guards the reconnect case (Disconnected → Connected).
+                routerClient.connectionState.collect { state ->
+                    publishMailboxConnectionStatus(state)
+                    // Reconciliation reads fire once per Connected transition, not per
+                    // status tick.
+                    val enteringConnected =
+                        state is MailboxConnectionState.Connected &&
+                            (previous == null || previous !is MailboxConnectionState.Connected)
+                    previous = state
+                    if (enteringConnected) {
+                        Log.d(TAG, "connectionState: entered Connected, triggering reconciliation reads")
+                        reconcileRegisters()
+                    }
                 }
             }
-        }
         daemonStatusJob?.cancel()
-        daemonStatusJob = ioScope.launch {
-            routerClient.daemonStatus.collect { status -> publishDaemonStatus(status) }
-        }
+        daemonStatusJob =
+            ioScope.launch {
+                routerClient.daemonStatus.collect { status -> publishDaemonStatus(status) }
+            }
     }
 
     private fun publishModeSwitchStatus(status: ModeSwitchStatus) {
@@ -338,23 +359,26 @@ class UartForegroundService : Service() {
             "resyncing", "negotiating" -> {
                 TransportStatusStore.publish(ModeSwitchStatus.Connecting)
             }
-            else -> Log.w(
-                TAG,
-                "publishDaemonStatus: unhandled state=${status.state} detail=${status.detail}",
-            )
+            else ->
+                Log.w(
+                    TAG,
+                    "publishDaemonStatus: unhandled state=${status.state} detail=${status.detail}",
+                )
         }
     }
 
     private fun publishMailboxConnectionStatus(state: MailboxConnectionState) {
         // Idle is owned by ModeSwitchCoordinator (USB path); ignore mailbox Idle so a
         // disconnect mid-switch does not clobber Connecting.
-        val mapped = when (state) {
-            is MailboxConnectionState.Idle -> return
-            is MailboxConnectionState.Connecting -> ModeSwitchStatus.Connecting
-            is MailboxConnectionState.Connected -> ModeSwitchStatus.Connected
-            is MailboxConnectionState.Disconnected,
-            is MailboxConnectionState.Error -> ModeSwitchStatus.Error
-        }
+        val mapped =
+            when (state) {
+                is MailboxConnectionState.Idle -> return
+                is MailboxConnectionState.Connecting -> ModeSwitchStatus.Connecting
+                is MailboxConnectionState.Connected -> ModeSwitchStatus.Connected
+                is MailboxConnectionState.Disconnected,
+                is MailboxConnectionState.Error,
+                -> ModeSwitchStatus.Error
+            }
         TransportStatusStore.publish(mapped)
         // USB sets connected via onPingObserved; WS has no accessory pings. Without this,
         // showNotification(false) from onStartCommand leaves the "Not connected" alert
@@ -366,7 +390,8 @@ class UartForegroundService : Service() {
                 showNotification(true)
             }
             is MailboxConnectionState.Disconnected,
-            is MailboxConnectionState.Error -> {
+            is MailboxConnectionState.Error,
+            -> {
                 if (!deviceOpen.get()) showNotification(false)
             }
             else -> Unit
@@ -379,10 +404,12 @@ class UartForegroundService : Service() {
         instance = this
 
         // USB permission + accessory detach
-        registerReceiver(usbPermissionReceiver,
+        registerReceiver(
+            usbPermissionReceiver,
             IntentFilter("com.air.advantage.USB_PERMISSION").apply {
                 addAction("android.hardware.usb.action.USB_ACCESSORY_DETACHED")
-            })
+            },
+        )
         registeredReceivers.add(usbPermissionReceiver)
 
         // Data request receivers
@@ -395,29 +422,56 @@ class UartForegroundService : Service() {
 
         // Secure broadcast receivers (with permission)
         val isFujitsu = FujitsuDetector.isFujitsuVariant(this)
-        val securePermission = if (isFujitsu)
-            "com.air.android.secure_comms_fujitsu" else "com.air.android.secure_comms"
+        val securePermission =
+            if (isFujitsu) {
+                "com.air.android.secure_comms_fujitsu"
+            } else {
+                "com.air.android.secure_comms"
+            }
         registerReceiver(canToCbReceiver, IntentFilter("com.air.advantage.CAN_TO_CB"), securePermission, null)
-        registerReceiver(broadcastCanToCbReceiver, IntentFilter("com.air.advantage.BROADCAST_CAN_TO_CB"), securePermission, null)
-        registerReceiver(backupMessageReceiver, IntentFilter("com.air.advantage.BACKUP_MESSAGE"), securePermission, null)
+        registerReceiver(
+            broadcastCanToCbReceiver,
+            IntentFilter("com.air.advantage.BROADCAST_CAN_TO_CB"),
+            securePermission,
+            null,
+        )
+        registerReceiver(
+            backupMessageReceiver,
+            IntentFilter("com.air.advantage.BACKUP_MESSAGE"),
+            securePermission,
+            null,
+        )
         registeredReceivers.add(canToCbReceiver)
         registeredReceivers.add(broadcastCanToCbReceiver)
         registeredReceivers.add(backupMessageReceiver)
 
         // No-permission broadcast receivers
         registerReceiver(canToCbNoPermissionReceiver, IntentFilter("com.air.advantage.CAN_TO_CB_NO_PERMISSION"))
-        registerReceiver(broadcastCanToCbNoPermissionReceiver, IntentFilter("com.air.advantage.BROADCAST_CAN_TO_CB_NO_PERMISSION"))
-        registerReceiver(backupMessageNoPermissionReceiver, IntentFilter("com.air.advantage.BACKUP_MESSAGE_NO_PERMISSION"))
+        registerReceiver(
+            broadcastCanToCbNoPermissionReceiver,
+            IntentFilter("com.air.advantage.BROADCAST_CAN_TO_CB_NO_PERMISSION"),
+        )
+        registerReceiver(
+            backupMessageNoPermissionReceiver,
+            IntentFilter("com.air.advantage.BACKUP_MESSAGE_NO_PERMISSION"),
+        )
         registeredReceivers.add(canToCbNoPermissionReceiver)
         registeredReceivers.add(broadcastCanToCbNoPermissionReceiver)
         registeredReceivers.add(backupMessageNoPermissionReceiver)
 
-        Log.d(TAG, "onCreate: registered ${registeredReceivers.size} receivers (fujitsu=$isFujitsu, securePermission=$securePermission)")
+        Log.d(
+            TAG,
+            "onCreate: registered ${registeredReceivers.size} receivers (fujitsu=$isFujitsu, securePermission=$securePermission)",
+        )
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+    override fun onStartCommand(
+        intent: Intent?,
+        flags: Int,
+        startId: Int,
+    ): Int {
         super.onStartCommand(intent, flags, startId)
         Log.d(TAG, "onStartCommand: action=${intent?.action} flags=$flags startId=$startId")
         // Must promote to foreground before any early-return / stopSelf path —
@@ -510,9 +564,10 @@ class UartForegroundService : Service() {
         ensureTransportRouter()
         val job = ensureModeSwitchCoordinator().switchTo(mode)
         // Bound join so a hung Magisk/su cannot block onStartCommand forever (M1).
-        val joined = runBlocking {
-            withTimeoutOrNull(MODE_SWITCH_JOIN_TIMEOUT_MS) { job.join() }
-        }
+        val joined =
+            runBlocking {
+                withTimeoutOrNull(MODE_SWITCH_JOIN_TIMEOUT_MS) { job.join() }
+            }
         if (joined == null) {
             Log.e(
                 TAG,
@@ -534,32 +589,34 @@ class UartForegroundService : Service() {
         resolveMailboxWsClientFactory()
         val prefs = preferencesManager!!
         val factory = mailboxWsClientFactory!!
-        val router = TransportRouter(
-            mailboxWsClientFactory = factory,
-            daemonWsUrl = { prefs.daemonWsUrl },
-            usbController = object : UsbTransportController {
-                override fun tearDown() {
-                    Log.d(TAG, "UsbTransportController.tearDown")
-                    ServiceHelper.cancelScheduledServiceStart(
-                        this@UartForegroundService,
-                        ServiceHelper.ACTION_OPEN_DEVICE,
-                    )
-                    closeUartIo()
-                }
+        val router =
+            TransportRouter(
+                mailboxWsClientFactory = factory,
+                daemonWsUrl = { prefs.daemonWsUrl },
+                usbController =
+                    object : UsbTransportController {
+                        override fun tearDown() {
+                            Log.d(TAG, "UsbTransportController.tearDown")
+                            ServiceHelper.cancelScheduledServiceStart(
+                                this@UartForegroundService,
+                                ServiceHelper.ACTION_OPEN_DEVICE,
+                            )
+                            closeUartIo()
+                        }
 
-                override fun activate() {
-                    Log.d(TAG, "UsbTransportController.activate: scheduling REQUEST_PERMISSION")
-                    ServiceHelper.scheduleServiceStart(
-                        this@UartForegroundService,
-                        ServiceHelper.ACTION_REQUEST_PERMISSION,
-                        0,
-                    )
-                }
-            },
-            // Always start as Usb so first switchTo(Ws) runs connect side effects
-            // (healthy same-mode is a no-op inside ModeSwitchCoordinator.needsSwitch).
-            initialMode = TransportMode.Usb,
-        )
+                        override fun activate() {
+                            Log.d(TAG, "UsbTransportController.activate: scheduling REQUEST_PERMISSION")
+                            ServiceHelper.scheduleServiceStart(
+                                this@UartForegroundService,
+                                ServiceHelper.ACTION_REQUEST_PERMISSION,
+                                0,
+                            )
+                        }
+                    },
+                // Always start as Usb so first switchTo(Ws) runs connect side effects
+                // (healthy same-mode is a no-op inside ModeSwitchCoordinator.needsSwitch).
+                initialMode = TransportMode.Usb,
+            )
         transportRouterField = router
         return router
     }
@@ -573,44 +630,47 @@ class UartForegroundService : Service() {
         val router = ensureTransportRouter()
         val prefs = resolvePreferencesManager()
         val daemon = daemonLifecycle ?: SuDaemonLifecycle().also { daemonLifecycle = it }
-        val coordinator = ModeSwitchCoordinator(
-            daemonLifecycle = daemon,
-            transportRouter = router,
-            daemonWsUrl = { prefs.daemonWsUrl },
-            onStatus = ::publishModeSwitchStatus,
-            scope = ioScope,
-            snapshotTimeoutMs = snapshotTimeoutMs,
-        )
+        val coordinator =
+            ModeSwitchCoordinator(
+                daemonLifecycle = daemon,
+                transportRouter = router,
+                daemonWsUrl = { prefs.daemonWsUrl },
+                onStatus = ::publishModeSwitchStatus,
+                scope = ioScope,
+                snapshotTimeoutMs = snapshotTimeoutMs,
+            )
         modeSwitchCoordinatorField = coordinator
         return coordinator
     }
 
     private fun resolvePreferencesManager(): PreferencesManager {
         preferencesManager?.let { return it }
-        val resolved = try {
-            EntryPointAccessors.fromApplication(
-                applicationContext,
-                UartServiceEntryPoint::class.java,
-            ).preferencesManager()
-        } catch (e: Exception) {
-            Log.d(TAG, "resolvePreferencesManager: Hilt unavailable, using manual instance")
-            PreferencesManager(this)
-        }
+        val resolved =
+            try {
+                EntryPointAccessors.fromApplication(
+                    applicationContext,
+                    UartServiceEntryPoint::class.java,
+                ).preferencesManager()
+            } catch (e: Exception) {
+                Log.d(TAG, "resolvePreferencesManager: Hilt unavailable, using manual instance")
+                PreferencesManager(this)
+            }
         preferencesManager = resolved
         return resolved
     }
 
     private fun resolveMailboxWsClientFactory(): MailboxWsClientFactory {
         mailboxWsClientFactory?.let { return it }
-        val resolved = try {
-            EntryPointAccessors.fromApplication(
-                applicationContext,
-                UartServiceEntryPoint::class.java,
-            ).mailboxWsClientFactory()
-        } catch (e: Exception) {
-            Log.d(TAG, "resolveMailboxWsClientFactory: Hilt unavailable, using OkHttp factory")
-            MailboxWsClientFactory.okHttp()
-        }
+        val resolved =
+            try {
+                EntryPointAccessors.fromApplication(
+                    applicationContext,
+                    UartServiceEntryPoint::class.java,
+                ).mailboxWsClientFactory()
+            } catch (e: Exception) {
+                Log.d(TAG, "resolveMailboxWsClientFactory: Hilt unavailable, using OkHttp factory")
+                MailboxWsClientFactory.okHttp()
+            }
         mailboxWsClientFactory = resolved
         return resolved
     }
@@ -626,13 +686,19 @@ class UartForegroundService : Service() {
                 Log.d(TAG, "No accessory present.")
                 return null
             }
-            Log.d(TAG, "USB accessory present - checking permission. manufacturer=${accessory.manufacturer} model=${accessory.model}")
+            Log.d(
+                TAG,
+                "USB accessory present - checking permission. manufacturer=${accessory.manufacturer} model=${accessory.model}",
+            )
             resolvedAction = ServiceHelper.ACTION_REQUEST_PERMISSION
         }
         return accessory to resolvedAction
     }
 
-    private fun dispatchAction(action: String?, accessory: UsbAccessory): Int? {
+    private fun dispatchAction(
+        action: String?,
+        accessory: UsbAccessory,
+    ): Int? {
         Log.d(TAG, "dispatchAction: action=$action")
         when (action) {
             ServiceHelper.ACTION_OPEN_DEVICE -> {
@@ -680,12 +746,13 @@ class UartForegroundService : Service() {
         val accessory = currentAccessory ?: return
         val usbManager = getSystemService(Context.USB_SERVICE) as? UsbManager ?: return
         Log.d(TAG, "requestUsbPermission: requesting for accessory model=${accessory.model}")
-        val pendingIntent = PendingIntent.getBroadcast(
-            this,
-            0,
-            Intent("com.air.advantage.USB_PERMISSION"),
-            PendingIntent.FLAG_IMMUTABLE
-        )
+        val pendingIntent =
+            PendingIntent.getBroadcast(
+                this,
+                0,
+                Intent("com.air.advantage.USB_PERMISSION"),
+                PendingIntent.FLAG_IMMUTABLE,
+            )
         usbManager.requestPermission(accessory, pendingIntent)
     }
 
@@ -750,7 +817,10 @@ class UartForegroundService : Service() {
         return canIds.replace("  ", " ").split(" ").filter { it.isNotEmpty() }
     }
 
-    private fun dispatchWsCanTokens(canIds: String, label: String) {
+    private fun dispatchWsCanTokens(
+        canIds: String,
+        label: String,
+    ) {
         val actions = MyAir5OutboundMailboxMapper.mapCanTokens(canIds)
         actions.filterIsInstance<OutboundMailboxAction.Ignore>()
             .forEach { Log.d(TAG, "$label: WS mode ignoring CAN token: ${it.reason}") }
@@ -907,11 +977,12 @@ class UartForegroundService : Service() {
                     when (action) {
                         is OutboundMailboxAction.Write -> {
                             try {
-                                val ack = client.sendWrite(
-                                    action.register,
-                                    action.payload,
-                                    action.zone,
-                                )
+                                val ack =
+                                    client.sendWrite(
+                                        action.register,
+                                        action.payload,
+                                        action.zone,
+                                    )
                                 if (ack.status != MailboxAckStatus.SUCCESS) {
                                     Log.e(
                                         TAG,
@@ -959,16 +1030,18 @@ class UartForegroundService : Service() {
             return
         }
         val lookupTag = if (tag.startsWith("getSystemData")) "getSystemData" else tag
-        val data = dataCache.get(lookupTag) ?: run {
-            Log.d(TAG, "broadcastData: no cached data for '$lookupTag'")
-            return
-        }
+        val data =
+            dataCache.get(lookupTag) ?: run {
+                Log.d(TAG, "broadcastData: no cached data for '$lookupTag'")
+                return
+            }
 
-        val cbIntent = Intent("com.air.advantage.MESSAGE_FROM_CB").apply {
-            setPackage(MYAIR5_PACKAGE)
-            putExtra("com.air.advantage.GET_DATA_REQUEST", tag)
-            putExtra("com.air.advantage.MESSAGE_FROM_CB", data)
-        }
+        val cbIntent =
+            Intent("com.air.advantage.MESSAGE_FROM_CB").apply {
+                setPackage(MYAIR5_PACKAGE)
+                putExtra("com.air.advantage.GET_DATA_REQUEST", tag)
+                putExtra("com.air.advantage.MESSAGE_FROM_CB", data)
+            }
         sendBroadcast(cbIntent)
         Log.d(TAG, "broadcastData: sent '$tag' (${data.size} bytes)")
     }
@@ -990,20 +1063,25 @@ class UartForegroundService : Service() {
         }
 
         val isFujitsu = FujitsuDetector.isFujitsuVariant(this)
-        val secureAction = if (isFujitsu)
-            "com.air.advantage.MESSAGE_FROM_CB_SECURE_FUJITSU"
-        else
-            "com.air.advantage.MESSAGE_FROM_CB_SECURE"
-        val permission = if (isFujitsu)
-            "com.air.android.secure_comms_fujitsu"
-        else
-            "com.air.android.secure_comms"
+        val secureAction =
+            if (isFujitsu) {
+                "com.air.advantage.MESSAGE_FROM_CB_SECURE_FUJITSU"
+            } else {
+                "com.air.advantage.MESSAGE_FROM_CB_SECURE"
+            }
+        val permission =
+            if (isFujitsu) {
+                "com.air.android.secure_comms_fujitsu"
+            } else {
+                "com.air.android.secure_comms"
+            }
 
-        val secureIntent = Intent(secureAction).apply {
-            setPackage(MYAIR5_PACKAGE)
-            putExtra("com.air.advantage.GET_DATA_REQUEST", "rawCan")
-            putExtra(secureAction, frame)
-        }
+        val secureIntent =
+            Intent(secureAction).apply {
+                setPackage(MYAIR5_PACKAGE)
+                putExtra("com.air.advantage.GET_DATA_REQUEST", "rawCan")
+                putExtra(secureAction, frame)
+            }
         sendBroadcast(secureIntent, permission)
         Log.d(TAG, "handleGetCan: sent secure '$secureAction' broadcast (fujitsu=$isFujitsu)")
 
@@ -1015,50 +1093,61 @@ class UartForegroundService : Service() {
         }
     }
 
-    private fun sendNoPermissionBroadcast(request: String, encrypted: ByteArray) {
-        val noPermIntent = Intent("com.air.advantage.MESSAGE_TO_CB_NO_PERMISSION_BROADCAST").apply {
-            component = ComponentName(
-                "com.air.advantage.zone10",
-                "com.air.advantage.ReceiverDataUartForNoPermissionBroadcast"
-            )
-            putExtra("com.air.advantage.GET_DATA_REQUEST", request)
-            putExtra("com.air.advantage.MESSAGE_TO_CB_NO_PERMISSION_BROADCAST", encrypted)
-        }
+    private fun sendNoPermissionBroadcast(
+        request: String,
+        encrypted: ByteArray,
+    ) {
+        val noPermIntent =
+            Intent("com.air.advantage.MESSAGE_TO_CB_NO_PERMISSION_BROADCAST").apply {
+                component =
+                    ComponentName(
+                        "com.air.advantage.zone10",
+                        "com.air.advantage.ReceiverDataUartForNoPermissionBroadcast",
+                    )
+                putExtra("com.air.advantage.GET_DATA_REQUEST", request)
+                putExtra("com.air.advantage.MESSAGE_TO_CB_NO_PERMISSION_BROADCAST", encrypted)
+            }
         sendBroadcast(noPermIntent)
         Log.d(TAG, "sendNoPermissionBroadcast: sent '$request' (${encrypted.size} encrypted bytes)")
     }
 
     internal suspend fun periodicInfoBroadcast() {
         val isFujitsu = FujitsuDetector.isFujitsuVariant(this)
-        val secureAction = if (isFujitsu)
-            "com.air.advantage.MESSAGE_FROM_CB_SECURE_FUJITSU"
-        else
-            "com.air.advantage.MESSAGE_FROM_CB_SECURE"
-        val permission = if (isFujitsu)
-            "com.air.android.secure_comms_fujitsu"
-        else
-            "com.air.android.secure_comms"
+        val secureAction =
+            if (isFujitsu) {
+                "com.air.advantage.MESSAGE_FROM_CB_SECURE_FUJITSU"
+            } else {
+                "com.air.advantage.MESSAGE_FROM_CB_SECURE"
+            }
+        val permission =
+            if (isFujitsu) {
+                "com.air.android.secure_comms_fujitsu"
+            } else {
+                "com.air.android.secure_comms"
+            }
 
         while (true) {
             delay(5000)
 
-            val versionCode = try {
-                val info = packageManager.getPackageInfo(packageName, 0)
-                @Suppress("DEPRECATION")
-                info.versionCode.toString()
-            } catch (e: Exception) {
-                "0"
-            }
+            val versionCode =
+                try {
+                    val info = packageManager.getPackageInfo(packageName, 0)
+                    @Suppress("DEPRECATION")
+                    info.versionCode.toString()
+                } catch (e: Exception) {
+                    "0"
+                }
             val isAdmin = ServiceHelper.isDeviceAdminActive(this)
 
             val json = """{"name":"$packageName","version":"$versionCode","enabled":$isAdmin}"""
             Log.v(TAG, "periodicInfoBroadcast: tick json=$json")
 
-            val secureIntent = Intent(secureAction).apply {
-                setPackage(MYAIR5_PACKAGE)
-                putExtra("com.air.advantage.GET_DATA_REQUEST", "aaServiceInfo")
-                putExtra(secureAction, json)
-            }
+            val secureIntent =
+                Intent(secureAction).apply {
+                    setPackage(MYAIR5_PACKAGE)
+                    putExtra("com.air.advantage.GET_DATA_REQUEST", "aaServiceInfo")
+                    putExtra(secureAction, json)
+                }
             sendBroadcast(secureIntent, permission)
 
             val encrypted = CryptoHelper.encrypt(json.toByteArray(Charsets.UTF_8))
@@ -1077,17 +1166,19 @@ class UartForegroundService : Service() {
         inputStream = input
         outputStream = output
         currentPfd = pfd
-        val dataSource = UsbAccessoryDataSource(
-            inputStreamFactory = { input },
-            outputStreamFactory = { output },
-            engine = dispatchEngine,
-            onPingObserved = { showNotification(true) }
-        )
+        val dataSource =
+            UsbAccessoryDataSource(
+                inputStreamFactory = { input },
+                outputStreamFactory = { output },
+                engine = dispatchEngine,
+                onPingObserved = { showNotification(true) },
+            )
         uartDataSource = dataSource
         closeUartIoStarted.set(false)
-        uartIoJob = ioScope.launch {
-            dataSource.connectWithStreams(input, output)
-        }
+        uartIoJob =
+            ioScope.launch {
+                dataSource.connectWithStreams(input, output)
+            }
         uartIoJob?.invokeOnCompletion { cause ->
             Log.d(TAG, "startUartIo: UART IO job completed (cause=$cause)")
             closeUartIo()
@@ -1107,12 +1198,13 @@ class UartForegroundService : Service() {
         }
 
         Log.d(TAG, "openAccessory: opening manufacturer=${accessory.manufacturer} model=${accessory.model}")
-        val pfd = try {
-            manager.openAccessory(accessory)
-        } catch (e: IllegalArgumentException) {
-            Log.e(TAG, "openAccessory: failed to open accessory", e)
-            null
-        }
+        val pfd =
+            try {
+                manager.openAccessory(accessory)
+            } catch (e: IllegalArgumentException) {
+                Log.e(TAG, "openAccessory: failed to open accessory", e)
+                null
+            }
 
         if (pfd == null) {
             Log.d(TAG, "Problem creating a parcelFileDescriptor")
@@ -1140,11 +1232,12 @@ class UartForegroundService : Service() {
         lastConnectedState = connected
         Log.d(TAG, "showNotification: connected=$connected")
 
-        val title = when {
-            RebootNotificationService.rebootRequired.get() -> "Reboot required"
-            connected -> "Connected to your system"
-            else -> "Not connected to your system"
-        }
+        val title =
+            when {
+                RebootNotificationService.rebootRequired.get() -> "Reboot required"
+                connected -> "Connected to your system"
+                else -> "Not connected to your system"
+            }
 
         AlertDialogReceiver().setAlert(this, active = !connected, if (connected) 0 else 60000)
 
@@ -1155,35 +1248,40 @@ class UartForegroundService : Service() {
                 NotificationChannel(
                     "notification_channel_1",
                     getString(R.string.service_name),
-                    NotificationManager.IMPORTANCE_LOW
+                    NotificationManager.IMPORTANCE_LOW,
                 ).apply {
                     description = getString(R.string.service_name) + " Notification Icon"
-                }
+                },
             )
-            startForeground(1234,
+            startForeground(
+                1234,
                 Notification.Builder(this, "notification_channel_1")
                     .setContentTitle(title)
                     .setSmallIcon(R.drawable.ic_info)
                     .setContentIntent(null)
                     .setWhen(0L)
-                    .build())
+                    .build(),
+            )
         } else {
             @Suppress("DEPRECATION")
             stopForeground(true)
             @Suppress("DEPRECATION")
-            startForeground(1234,
+            startForeground(
+                1234,
                 Notification.Builder(this)
                     .setContentTitle(title)
                     .setSmallIcon(R.drawable.ic_info)
                     .setContentIntent(null)
                     .setWhen(0L)
-                    .build())
+                    .build(),
+            )
         }
     }
 
     companion object {
         private const val TAG = "AAService2/Uart"
         private const val MYAIR5_PACKAGE = "com.air.advantage.myair5"
+
         /**
          * Upper bound for joining a mode-switch job in [applyTransportModeFromPrefs].
          * Covers Magisk [com.air.advantage.aaservice.service.daemon.RuntimeProcessRunner]

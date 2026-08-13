@@ -2,7 +2,6 @@ package com.air.advantage.aaservice.data.mailbox
 
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
-import org.json.JSONObject
 
 /**
  * Injectable client for the cb-daemon mailbox WebSocket.
@@ -71,7 +70,10 @@ interface MailboxWsClient {
      * @throws MailboxAckTimeoutException if no reply within the config timeout
      * @throws IllegalStateException if the socket is not open
      */
-    suspend fun sendRead(register: String, zone: Int? = null): ReadOutcome
+    suspend fun sendRead(
+        register: String,
+        zone: Int? = null,
+    ): ReadOutcome
 
     /**
      * Sends a `command` frame (e.g. [`MailboxCommandAction.RESYNC`]) and awaits
@@ -91,6 +93,7 @@ interface MailboxWsClient {
  */
 sealed interface ReadOutcome {
     data class Value(val result: MailboxInbound.ReadResult) : ReadOutcome
+
     data class Error(val ack: MailboxInbound.Ack) : ReadOutcome
 }
 

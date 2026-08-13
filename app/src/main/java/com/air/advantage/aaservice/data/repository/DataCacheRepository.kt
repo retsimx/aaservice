@@ -7,14 +7,17 @@ import java.util.concurrent.ConcurrentHashMap
 
 data class CacheUpdate(
     val tag: String,
-    val data: ByteArray
+    val data: ByteArray,
 )
 
 class DataCacheRepository {
     private val cache = ConcurrentHashMap<String, ByteArray>()
     private val updates = MutableSharedFlow<CacheUpdate>(replay = 1)
 
-    fun put(tag: String, data: ByteArray) {
+    fun put(
+        tag: String,
+        data: ByteArray,
+    ) {
         val previous = cache.put(tag, data)
         if (!Arrays.equals(previous, data)) {
             updates.tryEmit(CacheUpdate(tag, data))

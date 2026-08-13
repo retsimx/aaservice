@@ -10,8 +10,10 @@ import com.air.advantage.aaservice.service.RebootNotificationService
 import com.air.advantage.aaservice.ui.main.MainActivity
 
 class PackageUpgradeReceiver : BroadcastReceiver() {
-
-    override fun onReceive(context: Context, intent: Intent) {
+    override fun onReceive(
+        context: Context,
+        intent: Intent,
+    ) {
         val dataUri = intent.data ?: return
         if (dataUri.toString() != "package:${context.packageName}") return
         Log.i(BCAST_TAG, "PackageUpgrade: own package replaced, scheduling reboot notice and relaunch")
@@ -25,11 +27,14 @@ class PackageUpgradeReceiver : BroadcastReceiver() {
 
         SystemClock.sleep(1000L)
 
-        val mainIntent = Intent(context, MainActivity::class.java).apply {
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or
-                    Intent.FLAG_ACTIVITY_SINGLE_TOP or
-                    Intent.FLAG_ACTIVITY_CLEAR_TOP)
-        }
+        val mainIntent =
+            Intent(context, MainActivity::class.java).apply {
+                addFlags(
+                    Intent.FLAG_ACTIVITY_NEW_TASK or
+                        Intent.FLAG_ACTIVITY_SINGLE_TOP or
+                        Intent.FLAG_ACTIVITY_CLEAR_TOP,
+                )
+            }
         context.startActivity(mainIntent)
     }
 }

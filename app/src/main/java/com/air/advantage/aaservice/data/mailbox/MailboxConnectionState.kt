@@ -21,7 +21,9 @@ package com.air.advantage.aaservice.data.mailbox
  */
 sealed class MailboxConnectionState {
     data object Idle : MailboxConnectionState()
+
     data object Connecting : MailboxConnectionState()
+
     data object Connected : MailboxConnectionState()
 
     /** Unexpected socket end while session active; auto-reconnect may follow. */

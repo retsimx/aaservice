@@ -12,7 +12,6 @@ import javax.inject.Singleton
 @Module
 @InstallIn(SingletonComponent::class)
 object MailboxModule {
-
     @Provides
     @Singleton
     fun provideMailboxWsConfig(): MailboxWsConfig = MailboxWsConfig.DEFAULT
@@ -25,8 +24,7 @@ object MailboxModule {
      */
     @Provides
     @Singleton
-    fun provideMailboxWsClientFactory(): MailboxWsClientFactory =
-        MailboxWsClientFactory.okHttp()
+    fun provideMailboxWsClientFactory(): MailboxWsClientFactory = MailboxWsClientFactory.okHttp()
 
     /** Optional singleton for injectors that do not need prefs URL yet. */
     @Provides

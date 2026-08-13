@@ -1,8 +1,8 @@
 package com.air.advantage.aaservice.data.mailbox
 
+import org.json.JSONObject
 import java.io.InputStreamReader
 import java.nio.charset.StandardCharsets
-import org.json.JSONObject
 
 /** Loads embedded cb-daemon D7-shaped mailbox JSON fixtures from test resources. */
 object MailboxFixtures {
@@ -13,13 +13,14 @@ object MailboxFixtures {
 
     fun event(): String = load("mailbox/mailbox_event.json")
 
-    fun ackSuccess(msgId: String): String =
-        load("mailbox/ack_success.json").replace("__MSG_ID__", msgId)
+    fun ackSuccess(msgId: String): String = load("mailbox/ack_success.json").replace("__MSG_ID__", msgId)
 
-    fun ackError(msgId: String): String =
-        load("mailbox/ack_error.json").replace("__MSG_ID__", msgId)
+    fun ackError(msgId: String): String = load("mailbox/ack_error.json").replace("__MSG_ID__", msgId)
 
-    fun readResult(msgId: String, register: String): String =
+    fun readResult(
+        msgId: String,
+        register: String,
+    ): String =
         load("mailbox/read_result.json")
             .replace("__MSG_ID__", msgId)
             .replace("__REGISTER__", register)
@@ -29,9 +30,10 @@ object MailboxFixtures {
     fun unknownType(): String = load("mailbox/unknown_type.json")
 
     fun load(resourcePath: String): String {
-        val stream = checkNotNull(
-            MailboxFixtures::class.java.classLoader!!.getResourceAsStream(resourcePath),
-        ) { "Missing fixture: $resourcePath" }
+        val stream =
+            checkNotNull(
+                MailboxFixtures::class.java.classLoader!!.getResourceAsStream(resourcePath),
+            ) { "Missing fixture: $resourcePath" }
         return stream.use { InputStreamReader(it, StandardCharsets.UTF_8).readText().trim() }
     }
 

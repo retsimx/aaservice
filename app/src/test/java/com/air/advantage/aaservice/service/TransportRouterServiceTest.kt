@@ -8,7 +8,6 @@ import android.content.Context
 import android.content.Intent
 import android.hardware.usb.UsbAccessory
 import android.hardware.usb.UsbManager
-import android.os.ParcelFileDescriptor
 import androidx.preference.PreferenceManager
 import com.air.advantage.aaservice.data.mailbox.FakeMailboxWsClient
 import com.air.advantage.aaservice.data.mailbox.MailboxWsClientFactory
@@ -51,7 +50,6 @@ import org.robolectric.shadows.ShadowContextImpl
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [33], manifest = Config.NONE)
 class TransportRouterServiceTest {
-
     private lateinit var controller: org.robolectric.android.controller.ServiceController<UartForegroundService>
     private lateinit var service: UartForegroundService
     private lateinit var prefs: PreferencesManager
@@ -87,11 +85,14 @@ class TransportRouterServiceTest {
         fakeWs = FakeMailboxWsClient().apply { emitConnectedOnConnect = true }
         service.preferencesManager = prefs
         service.mailboxWsClientFactory = MailboxWsClientFactory { fakeWs }
-        service.daemonLifecycle = object : DaemonLifecycle {
-            override fun start(): Boolean = true
-            override fun stop(): Boolean = true
-            override fun status(): Boolean = true
-        }
+        service.daemonLifecycle =
+            object : DaemonLifecycle {
+                override fun start(): Boolean = true
+
+                override fun stop(): Boolean = true
+
+                override fun status(): Boolean = true
+            }
     }
 
     private fun attachAccessory(): UsbAccessory {
@@ -121,10 +122,14 @@ class TransportRouterServiceTest {
         val accessory = attachAccessory()
         grantPermission(accessory)
         service.onStartCommand(
-            Intent().setAction(ServiceHelper.ACTION_REQUEST_PERMISSION), 0, 1
+            Intent().setAction(ServiceHelper.ACTION_REQUEST_PERMISSION),
+            0,
+            1,
         )
         service.onStartCommand(
-            Intent().setAction(ServiceHelper.ACTION_OPEN_DEVICE), 0, 1
+            Intent().setAction(ServiceHelper.ACTION_OPEN_DEVICE),
+            0,
+            1,
         )
     }
 
@@ -141,12 +146,18 @@ class TransportRouterServiceTest {
         doReturn(true).whenever(manager).hasPermission(accessory)
         injectUsbManager(manager)
 
-        val requestResult = service.onStartCommand(
-            Intent().setAction(ServiceHelper.ACTION_REQUEST_PERMISSION), 0, 1
-        )
-        val openResult = service.onStartCommand(
-            Intent().setAction(ServiceHelper.ACTION_OPEN_DEVICE), 0, 1
-        )
+        val requestResult =
+            service.onStartCommand(
+                Intent().setAction(ServiceHelper.ACTION_REQUEST_PERMISSION),
+                0,
+                1,
+            )
+        val openResult =
+            service.onStartCommand(
+                Intent().setAction(ServiceHelper.ACTION_OPEN_DEVICE),
+                0,
+                1,
+            )
 
         assertEquals(Service.START_STICKY, requestResult)
         assertEquals(Service.START_STICKY, openResult)
@@ -189,12 +200,13 @@ class TransportRouterServiceTest {
         ServiceHelper.cancelScheduledServiceStart(service, ServiceHelper.ACTION_OPEN_DEVICE)
         prefs.transportMode = TransportMode.Ws
 
-        val result = service.onStartCommand(
-            Intent(ServiceHelper.ACTION_TRANSPORT_MODE_CHANGED)
-                .putExtra(ServiceHelper.EXTRA_TRANSPORT_MODE, "ws"),
-            0,
-            1,
-        )
+        val result =
+            service.onStartCommand(
+                Intent(ServiceHelper.ACTION_TRANSPORT_MODE_CHANGED)
+                    .putExtra(ServiceHelper.EXTRA_TRANSPORT_MODE, "ws"),
+                0,
+                1,
+            )
 
         assertEquals(Service.START_STICKY, result)
         assertFalse("USB path must close on switch to WS", service.deviceOpen.get())
@@ -223,12 +235,13 @@ class TransportRouterServiceTest {
 
         prefs.transportMode = TransportMode.Usb
 
-        val result = service.onStartCommand(
-            Intent(ServiceHelper.ACTION_TRANSPORT_MODE_CHANGED)
-                .putExtra(ServiceHelper.EXTRA_TRANSPORT_MODE, "usb"),
-            0,
-            1,
-        )
+        val result =
+            service.onStartCommand(
+                Intent(ServiceHelper.ACTION_TRANSPORT_MODE_CHANGED)
+                    .putExtra(ServiceHelper.EXTRA_TRANSPORT_MODE, "usb"),
+                0,
+                1,
+            )
 
         assertEquals(Service.START_STICKY, result)
         assertEquals(1, fakeWs.disconnectCalls)
@@ -260,12 +273,13 @@ class TransportRouterServiceTest {
         ServiceHelper.cancelScheduledServiceStart(service, ServiceHelper.ACTION_OPEN_DEVICE)
 
         // Prefs still Usb; valid extra "ws" writes prefs and switches.
-        val result = service.onStartCommand(
-            Intent(ServiceHelper.ACTION_TRANSPORT_MODE_CHANGED)
-                .putExtra(ServiceHelper.EXTRA_TRANSPORT_MODE, "ws"),
-            0,
-            1,
-        )
+        val result =
+            service.onStartCommand(
+                Intent(ServiceHelper.ACTION_TRANSPORT_MODE_CHANGED)
+                    .putExtra(ServiceHelper.EXTRA_TRANSPORT_MODE, "ws"),
+                0,
+                1,
+            )
 
         assertEquals(Service.START_STICKY, result)
         assertEquals(TransportMode.Ws, prefs.transportMode)
@@ -282,13 +296,14 @@ class TransportRouterServiceTest {
         val customUrl = "ws://10.0.0.5:2026/v1/mailbox-stream"
         assertEquals(PreferencesManager.DEFAULT_DAEMON_WS_URL, prefs.daemonWsUrl)
 
-        val result = service.onStartCommand(
-            Intent(ServiceHelper.ACTION_TRANSPORT_MODE_CHANGED)
-                .putExtra(ServiceHelper.EXTRA_TRANSPORT_MODE, "ws")
-                .putExtra(ServiceHelper.EXTRA_DAEMON_WS_URL, customUrl),
-            0,
-            1,
-        )
+        val result =
+            service.onStartCommand(
+                Intent(ServiceHelper.ACTION_TRANSPORT_MODE_CHANGED)
+                    .putExtra(ServiceHelper.EXTRA_TRANSPORT_MODE, "ws")
+                    .putExtra(ServiceHelper.EXTRA_DAEMON_WS_URL, customUrl),
+                0,
+                1,
+            )
 
         assertEquals(Service.START_STICKY, result)
         assertEquals(customUrl, prefs.daemonWsUrl)
@@ -306,11 +321,12 @@ class TransportRouterServiceTest {
 
         ServiceHelper.cancelScheduledServiceStart(service, ServiceHelper.ACTION_OPEN_DEVICE)
 
-        val result = service.onStartCommand(
-            Intent(ServiceHelper.ACTION_TRANSPORT_MODE_CHANGED),
-            0,
-            1,
-        )
+        val result =
+            service.onStartCommand(
+                Intent(ServiceHelper.ACTION_TRANSPORT_MODE_CHANGED),
+                0,
+                1,
+            )
 
         assertEquals(Service.START_STICKY, result)
         assertEquals(TransportMode.Usb, prefs.transportMode)
@@ -329,21 +345,25 @@ class TransportRouterServiceTest {
 
         var startCalls = 0
         var startResult = false
-        service.daemonLifecycle = object : DaemonLifecycle {
-            override fun start(): Boolean {
-                startCalls++
-                return startResult
-            }
-            override fun stop(): Boolean = true
-            override fun status(): Boolean = true
-        }
+        service.daemonLifecycle =
+            object : DaemonLifecycle {
+                override fun start(): Boolean {
+                    startCalls++
+                    return startResult
+                }
 
-        val first = service.onStartCommand(
-            Intent(ServiceHelper.ACTION_TRANSPORT_MODE_CHANGED)
-                .putExtra(ServiceHelper.EXTRA_TRANSPORT_MODE, "ws"),
-            0,
-            1,
-        )
+                override fun stop(): Boolean = true
+
+                override fun status(): Boolean = true
+            }
+
+        val first =
+            service.onStartCommand(
+                Intent(ServiceHelper.ACTION_TRANSPORT_MODE_CHANGED)
+                    .putExtra(ServiceHelper.EXTRA_TRANSPORT_MODE, "ws"),
+                0,
+                1,
+            )
         assertEquals(Service.START_STICKY, first)
         assertEquals(1, startCalls)
         assertEquals(TransportMode.Ws, service.transportRouter.activeMode)
@@ -354,12 +374,13 @@ class TransportRouterServiceTest {
         startResult = true
         fakeWs.emitConnectedOnConnect = true
 
-        val second = service.onStartCommand(
-            Intent(ServiceHelper.ACTION_TRANSPORT_MODE_CHANGED)
-                .putExtra(ServiceHelper.EXTRA_TRANSPORT_MODE, "ws"),
-            0,
-            1,
-        )
+        val second =
+            service.onStartCommand(
+                Intent(ServiceHelper.ACTION_TRANSPORT_MODE_CHANGED)
+                    .putExtra(ServiceHelper.EXTRA_TRANSPORT_MODE, "ws"),
+                0,
+                1,
+            )
         assertEquals(Service.START_STICKY, second)
         assertEquals(2, startCalls)
         assertEquals(1, fakeWs.connectCalls)
@@ -374,14 +395,17 @@ class TransportRouterServiceTest {
         prefs.daemonWsUrl = "ws://127.0.0.1:2026/v1/mailbox-stream"
 
         var startCalls = 0
-        service.daemonLifecycle = object : DaemonLifecycle {
-            override fun start(): Boolean {
-                startCalls++
-                return true
+        service.daemonLifecycle =
+            object : DaemonLifecycle {
+                override fun start(): Boolean {
+                    startCalls++
+                    return true
+                }
+
+                override fun stop(): Boolean = true
+
+                override fun status(): Boolean = true
             }
-            override fun stop(): Boolean = true
-            override fun status(): Boolean = true
-        }
 
         service.onStartCommand(
             Intent(ServiceHelper.ACTION_TRANSPORT_MODE_CHANGED)

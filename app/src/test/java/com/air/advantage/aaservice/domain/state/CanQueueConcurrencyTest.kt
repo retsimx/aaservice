@@ -10,11 +10,15 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 
 class CanQueueConcurrencyTest {
+    private val noOpSink =
+        object : UartEventSink {
+            override fun onPollData(
+                tag: String,
+                payload: ByteArray,
+            ) {}
 
-    private val noOpSink = object : UartEventSink {
-        override fun onPollData(tag: String, payload: ByteArray) {}
-        override fun onRawCan(payload: ByteArray) {}
-    }
+            override fun onRawCan(payload: ByteArray) {}
+        }
 
     private val typeBytes = "17".toByteArray(Charsets.UTF_8)
     private val appStoreBytes = "MyAir5".toByteArray(Charsets.UTF_8)
@@ -48,36 +52,38 @@ class CanQueueConcurrencyTest {
 
         val executor = Executors.newFixedThreadPool(producerCount + 1)
 
-        val consumer = executor.submit<Unit> {
-            try {
-                startLatch.await()
-                var i = 0
-                while (!stopConsumer.get() && i < 100_000) {
-                    e.onPing()?.let { consumerFrames.add(String(it, Charsets.UTF_8)) }
-                    if (i % 2 == 0) e.onFrame(clockPayload) else e.onFrame(getCanPayload)
-                    i++
-                }
-            } catch (t: Throwable) {
-                errors.add(t)
-            }
-        }
-
-        val producers = (0 until producerCount).map { p ->
+        val consumer =
             executor.submit<Unit> {
                 try {
                     startLatch.await()
-                    val base = p * idsPerProducer
-                    (1..idsPerProducer).chunked(10).forEach { chunk ->
-                        e.enqueueCanIds(chunk.map { (base + it).toString() })
-                        e.enqueueDirectMessage("dm-$p-${chunk.first()}")
+                    var i = 0
+                    while (!stopConsumer.get() && i < 100_000) {
+                        e.onPing()?.let { consumerFrames.add(String(it, Charsets.UTF_8)) }
+                        if (i % 2 == 0) e.onFrame(clockPayload) else e.onFrame(getCanPayload)
+                        i++
                     }
                 } catch (t: Throwable) {
                     errors.add(t)
-                } finally {
-                    producerDone.countDown()
                 }
             }
-        }
+
+        val producers =
+            (0 until producerCount).map { p ->
+                executor.submit<Unit> {
+                    try {
+                        startLatch.await()
+                        val base = p * idsPerProducer
+                        (1..idsPerProducer).chunked(10).forEach { chunk ->
+                            e.enqueueCanIds(chunk.map { (base + it).toString() })
+                            e.enqueueDirectMessage("dm-$p-${chunk.first()}")
+                        }
+                    } catch (t: Throwable) {
+                        errors.add(t)
+                    } finally {
+                        producerDone.countDown()
+                    }
+                }
+            }
 
         startLatch.countDown()
         assertTrue("producers timed out", producerDone.await(30, TimeUnit.SECONDS))

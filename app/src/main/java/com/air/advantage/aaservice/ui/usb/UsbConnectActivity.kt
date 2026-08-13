@@ -9,7 +9,6 @@ import com.air.advantage.aaservice.util.ServiceHelper
 import java.lang.ref.WeakReference
 
 class UsbConnectActivity : Activity() {
-
     companion object {
         private const val TAG = "AAService2/UsbConnect"
         private var instance: WeakReference<Activity>? = null

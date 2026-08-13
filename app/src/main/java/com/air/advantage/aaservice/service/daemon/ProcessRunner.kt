@@ -18,23 +18,28 @@ object RuntimeProcessRunner : ProcessRunner {
 
     override fun run(command: List<String>): Int? = run(command, DEFAULT_TIMEOUT_MS)
 
-    fun run(command: List<String>, timeoutMs: Long): Int? {
+    fun run(
+        command: List<String>,
+        timeoutMs: Long,
+    ): Int? {
         return try {
-            val process = ProcessBuilder(command)
-                .redirectErrorStream(true)
-                .start()
+            val process =
+                ProcessBuilder(command)
+                    .redirectErrorStream(true)
+                    .start()
             // Drain stdout off-thread so a full pipe buffer cannot stall waitFor.
-            val drain = Thread(
-                {
-                    runCatching {
-                        process.inputStream.bufferedReader().use { it.readText() }
-                    }
-                },
-                "aa-su-stdout-drain",
-            ).apply {
-                isDaemon = true
-                start()
-            }
+            val drain =
+                Thread(
+                    {
+                        runCatching {
+                            process.inputStream.bufferedReader().use { it.readText() }
+                        }
+                    },
+                    "aa-su-stdout-drain",
+                ).apply {
+                    isDaemon = true
+                    start()
+                }
             val exit = waitForExit(process, timeoutMs)
             if (exit == null) {
                 // minSdk 19: destroy() only (destroyForcibly is API 26).
@@ -53,7 +58,10 @@ object RuntimeProcessRunner : ProcessRunner {
      * Wait up to [timeoutMs] for [process] to exit without API-26
      * [Process.waitFor] overload. Polls [Process.exitValue].
      */
-    internal fun waitForExit(process: Process, timeoutMs: Long): Int? {
+    internal fun waitForExit(
+        process: Process,
+        timeoutMs: Long,
+    ): Int? {
         val deadline = System.currentTimeMillis() + timeoutMs.coerceAtLeast(0L)
         while (true) {
             try {

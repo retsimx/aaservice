@@ -9,12 +9,14 @@ import java.nio.charset.StandardCharsets
  * Outbound sink for decoded data produced by [UartDispatchEngine].
  */
 interface UartEventSink {
-
     /**
      * Called with a decoded poll response whose payload changed since the last delivery
      * for the same [tag]. For `getSystemData` the payload has already been transformed.
      */
-    fun onPollData(tag: String, payload: ByteArray)
+    fun onPollData(
+        tag: String,
+        payload: ByteArray,
+    )
 
     /**
      * Called with a raw `getCAN ` payload that did not require a retry.
@@ -39,9 +41,8 @@ class UartDispatchEngine(
     private val typeBytes: ByteArray,
     private val appStoreBytes: ByteArray?,
     private val sink: UartEventSink,
-    private val logger: (String) -> Unit = {}
+    private val logger: (String) -> Unit = {},
 ) {
-
     private val lock = Any()
 
     private val parser = FrameParser()
@@ -87,11 +88,12 @@ class UartDispatchEngine(
                 val retryOrArmed = canRetry || canMessageArmed
                 val hasQueued = canQueue.isNotEmpty() || broadcastCanQueue.isNotEmpty()
                 if (retryOrArmed || hasQueued) {
-                    val frame = if (retryOrArmed) {
-                        lastCanFrame ?: buildSetCanFrame()
-                    } else {
-                        buildSetCanFrame()
-                    }
+                    val frame =
+                        if (retryOrArmed) {
+                            lastCanFrame ?: buildSetCanFrame()
+                        } else {
+                            buildSetCanFrame()
+                        }
                     canWanted = false
                     expectingAck = true
                     return frame
@@ -220,8 +222,9 @@ class UartDispatchEngine(
 
                     var broadcastPayload = payload
                     if (tag == "getSystemData") {
-                        val transformed = GetSystemDataTransformer.transform(payload, typeBytes, appStoreBytes)
-                            ?: return
+                        val transformed =
+                            GetSystemDataTransformer.transform(payload, typeBytes, appStoreBytes)
+                                ?: return
                         broadcastPayload = transformed
                     }
 
@@ -355,8 +358,7 @@ class UartDispatchEngine(
         return bytes
     }
 
-    private fun framed(content: String): String =
-        "<U>$content</U=${CrcCalculator.computeHex(content)}>"
+    private fun framed(content: String): String = "<U>$content</U=${CrcCalculator.computeHex(content)}>"
 
     private fun matchTag(framedMessage: String): String {
         val stripped = framedMessage.substring(3, framedMessage.length - 7)
@@ -364,11 +366,12 @@ class UartDispatchEngine(
         return if (query >= 0) stripped.substring(0, query) else stripped
     }
 
-    private fun extractRequest(payload: ByteArray): String = try {
-        parser.extractTag(payload, REQUEST_BYTES)
-    } catch (e: IllegalArgumentException) {
-        ""
-    }
+    private fun extractRequest(payload: ByteArray): String =
+        try {
+            parser.extractTag(payload, REQUEST_BYTES)
+        } catch (e: IllegalArgumentException) {
+            ""
+        }
 
     private companion object {
         val REQUEST_BYTES: ByteArray = "request".toByteArray(StandardCharsets.UTF_8)
