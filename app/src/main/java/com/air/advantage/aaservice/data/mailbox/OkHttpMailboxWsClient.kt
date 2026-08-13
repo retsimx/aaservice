@@ -56,7 +56,12 @@ import org.json.JSONObject
  * rather than assuming synchronous transitions.
  *
  * Ack wait: [sendWrite] / [sendCommand] throw [MailboxAckTimeoutException] on timeout
- * (they do not synthesize an error [MailboxInbound.Ack]).
+ * (they do not synthesize an error [MailboxInbound.Ack]). [sendRead] returns
+ * [ReadOutcome.Value] on a matching `read_result` or [ReadOutcome.Error] on an
+ * error ack, and likewise throws [MailboxAckTimeoutException] on timeout.
+ *
+ * Broker link-state frames ([MailboxInbound.Status]) are additionally re-emitted
+ * on [daemonStatus] (replay=1); overflow logs a warning and never fails the socket.
  */
 class OkHttpMailboxWsClient(
     private val config: MailboxWsConfig,
@@ -88,11 +93,20 @@ class OkHttpMailboxWsClient(
     )
     override val incoming: SharedFlow<MailboxInbound> = _incoming.asSharedFlow()
 
+    private val _daemonStatus = MutableSharedFlow<MailboxInbound.Status>(
+        replay = 1,
+        extraBufferCapacity = 4,
+    )
+    override val daemonStatus: SharedFlow<MailboxInbound.Status> =
+        _daemonStatus.asSharedFlow()
+
     private val sessionActive = AtomicBoolean(false)
     private val socketGeneration = AtomicLong(0)
     private val activeSocket = AtomicReference<WebSocket?>(null)
     private val pendingAcks =
         ConcurrentHashMap<String, CompletableDeferred<MailboxInbound.Ack>>()
+    private val pendingReads =
+        ConcurrentHashMap<String, CompletableDeferred<ReadOutcome>>()
 
     private val connectMutex = Mutex()
     private var reconnectJob: Job? = null
@@ -121,6 +135,7 @@ class OkHttpMailboxWsClient(
                     reconnectJob = null
                     closeSocketLocked(code = 1000, reason = "client disconnect")
                     failPendingAcks("disconnected")
+                    failPendingReads("disconnected")
                     _connectionState.value = MailboxConnectionState.Idle
                 }
             } finally {
@@ -133,17 +148,27 @@ class OkHttpMailboxWsClient(
 
     override suspend fun sendWrite(
         register: String,
-        payload: JSONObject,
+        payload: MailboxPayload,
         zone: Int?,
     ): MailboxInbound.Ack {
         val msgId = newMsgId()
         val frame = MailboxOutbound.Write(
             msgId = msgId,
             register = register,
-            payload = MailboxPayload.Typed(payload),
+            payload = payload,
             zone = zone,
         )
         return sendAndAwaitAck(msgId, frame.toJsonString())
+    }
+
+    override suspend fun sendRead(register: String, zone: Int?): ReadOutcome {
+        val msgId = newMsgId()
+        val frame = MailboxOutbound.Read(
+            msgId = msgId,
+            register = register,
+            zone = zone,
+        )
+        return sendAndAwait(msgId, frame.toJsonString(), pendingReads)
     }
 
     override suspend fun sendCommand(action: String): MailboxInbound.Ack {
@@ -152,11 +177,15 @@ class OkHttpMailboxWsClient(
         return sendAndAwaitAck(msgId, frame.toJsonString())
     }
 
-    private suspend fun sendAndAwaitAck(msgId: String, json: String): MailboxInbound.Ack {
+    private suspend fun <T> sendAndAwait(
+        msgId: String,
+        json: String,
+        pending: ConcurrentHashMap<String, CompletableDeferred<T>>,
+    ): T {
         val socket = activeSocket.get()
             ?: throw IllegalStateException("Mailbox WebSocket is not open")
-        val deferred = CompletableDeferred<MailboxInbound.Ack>()
-        pendingAcks[msgId] = deferred
+        val deferred = CompletableDeferred<T>()
+        pending[msgId] = deferred
         try {
             val enqueued = socket.send(json)
             if (!enqueued) {
@@ -168,9 +197,12 @@ class OkHttpMailboxWsClient(
         } catch (e: TimeoutCancellationException) {
             throw MailboxAckTimeoutException(msgId)
         } finally {
-            pendingAcks.remove(msgId)
+            pending.remove(msgId)
         }
     }
+
+    private suspend fun sendAndAwaitAck(msgId: String, json: String): MailboxInbound.Ack =
+        sendAndAwait(msgId, json, pendingAcks)
 
     private fun openSocketLocked() {
         closeSocketLocked(code = 1000, reason = "reopen")
@@ -250,7 +282,17 @@ class OkHttpMailboxWsClient(
             is MailboxInbound.Ack -> {
                 val msgId = inbound.msgId
                 if (msgId != null) {
-                    pendingAcks.remove(msgId)?.complete(inbound)
+                    val deferredAck = pendingAcks.remove(msgId)
+                    if (deferredAck != null) {
+                        deferredAck.complete(inbound)
+                    } else {
+                        // No write/command wait — maybe an error ack for a read.
+                        // No status guard: the daemon only acks reads with ERROR
+                        // (success reads come back as read_result), so a SUCCESS
+                        // ack here is a stale frame for an already-settled
+                        // msg_id and never matches a pending read.
+                        pendingReads.remove(msgId)?.complete(ReadOutcome.Error(inbound))
+                    }
                 }
             }
             is MailboxInbound.Error -> {
@@ -258,8 +300,17 @@ class OkHttpMailboxWsClient(
                 Log.w(TAG, "Mailbox protocol error: ${inbound.message}")
             }
             is MailboxInbound.Event -> Unit
-            is MailboxInbound.ReadResult -> Unit
-            is MailboxInbound.Status -> Unit
+            is MailboxInbound.ReadResult -> {
+                val msgId = inbound.msgId
+                if (msgId != null) {
+                    pendingReads.remove(msgId)?.complete(ReadOutcome.Value(inbound))
+                }
+            }
+            is MailboxInbound.Status -> {
+                if (!_daemonStatus.tryEmit(inbound)) {
+                    Log.w(TAG, "daemonStatus overflow; dropped state=${inbound.state}")
+                }
+            }
         }
 
         if (!_incoming.tryEmit(inbound)) {
@@ -290,6 +341,7 @@ class OkHttpMailboxWsClient(
         throwable: Throwable?,
     ) {
         failPendingAcks(reason ?: throwable?.message ?: "socket closed")
+        failPendingReads(reason ?: throwable?.message ?: "socket closed")
 
         if (!sessionActive.get()) {
             // Explicit disconnect owns Idle transition.
@@ -349,6 +401,27 @@ class OkHttpMailboxWsClient(
                         .put("msg_id", msgId)
                         .put("status", MailboxAckStatus.ERROR.toWire())
                         .put("reason", reason),
+                ),
+            )
+        }
+    }
+
+    private fun failPendingReads(reason: String) {
+        val msgIds = pendingReads.keys.toList()
+        for (msgId in msgIds) {
+            val deferred = pendingReads.remove(msgId) ?: continue
+            deferred.complete(
+                ReadOutcome.Error(
+                    MailboxInbound.Ack(
+                        msgId = msgId,
+                        status = MailboxAckStatus.ERROR,
+                        reason = reason,
+                        raw = JSONObject()
+                            .put("type", MailboxMessageType.ACK)
+                            .put("msg_id", msgId)
+                            .put("status", MailboxAckStatus.ERROR.toWire())
+                            .put("reason", reason),
+                    ),
                 ),
             )
         }

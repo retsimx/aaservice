@@ -6,6 +6,7 @@ import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.asCoroutineDispatcher
@@ -88,7 +89,7 @@ class OkHttpMailboxWsClientTest {
 
         val ack = client.sendWrite(
             register = "system_status",
-            payload = JSONObject().put("airconOn", false),
+            payload = MailboxPayload.Typed(JSONObject().put("airconOn", false)),
         )
 
         assertEquals(MailboxAckStatus.SUCCESS, ack.status)
@@ -108,7 +109,7 @@ class OkHttpMailboxWsClientTest {
 
         val ack = client.sendWrite(
             register = "zone_config",
-            payload = JSONObject().put("zones", 99),
+            payload = MailboxPayload.Typed(JSONObject().put("zones", 99)),
         )
 
         assertEquals(MailboxAckStatus.ERROR, ack.status)
@@ -299,7 +300,7 @@ class OkHttpMailboxWsClientTest {
         asInterface.connect()
         assertEquals(MailboxConnectionState.Connecting, asInterface.connectionState.value)
 
-        val ack = asInterface.sendWrite("system_status", JSONObject().put("airconOn", true))
+        val ack = asInterface.sendWrite("system_status", MailboxPayload.Typed(JSONObject().put("airconOn", true)))
         assertEquals(MailboxAckStatus.SUCCESS, ack.status)
         assertEquals(1, fake.sentWrites.size)
 
@@ -307,6 +308,169 @@ class OkHttpMailboxWsClientTest {
         assertEquals(MailboxConnectionState.Idle, asInterface.connectionState.value)
         assertEquals(1, fake.connectCalls)
         assertEquals(1, fake.disconnectCalls)
+    }
+
+    @Test
+    fun `sendRead awaits matching read_result by msg_id`() = runBlocking {
+        installAckingDispatcher(success = true)
+        createClient(ackTimeoutMs = 2_000L)
+        client.connect()
+        awaitState { it is MailboxConnectionState.Connected }
+
+        val outcome = client.sendRead(register = "zone_state")
+
+        val value = outcome as? ReadOutcome.Value
+        checkNotNull(value)
+        assertEquals("zone_state", value.result.register)
+        assertFalse(value.result.msgId.isNullOrBlank())
+
+        val outbound = awaitOutbound { it.optString("type") == MailboxMessageType.READ }
+        assertEquals(MailboxMessageType.READ, outbound.getString("type"))
+        assertEquals("zone_state", outbound.getString("register"))
+        assertEquals(value.result.msgId, outbound.getString("msg_id"))
+    }
+
+    @Test
+    fun `sendRead surfaces error ack by msg_id`() = runBlocking {
+        installAckingDispatcher(success = false)
+        createClient(ackTimeoutMs = 2_000L)
+        client.connect()
+        awaitState { it is MailboxConnectionState.Connected }
+
+        val outcome = client.sendRead(register = "zone_state")
+
+        val error = outcome as? ReadOutcome.Error
+        checkNotNull(error)
+        assertEquals(MailboxAckStatus.ERROR, error.ack.status)
+        assertEquals("register 03 has no value", error.ack.reason)
+
+        val outbound = awaitOutbound { it.optString("type") == MailboxMessageType.READ }
+        assertEquals(MailboxMessageType.READ, outbound.getString("type"))
+    }
+
+    @Test
+    fun `sendRead throws MailboxAckTimeoutException on timeout`() {
+        runBlocking {
+            installNoReplyDispatcher()
+            createClient(ackTimeoutMs = 500L)
+            client.connect()
+            awaitState { it is MailboxConnectionState.Connected }
+
+            val thrown = try {
+                client.sendRead(register = "zone_state")
+                null
+            } catch (e: MailboxAckTimeoutException) {
+                e
+            }
+            checkNotNull(thrown)
+        }
+    }
+
+    @Test
+    fun `sendRead pending read resolves to ReadOutcome Error when socket drops`() = runBlocking {
+        val serverSocket = AtomicReference<WebSocket>()
+        installNoReplyDispatcher(serverSocket)
+        createClient(
+            reconnectInitialDelayMs = 40L,
+            reconnectMaxDelayMs = 80L,
+            ackTimeoutMs = 5_000L,
+        )
+        client.connect()
+        awaitState { it is MailboxConnectionState.Connected }
+
+        val outcome = CompletableDeferred<ReadOutcome>()
+        val readJob = scope.launch {
+            outcome.complete(client.sendRead(register = "zone_state"))
+        }
+        awaitOutbound { it.optString("type") == MailboxMessageType.READ }
+
+        // No reply ever sent for the read — force the socket to end instead.
+        checkNotNull(serverSocket.get()).close(1001, "test drop")
+
+        val result = withTimeout(3_000L) { outcome.await() }
+        val error = result as? ReadOutcome.Error
+        checkNotNull(error) { "expected ReadOutcome.Error, got $result" }
+        assertFalse(
+            "reason must be non-null on drop-failed read",
+            error.ack.reason.isNullOrBlank(),
+        )
+        readJob.join()
+    }
+
+    @Test
+    fun `sendWrite pending ack resolves to ERROR when socket drops`() = runBlocking {
+        val serverSocket = AtomicReference<WebSocket>()
+        installNoReplyDispatcher(serverSocket)
+        createClient(
+            reconnectInitialDelayMs = 40L,
+            reconnectMaxDelayMs = 80L,
+            ackTimeoutMs = 5_000L,
+        )
+        client.connect()
+        awaitState { it is MailboxConnectionState.Connected }
+
+        val ack = CompletableDeferred<MailboxInbound.Ack>()
+        val writeJob = scope.launch {
+            ack.complete(
+                client.sendWrite(
+                    register = "system_status",
+                    payload = MailboxPayload.Typed(JSONObject().put("airconOn", true)),
+                ),
+            )
+        }
+        awaitOutbound { it.optString("type") == MailboxMessageType.WRITE }
+
+        checkNotNull(serverSocket.get()).close(1001, "test drop")
+
+        val result = withTimeout(3_000L) { ack.await() }
+        assertEquals(MailboxAckStatus.ERROR, result.status)
+        assertFalse("reason must be non-null on drop-failed write", result.reason.isNullOrBlank())
+        writeJob.join()
+    }
+
+    @Test
+    fun `sendWrite with RawHex payload emits string payload`() = runBlocking {
+        installAckingDispatcher(success = true)
+        createClient(ackTimeoutMs = 2_000L)
+        client.connect()
+        awaitState { it is MailboxConnectionState.Connected }
+
+        val ack = client.sendWrite(
+            register = "0c",
+            payload = MailboxPayload.RawHex("0701000000000000000000000"),
+        )
+
+        assertEquals(MailboxAckStatus.SUCCESS, ack.status)
+
+        val outbound = awaitOutbound { it.optString("type") == MailboxMessageType.WRITE }
+        assertTrue(outbound.get("payload") is String)
+        assertEquals("0701000000000000000000000", outbound.getString("payload"))
+    }
+
+    @Test
+    fun `daemonStatus emits status frames without failing the socket`() = runBlocking {
+        val serverSocket = AtomicReference<WebSocket>()
+        installUpgradeDispatcher { webSocket, _ ->
+            serverSocket.set(webSocket)
+            webSocket.send(MailboxFixtures.snapshot())
+        }
+
+        createClient()
+        client.connect()
+        awaitState { it is MailboxConnectionState.Connected }
+
+        checkNotNull(serverSocket.get()).send(
+            JSONObject()
+                .put("type", MailboxMessageType.STATUS)
+                .put("state", "link_down")
+                .put("detail", "TCP keepalive timed out")
+                .toString(),
+        )
+
+        val status = withTimeout(3_000L) { client.daemonStatus.first() }
+        assertEquals("link_down", status.state)
+        assertEquals("TCP keepalive timed out", status.detail)
+        assertEquals(MailboxConnectionState.Connected, client.connectionState.value)
     }
 
     // ── helpers ──────────────────────────────────────────────────
@@ -356,12 +520,39 @@ class OkHttpMailboxWsClientTest {
                 clientOutbound.add(json)
                 val msgId = json.optString("msg_id", "")
                 if (msgId.isEmpty()) return
-                val reply = if (success) {
-                    MailboxFixtures.ackSuccess(msgId)
-                } else {
-                    MailboxFixtures.ackError(msgId)
+                val type = json.optString("type", "")
+                val reply = when {
+                    type == MailboxMessageType.READ && success ->
+                        MailboxFixtures.readResult(msgId, json.optString("register"))
+                    type == MailboxMessageType.READ ->
+                        JSONObject()
+                            .put("type", MailboxMessageType.ACK)
+                            .put("msg_id", msgId)
+                            .put("status", "error")
+                            .put("reason", "register 03 has no value")
+                            .toString()
+                    success -> MailboxFixtures.ackSuccess(msgId)
+                    else -> MailboxFixtures.ackError(msgId)
                 }
                 webSocket.send(reply)
+            }
+        }
+        server.dispatcher = object : Dispatcher() {
+            override fun dispatch(request: RecordedRequest): MockResponse =
+                MockResponse().withWebSocketUpgrade(listener)
+        }
+    }
+
+    private fun installNoReplyDispatcher(socketRef: AtomicReference<WebSocket>? = null) {
+        val listener = object : WebSocketListener() {
+            override fun onOpen(webSocket: WebSocket, response: Response) {
+                openCount.incrementAndGet()
+                socketRef?.set(webSocket)
+                webSocket.send(MailboxFixtures.snapshot())
+            }
+
+            override fun onMessage(webSocket: WebSocket, text: String) {
+                clientOutbound.add(JSONObject(text))
             }
         }
         server.dispatcher = object : Dispatcher() {
