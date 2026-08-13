@@ -55,7 +55,7 @@ class MessageToCbReceiverTest {
             intentWithMessage("""setAircon?json={"aircons":{"ac1":{"info":{"state":"on"}}}}"""),
         )
 
-        verify(service).enqueueUartMessage(
+        verify(service).enqueueMailboxMessage(
             """setAircon?json={"aircons":{"ac1":{"info":{"state":"on"}}}}""",
         )
     }
@@ -63,6 +63,7 @@ class MessageToCbReceiverTest {
     @Test
     fun `onReceive with message without question mark is dropped`() {
         whenever(service.deviceOpen).thenReturn(AtomicBoolean(true))
+        whenever(service.isWsMode()).thenReturn(false)
 
         receiver.onReceive(context, intentWithMessage("Temperature"))
 
@@ -72,6 +73,7 @@ class MessageToCbReceiverTest {
     @Test
     fun `onReceive with command before question mark enqueues message`() {
         whenever(service.deviceOpen).thenReturn(AtomicBoolean(true))
+        whenever(service.isWsMode()).thenReturn(false)
 
         receiver.onReceive(context, intentWithMessage("setZoneData?zone=1"))
 
@@ -81,6 +83,7 @@ class MessageToCbReceiverTest {
     @Test
     fun `onReceive with Light command before question mark is filtered`() {
         whenever(service.deviceOpen).thenReturn(AtomicBoolean(true))
+        whenever(service.isWsMode()).thenReturn(false)
 
         receiver.onReceive(context, intentWithMessage("Light?x"))
 
@@ -90,6 +93,7 @@ class MessageToCbReceiverTest {
     @Test
     fun `onReceive with Aircon command before question mark is filtered`() {
         whenever(service.deviceOpen).thenReturn(AtomicBoolean(true))
+        whenever(service.isWsMode()).thenReturn(false)
 
         receiver.onReceive(context, intentWithMessage("Aircon?x"))
 
@@ -99,6 +103,7 @@ class MessageToCbReceiverTest {
     @Test
     fun `onReceive with Activation command before question mark is filtered`() {
         whenever(service.deviceOpen).thenReturn(AtomicBoolean(true))
+        whenever(service.isWsMode()).thenReturn(false)
 
         receiver.onReceive(context, intentWithMessage("Activation?x"))
 
@@ -108,6 +113,7 @@ class MessageToCbReceiverTest {
     @Test
     fun `onReceive with MySystem command before question mark is filtered`() {
         whenever(service.deviceOpen).thenReturn(AtomicBoolean(true))
+        whenever(service.isWsMode()).thenReturn(false)
 
         receiver.onReceive(context, intentWithMessage("MySystem?x"))
 
@@ -117,6 +123,7 @@ class MessageToCbReceiverTest {
     @Test
     fun `onReceive with keyword only after question mark is not filtered`() {
         whenever(service.deviceOpen).thenReturn(AtomicBoolean(true))
+        whenever(service.isWsMode()).thenReturn(false)
 
         receiver.onReceive(context, intentWithMessage("setSystemData?Light=on"))
 
@@ -126,6 +133,7 @@ class MessageToCbReceiverTest {
     @Test
     fun `onReceive with null extra is dropped`() {
         whenever(service.deviceOpen).thenReturn(AtomicBoolean(true))
+        whenever(service.isWsMode()).thenReturn(false)
 
         receiver.onReceive(context, intentWithMessage(null))
 

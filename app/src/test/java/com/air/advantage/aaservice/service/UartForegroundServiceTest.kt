@@ -105,8 +105,8 @@ class UartForegroundServiceTest {
     }
 
     @Test
-    fun `requestSinglePoll feeds the engine direct queue with raw tag`() {
-        service.requestSinglePoll("getClock")
+    fun `enqueueUartMessage feeds the engine direct queue with raw tag`() {
+        service.enqueueUartMessage("getClock")
         val frame = service.dispatchEngine.onPing()
         assertNotNull(frame)
         val expectedCrc = CrcCalculator.computeHex("getClock")
