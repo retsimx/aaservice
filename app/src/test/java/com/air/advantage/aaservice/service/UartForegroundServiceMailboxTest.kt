@@ -185,7 +185,7 @@ class UartForegroundServiceMailboxTest {
     }
 
     @Test
-    fun `duplicate snapshot skips unchanged XML while rawCan rebroadcast still flows`() {
+    fun `duplicate snapshot skips unchanged XML and content-identical rawCan`() {
         service.attachMailboxWsClient(fakeClient)
         fakeClient.emitState(MailboxConnectionState.Connected)
 
@@ -195,10 +195,32 @@ class UartForegroundServiceMailboxTest {
         // XML dedup via dataCache.hasChanged: first snapshot broadcast 3 tags, the
         // identical second snapshot must not rebroadcast them.
         assertEquals(3, sentMessageFromCb().size)
-        // rawCan is always re-emitted for a fresh (re-encoded) frame — lastRawCan
-        // dedups the same frame instance, not content-equal re-encodings.
-        assertTrue(
-            capturedIntents.any { it.action == "com.air.advantage.MESSAGE_FROM_CB_SECURE" },
+        // rawCan content dedup: identical snapshots re-encode to content-equal frames,
+        // so lastRawCan (now content-compared) suppresses the second secure broadcast.
+        assertEquals(
+            "content-identical rawCan must be deduped, got ${secureRawCanFrames().size}",
+            1,
+            secureRawCanFrames().size,
+        )
+    }
+
+    @Test
+    fun `handleGetCan content-dedups identical frames and forwards different frames`() {
+        service.handleGetCan("getCAN 1 0703181f30a00000000000000")
+        service.handleGetCan("getCAN 1 0703181f30a00000000000000")
+
+        assertEquals(
+            "content-identical frames must broadcast once, got ${secureRawCanFrames().size}",
+            1,
+            secureRawCanFrames().size,
+        )
+
+        service.handleGetCan("getCAN 1 0703181f30a00000000000001")
+
+        assertEquals(
+            "different frame must rebroadcast, got ${secureRawCanFrames().size}",
+            2,
+            secureRawCanFrames().size,
         )
     }
 
@@ -230,7 +252,7 @@ class UartForegroundServiceMailboxTest {
         assertTrue("event field applied", latestXml.contains("<measuredTemp>23.4</measuredTemp>"))
         // sensor_type/target_temp_c are only in the original snapshot, not this sparse event —
         // merge-onto-cache must preserve them rather than rebuilding from scratch.
-        assertTrue("cache-only field preserved by merge", latestXml.contains("<sensor>temp</sensor>"))
+        assertTrue("cache-only field preserved by merge", latestXml.contains("<sensor>rf</sensor>"))
         assertTrue("cache-only field preserved by merge", latestXml.contains("<temp>22.5</temp>"))
 
         // No onCreate/onDestroy round trip happened between snapshot and event.

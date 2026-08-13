@@ -995,10 +995,8 @@ class UartForegroundService : Service() {
     }
 
     private fun updateLastRawCan(frame: String): Boolean {
-        val expected = lastRawCan.get()
-        while (!lastRawCan.compareAndSet(expected, frame)) {
-            if (lastRawCan.get() !== expected) return false
-        }
+        if (lastRawCan.get() == frame) return false
+        lastRawCan.set(frame)
         return true
     }
 

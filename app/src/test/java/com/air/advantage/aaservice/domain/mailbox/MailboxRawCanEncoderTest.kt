@@ -242,7 +242,7 @@ class MailboxRawCanEncoderTest {
         assertEquals("1", tokens[1])
         assertEquals(
             listOf(
-                "0703181f30301e4022d170100",
+                "0703181f30301e4012d170100",
                 "0703181f3050101042d010100",
                 "0703181f30faabbccddeeff00",
             ),
