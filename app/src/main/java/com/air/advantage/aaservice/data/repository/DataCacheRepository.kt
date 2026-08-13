@@ -25,11 +25,6 @@ class DataCacheRepository {
 
     fun getUpdates(): Flow<CacheUpdate> = updates
 
-    fun hasChanged(tag: String, newData: ByteArray): Boolean {
-        val current = cache[tag] ?: return true
-        return !Arrays.equals(current, newData)
-    }
-
     fun getAllKeys(): Set<String> = cache.keys.toSet()
 
     fun clear() {

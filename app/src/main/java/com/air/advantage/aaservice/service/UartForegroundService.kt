@@ -31,9 +31,7 @@ import com.air.advantage.aaservice.data.repository.DataCacheRepository
 import com.air.advantage.aaservice.data.uart.UartDataSource
 import com.air.advantage.aaservice.data.uart.UsbAccessoryDataSource
 import com.air.advantage.aaservice.di.UartServiceEntryPoint
-import com.air.advantage.aaservice.domain.mailbox.MailboxBroadcastMapper
 import com.air.advantage.aaservice.domain.mailbox.MailboxRawCanEncoder
-import com.air.advantage.aaservice.domain.mailbox.MappedPoll
 import com.air.advantage.aaservice.domain.state.UartDispatchEngine
 import com.air.advantage.aaservice.domain.state.UartEventSink
 import com.air.advantage.aaservice.receiver.AlertDialogReceiver
@@ -176,7 +174,8 @@ class UartForegroundService : Service() {
     private val closeUartIoStarted = AtomicBoolean(false)
 
     /**
-     * A4 (#51): mailbox → `MESSAGE_FROM_CB` collector. Production attaches the
+     * A4 (#51): mailbox collector — WS-mode inbound snapshots/events are re-encoded to
+     * secure rawCan (getCAN frames) and broadcast via [handleGetCan]. Production attaches the
      * [TransportRouter.mailboxWsClient] after WS mode apply; tests attach a fake
      * via [attachMailboxWsClient] without needing Hilt.
      */
@@ -201,12 +200,12 @@ class UartForegroundService : Service() {
     /**
      * Attaches a [MailboxWsClient] and starts collecting [MailboxWsClient.incoming] for the
      * lifetime of this attachment (design `41-mailbox-to-message-from-cb.md` §6). Each inbound
-     * `snapshot` / `event` is mapped to poll-tag payloads via
-     * [MailboxBroadcastMapper], cached, and broadcast the same way the USB [uartEventSink] does.
+     * `snapshot` / `event` is re-encoded to secure rawCan (getCAN frames) and broadcast via
+     * [handleGetCan]; no XML poll broadcasts.
      *
      * Collected on [Dispatchers.Unconfined]: [MailboxWsClient.incoming] is a hot
-     * [kotlinx.coroutines.flow.SharedFlow] with no backpressure concerns here (mapping + a
-     * cache put + an Intent broadcast is cheap), so processing inline on whichever thread
+     * [kotlinx.coroutines.flow.SharedFlow] with no backpressure concerns here (a re-encode +
+     * an Intent broadcast is cheap), so processing inline on whichever thread
      * emits — the real client's OkHttp WebSocket reader thread, or directly on the calling
      * thread in tests via [com.air.advantage.aaservice.data.mailbox.FakeMailboxWsClient] — keeps
      * behavior synchronous and avoids an extra thread hop.
@@ -219,22 +218,15 @@ class UartForegroundService : Service() {
         }
     }
 
-    /** Maps one mailbox frame to poll-tag broadcasts; safe to call directly from tests. */
+    /** Re-encodes one mailbox frame to secure rawCan broadcasts; safe to call directly from tests. */
     internal fun onMailboxInbound(inbound: MailboxInbound) {
         when (inbound) {
             is MailboxInbound.Snapshot -> {
-                // Full register bank as secure rawCan (typed + raw-hex passthrough merged),
-                // then the mapped XML poll tags — broadcast per the B-6 AC (D1).
+                // Full register bank as secure rawCan (typed + raw-hex passthrough merged).
                 MailboxRawCanEncoder.encodeGetCan(inbound)?.let { handleGetCan(it) }
-                dispatchMappedPolls(
-                    MailboxBroadcastMapper.map(inbound, cachedPayload = dataCache::get),
-                )
             }
             is MailboxInbound.Event -> {
                 MailboxRawCanEncoder.encodeEventToCan(inbound)?.let { handleGetCan(it) }
-                dispatchMappedPolls(
-                    MailboxBroadcastMapper.map(inbound, cachedPayload = dataCache::get),
-                )
             }
             is MailboxInbound.ReadResult -> {
                 // Reconciliation rawCan delivery — the daemon already applied the read.
@@ -266,19 +258,6 @@ class UartForegroundService : Service() {
                 TAG,
                 "onMailboxInbound: unknown type=${inbound.type}",
             )
-        }
-    }
-
-    /** Caches mapped polls and broadcasts them (deduped via [DataCacheRepository.hasChanged]). */
-    private fun dispatchMappedPolls(polls: List<MappedPoll>) {
-        for (poll in polls) {
-            if (!dataCache.hasChanged(poll.tag, poll.payload)) {
-                Log.d(TAG, "onMailboxInbound: unchanged '${poll.tag}', skipping broadcast")
-                continue
-            }
-            Log.d(TAG, "onMailboxInbound: tag='${poll.tag}' (${poll.payload.size} bytes)")
-            dataCache.put(poll.tag, poll.payload)
-            broadcastData(poll.tag)
         }
     }
 

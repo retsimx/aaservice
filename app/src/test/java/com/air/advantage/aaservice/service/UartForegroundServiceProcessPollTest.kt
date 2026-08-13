@@ -145,23 +145,6 @@ class UartForegroundServiceProcessPollTest {
         assertArrayEquals(data, cached)
     }
 
-    @Test
-    fun `dataCache hasChanged returns true for new tag`() {
-        val tag = "getZoneData?zone=1"
-        val data = "temp=22".toByteArray()
-
-        assertTrue(service.dataCache.hasChanged(tag, data))
-    }
-
-    @Test
-    fun `dataCache hasChanged returns false for unchanged data`() {
-        val tag = "getTimers"
-        val data = "timer1=on".toByteArray()
-
-        service.dataCache.put(tag, data)
-        assertFalse(service.dataCache.hasChanged(tag, data))
-    }
-
     private companion object {
         val POLL_TAGS = listOf(
             "getSystemData",
