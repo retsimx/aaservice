@@ -26,7 +26,7 @@ class MessageToCbReceiver : BaseReceiver() {
         }
         val command = message.substring(0, message.indexOf("?"))
         // Stock USB filter: Light/Aircon/Activation/MySystem never hit UART.
-        // WS mode still accepts setAircon?json= for mailbox_update mapping (A5).
+        // WS mode still accepts setAircon?json= for broker write mapping (A5).
         if (!wsMode &&
             (command.contains("Light") || command.contains("Aircon") ||
                 command.contains("Activation") || command.contains("MySystem"))
@@ -35,6 +35,6 @@ class MessageToCbReceiver : BaseReceiver() {
             return
         }
         Log.d(BCAST_TAG, "MessageToCb: enqueueing '$message' (ws=$wsMode)")
-        s.enqueueUartMessage(message)
+        if (wsMode) s.enqueueMailboxMessage(message) else s.enqueueUartMessage(message)
     }
 }

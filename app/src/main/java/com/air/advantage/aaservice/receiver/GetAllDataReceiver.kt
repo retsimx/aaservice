@@ -45,7 +45,7 @@ class GetAllDataReceiver : BaseReceiver() {
         }
 
         scheduleTags.forEach { tag ->
-            s.requestSinglePoll(tag)
+            s.enqueueUartMessage(tag)
         }
         Log.d(BCAST_TAG, "GetAllData: broadcast ${baseTags.size} base tags, polled ${scheduleTags.size} schedule tags")
     }
