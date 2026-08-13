@@ -1,12 +1,15 @@
 package com.air.advantage.aaservice.ui.usb
 
-import android.app.Activity
 import androidx.test.core.app.ApplicationProvider
 import com.air.advantage.aaservice.R
 import com.air.advantage.aaservice.service.RebootNotificationService
 import com.air.advantage.aaservice.service.UartForegroundService
 import org.junit.After
-import org.junit.Assert.*
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -19,7 +22,6 @@ import java.lang.ref.WeakReference
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [33], manifest = Config.NONE)
 class UsbConnectActivityTest {
-
     @Before
     fun setUp() {
         RebootNotificationService.rebootRequired.set(false)

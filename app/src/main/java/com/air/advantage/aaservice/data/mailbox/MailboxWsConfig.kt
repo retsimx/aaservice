@@ -40,12 +40,16 @@ data class MailboxWsConfig(
 ) {
     companion object {
         const val DEFAULT_URL = "ws://127.0.0.1:2026/v1/mailbox-stream"
+
         /** Default OkHttp WebSocket ping keepalive (~30 seconds). */
         const val DEFAULT_PING_INTERVAL_MS = 30_000L
+
         /** Default first reconnect delay after an unexpected disconnect (1 second). */
         const val DEFAULT_RECONNECT_INITIAL_DELAY_MS = 1_000L
+
         /** Default cap for exponential reconnect backoff (30 seconds). */
         const val DEFAULT_RECONNECT_MAX_DELAY_MS = 30_000L
+
         /** Default ack wait for outbound mailbox frames (10 seconds). */
         const val DEFAULT_ACK_TIMEOUT_MS = 10_000L
 

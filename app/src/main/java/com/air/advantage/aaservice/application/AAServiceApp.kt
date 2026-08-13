@@ -9,6 +9,7 @@ import javax.inject.Inject
 class AAServiceApp : Application() {
     companion object {
         private lateinit var instance: AAServiceApp
+
         fun get(): AAServiceApp = instance
     }
 

@@ -13,11 +13,12 @@ import java.net.URI
 fun isLoopbackDaemonUrl(url: String): Boolean {
     val trimmed = url.trim()
     if (trimmed.isEmpty()) return false
-    val host = try {
-        URI(trimmed).host
-    } catch (_: Exception) {
-        null
-    } ?: return false
+    val host =
+        try {
+            URI(trimmed).host
+        } catch (_: Exception) {
+            null
+        } ?: return false
     return host.equals("127.0.0.1", ignoreCase = true) ||
         host.equals("localhost", ignoreCase = true)
 }

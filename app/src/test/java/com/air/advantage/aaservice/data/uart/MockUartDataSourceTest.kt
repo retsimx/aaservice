@@ -14,7 +14,6 @@ import org.mockito.Mockito.mock
 import java.nio.charset.StandardCharsets
 
 class MockUartDataSourceTest {
-
     private lateinit var mockDataSource: MockUartDataSource
     private lateinit var usbAccessory: UsbAccessory
 
@@ -53,18 +52,20 @@ class MockUartDataSourceTest {
 
     @Test
     fun `write returns false when not connected`() {
-        val result = runBlocking {
-            mockDataSource.write("test".toByteArray())
-        }
+        val result =
+            runBlocking {
+                mockDataSource.write("test".toByteArray())
+            }
         assertFalse(result)
     }
 
     @Test
     fun `write returns true when connected`() {
         mockDataSource.connect(usbAccessory)
-        val result = runBlocking {
-            mockDataSource.write("test".toByteArray())
-        }
+        val result =
+            runBlocking {
+                mockDataSource.write("test".toByteArray())
+            }
         assertTrue(result)
     }
 
@@ -205,14 +206,15 @@ class MockUartDataSourceTest {
     fun `full poll cycle simulates all commands`() {
         mockDataSource.connect(usbAccessory)
 
-        val pollCommands = listOf(
-            "Ping",
-            "getSystemData",
-            "getClock",
-            "getZoneData?zone=1",
-            "getZoneData?zone=2",
-            "getZoneData?zone=3"
-        )
+        val pollCommands =
+            listOf(
+                "Ping",
+                "getSystemData",
+                "getClock",
+                "getZoneData?zone=1",
+                "getZoneData?zone=2",
+                "getZoneData?zone=3",
+            )
 
         for (command in pollCommands) {
             val frames = splitFrames(writeAndRead(command))
@@ -237,9 +239,10 @@ class MockUartDataSourceTest {
         mockDataSource.connect(usbAccessory)
         mockDataSource.disconnect()
 
-        val result = runBlocking {
-            mockDataSource.write("Ping".toByteArray())
-        }
+        val result =
+            runBlocking {
+                mockDataSource.write("Ping".toByteArray())
+            }
         assertFalse(result)
     }
 
@@ -272,10 +275,11 @@ class MockUartDataSourceTest {
 
     // ── helpers ──────────────────────────────────────────────────
 
-    private fun writeAndRead(command: String): ByteArray = runBlocking {
-        mockDataSource.write(command.toByteArray())
-        mockDataSource.read().first()
-    }
+    private fun writeAndRead(command: String): ByteArray =
+        runBlocking {
+            mockDataSource.write(command.toByteArray())
+            mockDataSource.read().first()
+        }
 
     private fun splitFrames(response: ByteArray): List<String> {
         val text = String(response, StandardCharsets.UTF_8)
@@ -294,7 +298,10 @@ class MockUartDataSourceTest {
         return frames
     }
 
-    private fun assertFrame(frame: String, payload: String) {
+    private fun assertFrame(
+        frame: String,
+        payload: String,
+    ) {
         val expectedCrc = CrcCalculator.computeHex(payload)
         assertEquals("Frame must be <U>payload</U=crc>", "<U>$payload</U=$expectedCrc>", frame)
     }
@@ -304,9 +311,11 @@ class MockUartDataSourceTest {
 
     private companion object {
         const val ACK_PAYLOAD = "<ack>1</ack>"
-        val SYSTEM_DATA_PAYLOAD = ("<request>getSystemData</request><type>00</type><AppStore>x</AppStore>" +
-            "<dhcp>192.168.1.1</dhcp><subnet>255.255.255.0</subnet><gateway>192.168.1.254</gateway>" +
-            "<MyAppRev>14.148</MyAppRev>")
+        val SYSTEM_DATA_PAYLOAD = (
+            "<request>getSystemData</request><type>00</type><AppStore>x</AppStore>" +
+                "<dhcp>192.168.1.1</dhcp><subnet>255.255.255.0</subnet><gateway>192.168.1.254</gateway>" +
+                "<MyAppRev>14.148</MyAppRev>"
+        )
         val CLOCK_PAYLOAD = "<request>getClock</request><time>2026-08-02 12:00:00</time>"
     }
 }

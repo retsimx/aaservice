@@ -1,7 +1,6 @@
 package com.air.advantage.aaservice.util
 
 object HardwareDetector {
-
     enum class HardwareType {
         MY_AIR5,
         MY_AIR4,
@@ -9,7 +8,7 @@ object HardwareDetector {
         VAMS,
         ZONE10E,
         LEGACY,
-        UNKNOWN
+        UNKNOWN,
     }
 
     fun detect(): HardwareType = HardwareType.MY_AIR5

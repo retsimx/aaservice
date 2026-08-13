@@ -7,7 +7,10 @@ import android.util.Log
 import com.air.advantage.aaservice.util.ServiceHelper
 
 class UsbPermissionReceiver : BaseReceiver() {
-    override fun onReceive(context: Context, intent: Intent) {
+    override fun onReceive(
+        context: Context,
+        intent: Intent,
+    ) {
         Log.d(BCAST_TAG, "UsbPermission: received action='${intent.action}'")
         if (intent.action != "com.air.advantage.USB_PERMISSION") return
 

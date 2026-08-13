@@ -27,17 +27,19 @@ import com.air.advantage.aaservice.service.UartForegroundService
  * is persisted before the mode switch. UI still writes prefs first, then fires the same Intent.
  */
 object ServiceHelper {
-
     const val ACTION_REBOOT_DEVICE = "com.air.advantage.REBOOT_DEVICE"
     const val ACTION_OPEN_DEVICE = "com.air.advantage.OPEN_DEVICE"
     const val ACTION_CLOSE_DEVICE = "com.air.advantage.CLOSE_DEVICE"
     const val ACTION_REQUEST_PERMISSION = "com.air.advantage.REQUEST_PERMISSION"
     const val ACTION_ALLOW_HIDING = "com.air.advantage.ALLOW_HIDING"
     const val ACTION_BLOCK_HIDING = "com.air.advantage.BLOCK_HIDING"
+
     /** Mode-change notify; when [EXTRA_TRANSPORT_MODE] is present and valid, it wins over prefs. */
     const val ACTION_TRANSPORT_MODE_CHANGED = "com.air.advantage.TRANSPORT_MODE_CHANGED"
+
     /** Intent extra for [ACTION_TRANSPORT_MODE_CHANGED]: `"usb"` or `"ws"`. */
     const val EXTRA_TRANSPORT_MODE = "transport_mode"
+
     /** Optional Intent extra for [ACTION_TRANSPORT_MODE_CHANGED]: daemon WebSocket URL to persist. */
     const val EXTRA_DAEMON_WS_URL = "daemon_ws_url"
 
@@ -51,36 +53,48 @@ object ServiceHelper {
         val devicePolicyManager =
             context.getSystemService(Context.DEVICE_POLICY_SERVICE) as android.app.admin.DevicePolicyManager
         return devicePolicyManager.isAdminActive(
-            android.content.ComponentName(context, com.air.advantage.aaservice.receiver.DeviceAdminReceiver::class.java)
+            android.content.ComponentName(
+                context,
+                com.air.advantage.aaservice.receiver.DeviceAdminReceiver::class.java,
+            ),
         )
     }
 
     @JvmStatic
-    fun scheduleServiceStart(context: Context, action: String, delayMs: Long) {
+    fun scheduleServiceStart(
+        context: Context,
+        action: String,
+        delayMs: Long,
+    ) {
         val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
         val intent = Intent(context, UartForegroundService::class.java).apply { setAction(action) }
-        val pendingIntent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            PendingIntent.getForegroundService(context, R.string.app_name, intent, PendingIntent.FLAG_IMMUTABLE)
-        } else {
-            @Suppress("DEPRECATION")
-            PendingIntent.getService(context, R.string.app_name, intent, PendingIntent.FLAG_IMMUTABLE)
-        }
+        val pendingIntent =
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                PendingIntent.getForegroundService(context, R.string.app_name, intent, PendingIntent.FLAG_IMMUTABLE)
+            } else {
+                @Suppress("DEPRECATION")
+                PendingIntent.getService(context, R.string.app_name, intent, PendingIntent.FLAG_IMMUTABLE)
+            }
         alarmManager.set(
             AlarmManager.ELAPSED_REALTIME_WAKEUP,
             android.os.SystemClock.elapsedRealtime() + delayMs,
-            pendingIntent
+            pendingIntent,
         )
     }
 
-    fun cancelScheduledServiceStart(context: Context, action: String) {
+    fun cancelScheduledServiceStart(
+        context: Context,
+        action: String,
+    ) {
         val alarmManager = context.getSystemService(Context.ALARM_SERVICE) as AlarmManager
         val intent = Intent(context, UartForegroundService::class.java).apply { setAction(action) }
-        val pendingIntent = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
-            PendingIntent.getForegroundService(context, R.string.app_name, intent, PendingIntent.FLAG_IMMUTABLE)
-        } else {
-            @Suppress("DEPRECATION")
-            PendingIntent.getService(context, R.string.app_name, intent, PendingIntent.FLAG_IMMUTABLE)
-        }
+        val pendingIntent =
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                PendingIntent.getForegroundService(context, R.string.app_name, intent, PendingIntent.FLAG_IMMUTABLE)
+            } else {
+                @Suppress("DEPRECATION")
+                PendingIntent.getService(context, R.string.app_name, intent, PendingIntent.FLAG_IMMUTABLE)
+            }
         alarmManager.cancel(pendingIntent)
     }
 
@@ -89,10 +103,11 @@ object ServiceHelper {
         action: String? = null,
         extras: android.os.Bundle? = null,
     ) {
-        val intent = Intent(context, UartForegroundService::class.java).apply {
-            if (action != null) setAction(action)
-            if (extras != null) putExtras(extras)
-        }
+        val intent =
+            Intent(context, UartForegroundService::class.java).apply {
+                if (action != null) setAction(action)
+                if (extras != null) putExtras(extras)
+            }
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             context.startForegroundService(intent)
         } else {
@@ -101,21 +116,26 @@ object ServiceHelper {
         }
     }
 
-    fun stopUartService(context: Context, action: String? = null) {
-        val intent = Intent(context, UartForegroundService::class.java).apply {
-            if (action != null) setAction(action)
-        }
+    fun stopUartService(
+        context: Context,
+        action: String? = null,
+    ) {
+        val intent =
+            Intent(context, UartForegroundService::class.java).apply {
+                if (action != null) setAction(action)
+            }
         context.stopService(intent)
     }
 
     fun setVersionText(activity: Activity) {
         val textView = activity.findViewById<TextView>(R.id.version_number)
-        val version = try {
-            @Suppress("DEPRECATION")
-            activity.packageManager.getPackageInfo(activity.packageName, 0).versionName ?: "0.0.0"
-        } catch (e: Exception) {
-            "0.0.0"
-        }
+        val version =
+            try {
+                @Suppress("DEPRECATION")
+                activity.packageManager.getPackageInfo(activity.packageName, 0).versionName ?: "0.0.0"
+            } catch (e: Exception) {
+                "0.0.0"
+            }
         val variant = Build.BRAND + " " + Build.MODEL
         textView.text = "Version $version : $variant"
     }

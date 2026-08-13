@@ -1,12 +1,15 @@
 package com.air.advantage.aaservice.data.repository
 
 import com.air.advantage.aaservice.data.protocol.CrcCalculator
-import org.junit.Assert.*
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 
 class PollQueueRepositoryTest {
-
     private lateinit var repository: PollQueueRepository
 
     @Before
@@ -120,13 +123,21 @@ class PollQueueRepositoryTest {
     @Test
     fun `all frame tags match CrcCalculator output`() {
         repository.initialize(isMyAir5 = true)
-        val expectedTags = listOf(
-            "getSystemData", "getClock",
-            "getZoneData?zone=1", "getZoneData?zone=2", "getZoneData?zone=3",
-            "getZoneData?zone=4", "getZoneData?zone=5", "getZoneData?zone=6",
-            "getZoneData?zone=7", "getZoneData?zone=8", "getZoneData?zone=9",
-            "getZoneData?zone=10"
-        )
+        val expectedTags =
+            listOf(
+                "getSystemData",
+                "getClock",
+                "getZoneData?zone=1",
+                "getZoneData?zone=2",
+                "getZoneData?zone=3",
+                "getZoneData?zone=4",
+                "getZoneData?zone=5",
+                "getZoneData?zone=6",
+                "getZoneData?zone=7",
+                "getZoneData?zone=8",
+                "getZoneData?zone=9",
+                "getZoneData?zone=10",
+            )
         for (tag in expectedTags) {
             val expectedCrc = CrcCalculator.computeHex(tag)
             val expectedFrameTag = "<U>$tag</U=$expectedCrc>"

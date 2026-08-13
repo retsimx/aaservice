@@ -19,7 +19,6 @@ import android.util.Log
 class SuDaemonLifecycle(
     private val processRunner: ProcessRunner = RuntimeProcessRunner,
 ) : DaemonLifecycle {
-
     override fun start(): Boolean = runControl(OP_START)
 
     override fun stop(): Boolean = runControl(OP_STOP)

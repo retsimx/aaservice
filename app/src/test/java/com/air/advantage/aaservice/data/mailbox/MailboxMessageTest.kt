@@ -20,38 +20,38 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [28])
 class MailboxMessageTest {
-
     // ── inbound: snapshot ────────────────────────────────────────
 
     @Test
     fun `snapshot parses units keyed unit_type colon unit_id to register payloads`() {
-        val msg = MailboxInbound.parse(
-            """
-            {
-              "type": "snapshot",
-              "units": {
-                "aircon:1": {
-                  "system_status": {
-                    "power": "on",
-                    "mode": "cool",
-                    "myzone_id": 1
-                  },
-                  "zones": {
-                    "1": {
-                      "open": true,
-                      "damper_pct": 100
+        val msg =
+            MailboxInbound.parse(
+                """
+                {
+                  "type": "snapshot",
+                  "units": {
+                    "aircon:1": {
+                      "system_status": {
+                        "power": "on",
+                        "mode": "cool",
+                        "myzone_id": 1
+                      },
+                      "zones": {
+                        "1": {
+                          "open": true,
+                          "damper_pct": 100
+                        }
+                      }
+                    },
+                    "aircon:2": {
+                      "system_status": {
+                        "power": "off"
+                      }
                     }
                   }
-                },
-                "aircon:2": {
-                  "system_status": {
-                    "power": "off"
-                  }
                 }
-              }
-            }
-            """.trimIndent(),
-        )
+                """.trimIndent(),
+            )
         assertTrue(msg is MailboxInbound.Snapshot)
         val snapshot = msg as MailboxInbound.Snapshot
         assertEquals(2, snapshot.units.size)
@@ -70,30 +70,32 @@ class MailboxMessageTest {
 
     @Test
     fun `snapshot without units parses to empty map`() {
-        val snapshot = MailboxInbound.parse(
-            """{"type": "snapshot"}""",
-        ) as MailboxInbound.Snapshot
+        val snapshot =
+            MailboxInbound.parse(
+                """{"type": "snapshot"}""",
+            ) as MailboxInbound.Snapshot
         assertTrue(snapshot.units.isEmpty())
     }
 
     @Test
     fun `snapshot keeps raw hex string register in rawUnits and typed map unchanged`() {
-        val snapshot = MailboxInbound.parse(
-            """
-            {
-              "type": "snapshot",
-              "units": {
-                "07:181f3": {
-                  "05": {
-                    "power": "on",
-                    "mode": "cool"
-                  },
-                  "0f": "aabbccddeeff00"
+        val snapshot =
+            MailboxInbound.parse(
+                """
+                {
+                  "type": "snapshot",
+                  "units": {
+                    "07:181f3": {
+                      "05": {
+                        "power": "on",
+                        "mode": "cool"
+                      },
+                      "0f": "aabbccddeeff00"
+                    }
+                  }
                 }
-              }
-            }
-            """.trimIndent(),
-        ) as MailboxInbound.Snapshot
+                """.trimIndent(),
+            ) as MailboxInbound.Snapshot
         assertEquals("aabbccddeeff00", snapshot.rawUnits["07:181f3"]!!["0f"])
         assertEquals(1, snapshot.units["07:181f3"]!!.size)
         assertEquals("on", snapshot.units["07:181f3"]!!["05"]!!.getString("power"))
@@ -104,21 +106,22 @@ class MailboxMessageTest {
 
     @Test
     fun `event parses addressing fields and zone payload`() {
-        val msg = MailboxInbound.parse(
-            """
-            {
-              "type": "event",
-              "unit_type": "aircon",
-              "unit_id": "1",
-              "register": "zone_state",
-              "zone": 3,
-              "payload": {
-                "open": true,
-                "damper_pct": 80
-              }
-            }
-            """.trimIndent(),
-        )
+        val msg =
+            MailboxInbound.parse(
+                """
+                {
+                  "type": "event",
+                  "unit_type": "aircon",
+                  "unit_id": "1",
+                  "register": "zone_state",
+                  "zone": 3,
+                  "payload": {
+                    "open": true,
+                    "damper_pct": 80
+                  }
+                }
+                """.trimIndent(),
+            )
         assertTrue(msg is MailboxInbound.Event)
         val event = msg as MailboxInbound.Event
         assertEquals("aircon", event.unitType)
@@ -131,17 +134,18 @@ class MailboxMessageTest {
 
     @Test
     fun `event without zone parses with null zone and null addressing`() {
-        val event = MailboxInbound.parse(
-            """
-            {
-              "type": "event",
-              "register": "system_status",
-              "payload": {
-                "power": "on"
-              }
-            }
-            """.trimIndent(),
-        ) as MailboxInbound.Event
+        val event =
+            MailboxInbound.parse(
+                """
+                {
+                  "type": "event",
+                  "register": "system_status",
+                  "payload": {
+                    "power": "on"
+                  }
+                }
+                """.trimIndent(),
+            ) as MailboxInbound.Event
         assertEquals("system_status", event.register)
         assertNull(event.zone)
         assertNull(event.unitType)
@@ -151,15 +155,16 @@ class MailboxMessageTest {
 
     @Test
     fun `event with raw hex string payload parses payload null and keeps string on raw`() {
-        val event = MailboxInbound.parse(
-            """
-            {
-              "type": "event",
-              "register": "sensor_pairing",
-              "payload": "0703181f30a00000000000000"
-            }
-            """.trimIndent(),
-        ) as MailboxInbound.Event
+        val event =
+            MailboxInbound.parse(
+                """
+                {
+                  "type": "event",
+                  "register": "sensor_pairing",
+                  "payload": "0703181f30a00000000000000"
+                }
+                """.trimIndent(),
+            ) as MailboxInbound.Event
         assertNull(event.payload)
         assertEquals("0703181f30a00000000000000", event.raw.getString("payload"))
     }
@@ -168,22 +173,23 @@ class MailboxMessageTest {
 
     @Test
     fun `read_result parses msg_id addressing and payload`() {
-        val msg = MailboxInbound.parse(
-            """
-            {
-              "type": "read_result",
-              "msg_id": "r1",
-              "unit_type": "aircon",
-              "unit_id": "1",
-              "register": "zone_limits",
-              "zone": 2,
-              "payload": {
-                "min_damper": 0,
-                "max_damper": 100
-              }
-            }
-            """.trimIndent(),
-        )
+        val msg =
+            MailboxInbound.parse(
+                """
+                {
+                  "type": "read_result",
+                  "msg_id": "r1",
+                  "unit_type": "aircon",
+                  "unit_id": "1",
+                  "register": "zone_limits",
+                  "zone": 2,
+                  "payload": {
+                    "min_damper": 0,
+                    "max_damper": 100
+                  }
+                }
+                """.trimIndent(),
+            )
         assertTrue(msg is MailboxInbound.ReadResult)
         val result = msg as MailboxInbound.ReadResult
         assertEquals("r1", result.msgId)
@@ -197,7 +203,10 @@ class MailboxMessageTest {
 
     // ── inbound: ack ─────────────────────────────────────────────
 
-    private fun ackJson(status: String, reason: String?): JSONObject =
+    private fun ackJson(
+        status: String,
+        reason: String?,
+    ): JSONObject =
         JSONObject().apply {
             put("type", "ack")
             put("msg_id", "a1")
@@ -207,16 +216,18 @@ class MailboxMessageTest {
 
     @Test
     fun `ack success parses status with and without reason`() {
-        val withReason = MailboxInbound.parse(
-            ackJson("success", "delivered"),
-        ) as MailboxInbound.Ack
+        val withReason =
+            MailboxInbound.parse(
+                ackJson("success", "delivered"),
+            ) as MailboxInbound.Ack
         assertEquals("a1", withReason.msgId)
         assertEquals(MailboxAckStatus.SUCCESS, withReason.status)
         assertEquals("delivered", withReason.reason)
 
-        val withoutReason = MailboxInbound.parse(
-            ackJson("success", null),
-        ) as MailboxInbound.Ack
+        val withoutReason =
+            MailboxInbound.parse(
+                ackJson("success", null),
+            ) as MailboxInbound.Ack
         assertEquals(MailboxAckStatus.SUCCESS, withoutReason.status)
         assertNull(withoutReason.reason)
         assertEquals(MailboxMessageType.ACK, withoutReason.type)
@@ -224,24 +235,27 @@ class MailboxMessageTest {
 
     @Test
     fun `ack error parses status with and without reason`() {
-        val withReason = MailboxInbound.parse(
-            ackJson("error", "register write rejected"),
-        ) as MailboxInbound.Ack
+        val withReason =
+            MailboxInbound.parse(
+                ackJson("error", "register write rejected"),
+            ) as MailboxInbound.Ack
         assertEquals(MailboxAckStatus.ERROR, withReason.status)
         assertEquals("register write rejected", withReason.reason)
 
-        val withoutReason = MailboxInbound.parse(
-            ackJson("error", null),
-        ) as MailboxInbound.Ack
+        val withoutReason =
+            MailboxInbound.parse(
+                ackJson("error", null),
+            ) as MailboxInbound.Ack
         assertEquals(MailboxAckStatus.ERROR, withoutReason.status)
         assertNull(withoutReason.reason)
     }
 
     @Test
     fun `ack with unknown status parses status null`() {
-        val ack = MailboxInbound.parse(
-            ackJson("bogus", null),
-        ) as MailboxInbound.Ack
+        val ack =
+            MailboxInbound.parse(
+                ackJson("bogus", null),
+            ) as MailboxInbound.Ack
         assertNull(ack.status)
     }
 
@@ -249,18 +263,20 @@ class MailboxMessageTest {
 
     @Test
     fun `status parses state with and without detail`() {
-        val withDetail = MailboxInbound.parse(
-            JSONObject()
-                .put("type", "status")
-                .put("state", "synced")
-                .put("detail", "3 units"),
-        ) as MailboxInbound.Status
+        val withDetail =
+            MailboxInbound.parse(
+                JSONObject()
+                    .put("type", "status")
+                    .put("state", "synced")
+                    .put("detail", "3 units"),
+            ) as MailboxInbound.Status
         assertEquals("synced", withDetail.state)
         assertEquals("3 units", withDetail.detail)
 
-        val bare = MailboxInbound.parse(
-            JSONObject().put("type", "status").put("state", "link_down"),
-        ) as MailboxInbound.Status
+        val bare =
+            MailboxInbound.parse(
+                JSONObject().put("type", "status").put("state", "link_down"),
+            ) as MailboxInbound.Status
         assertEquals("link_down", bare.state)
         assertNull(bare.detail)
         assertEquals(MailboxMessageType.STATUS, bare.type)
@@ -270,18 +286,20 @@ class MailboxMessageTest {
 
     @Test
     fun `error parses message and reason with reason fallback`() {
-        val full = MailboxInbound.parse(
-            JSONObject()
-                .put("type", "error")
-                .put("message", "malformed payload")
-                .put("reason", "ignored"),
-        ) as MailboxInbound.Error
+        val full =
+            MailboxInbound.parse(
+                JSONObject()
+                    .put("type", "error")
+                    .put("message", "malformed payload")
+                    .put("reason", "ignored"),
+            ) as MailboxInbound.Error
         assertEquals("malformed payload", full.message)
         assertEquals("ignored", full.reason)
 
-        val reasonOnly = MailboxInbound.parse(
-            JSONObject().put("type", "error").put("reason", "denied"),
-        ) as MailboxInbound.Error
+        val reasonOnly =
+            MailboxInbound.parse(
+                JSONObject().put("type", "error").put("reason", "denied"),
+            ) as MailboxInbound.Error
         assertEquals("denied", reasonOnly.message)
         assertEquals("denied", reasonOnly.reason)
         assertEquals(MailboxMessageType.ERROR, reasonOnly.type)
@@ -291,9 +309,10 @@ class MailboxMessageTest {
 
     @Test
     fun `unknown type parses to Unknown with type and raw preserved`() {
-        val msg = MailboxInbound.parse(
-            """{"type": "daemon_ping", "seq": 1}""",
-        )
+        val msg =
+            MailboxInbound.parse(
+                """{"type": "daemon_ping", "seq": 1}""",
+            )
         assertTrue(msg is MailboxInbound.Unknown)
         val unknown = msg as MailboxInbound.Unknown
         assertEquals("daemon_ping", unknown.type)
@@ -316,13 +335,15 @@ class MailboxMessageTest {
 
     @Test
     fun `write with typed payload serializes type msg_id register and payload object`() {
-        val frame = MailboxOutbound.Write(
-            msgId = "w1",
-            register = "system_status",
-            payload = MailboxPayload.Typed(
-                JSONObject().put("power", "on").put("mode", "cool"),
-            ),
-        )
+        val frame =
+            MailboxOutbound.Write(
+                msgId = "w1",
+                register = "system_status",
+                payload =
+                    MailboxPayload.Typed(
+                        JSONObject().put("power", "on").put("mode", "cool"),
+                    ),
+            )
         val json = JSONObject(frame.toJsonString())
         assertEquals("write", json.getString("type"))
         assertEquals("w1", json.getString("msg_id"))
@@ -336,11 +357,12 @@ class MailboxMessageTest {
 
     @Test
     fun `write with raw hex payload serializes payload as plain string`() {
-        val frame = MailboxOutbound.Write(
-            msgId = "w2",
-            register = "sensor_pairing",
-            payload = MailboxPayload.RawHex("0703181f30a00000000000000"),
-        )
+        val frame =
+            MailboxOutbound.Write(
+                msgId = "w2",
+                register = "sensor_pairing",
+                payload = MailboxPayload.RawHex("0703181f30a00000000000000"),
+            )
         val json = JSONObject(frame.toJsonString())
         assertEquals("0703181f30a00000000000000", json.getString("payload"))
         assertTrue(json.get("payload") is String)
@@ -348,14 +370,15 @@ class MailboxMessageTest {
 
     @Test
     fun `write with unit_type unit_id and zone serializes addressing fields`() {
-        val frame = MailboxOutbound.Write(
-            msgId = "w3",
-            register = "zone_state",
-            payload = MailboxPayload.Typed(JSONObject().put("open", true)),
-            unitType = "aircon",
-            unitId = "1",
-            zone = 3,
-        )
+        val frame =
+            MailboxOutbound.Write(
+                msgId = "w3",
+                register = "zone_state",
+                payload = MailboxPayload.Typed(JSONObject().put("open", true)),
+                unitType = "aircon",
+                unitId = "1",
+                zone = 3,
+            )
         val json = JSONObject(frame.toJsonString())
         assertEquals("aircon", json.getString("unit_type"))
         assertEquals("1", json.getString("unit_id"))
@@ -379,13 +402,14 @@ class MailboxMessageTest {
 
     @Test
     fun `read with unit_type unit_id and zone serializes addressing fields`() {
-        val frame = MailboxOutbound.Read(
-            msgId = "r2",
-            register = "zone_state",
-            unitType = "aircon",
-            unitId = "1",
-            zone = 2,
-        )
+        val frame =
+            MailboxOutbound.Read(
+                msgId = "r2",
+                register = "zone_state",
+                unitType = "aircon",
+                unitId = "1",
+                zone = 2,
+            )
         val json = JSONObject(frame.toJsonString())
         assertEquals("aircon", json.getString("unit_type"))
         assertEquals("1", json.getString("unit_id"))
@@ -396,10 +420,11 @@ class MailboxMessageTest {
 
     @Test
     fun `command resync serializes type msg_id and action`() {
-        val frame = MailboxOutbound.Command(
-            msgId = "c1",
-            action = MailboxCommandAction.RESYNC,
-        )
+        val frame =
+            MailboxOutbound.Command(
+                msgId = "c1",
+                action = MailboxCommandAction.RESYNC,
+            )
         val json = JSONObject(frame.toJsonString())
         assertEquals("command", json.getString("type"))
         assertEquals("c1", json.getString("msg_id"))
@@ -408,10 +433,11 @@ class MailboxMessageTest {
 
     @Test
     fun `command flush_unit serializes action`() {
-        val frame = MailboxOutbound.Command(
-            msgId = "c2",
-            action = MailboxCommandAction.FLUSH_UNIT,
-        )
+        val frame =
+            MailboxOutbound.Command(
+                msgId = "c2",
+                action = MailboxCommandAction.FLUSH_UNIT,
+            )
         val json = JSONObject(frame.toJsonString())
         assertEquals("command", json.getString("type"))
         assertEquals("flush_unit", json.getString("action"))

@@ -13,7 +13,6 @@ import com.air.advantage.aaservice.data.mailbox.OutboundMailboxAction
 import com.air.advantage.aaservice.receiver.AlertDialogReceiver
 import com.air.advantage.aaservice.util.PreferencesManager
 import com.air.advantage.aaservice.util.TransportMode
-import java.util.concurrent.TimeUnit
 import org.json.JSONObject
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -22,10 +21,21 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
-import org.mockito.kotlin.*
+import org.mockito.kotlin.any
+import org.mockito.kotlin.anyOrNull
+import org.mockito.kotlin.atLeastOnce
+import org.mockito.kotlin.doAnswer
+import org.mockito.kotlin.doNothing
+import org.mockito.kotlin.doReturn
+import org.mockito.kotlin.never
+import org.mockito.kotlin.reset
+import org.mockito.kotlin.spy
+import org.mockito.kotlin.verify
+import org.mockito.kotlin.whenever
 import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import java.util.concurrent.TimeUnit
 
 /**
  * B-6 (#78) service wiring: [UartForegroundService.attachMailboxWsClient] /
@@ -42,7 +52,6 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [33], manifest = Config.NONE)
 class UartForegroundServiceMailboxTest {
-
     private lateinit var service: UartForegroundService
     private lateinit var fakeClient: FakeMailboxWsClient
     private val capturedIntents = mutableListOf<Intent>()
@@ -405,23 +414,26 @@ class UartForegroundServiceMailboxTest {
         attachWithRouterSync()
         fakeClient.emitState(MailboxConnectionState.Connected)
         awaitIo()
-        fakeClient.nextWriteAck = MailboxInbound.Ack(
-            msgId = "err",
-            status = MailboxAckStatus.ERROR,
-            reason = "denied",
-            raw = JSONObject()
-                .put("type", MailboxMessageType.ACK)
-                .put("msg_id", "err")
-                .put("status", "error"),
-        )
+        fakeClient.nextWriteAck =
+            MailboxInbound.Ack(
+                msgId = "err",
+                status = MailboxAckStatus.ERROR,
+                reason = "denied",
+                raw =
+                    JSONObject()
+                        .put("type", MailboxMessageType.ACK)
+                        .put("msg_id", "err")
+                        .put("status", "error"),
+            )
 
         service.dispatchOutboundMailboxActions(
             listOf(
                 OutboundMailboxAction.Write(
                     register = "05",
-                    payload = MailboxPayload.Typed(
-                        JSONObject().put("power", "on").put("mode", "cool").put("fan", "high"),
-                    ),
+                    payload =
+                        MailboxPayload.Typed(
+                            JSONObject().put("power", "on").put("mode", "cool").put("fan", "high"),
+                        ),
                 ),
             ),
         )
@@ -442,7 +454,7 @@ class UartForegroundServiceMailboxTest {
 
         assertTrue(
             "mailbox inbound secure rawCan is not gated by deviceOpen or the mailbox state",
-            secureRawCanFrames().isNotEmpty()
+            secureRawCanFrames().isNotEmpty(),
         )
     }
 

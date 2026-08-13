@@ -9,7 +9,6 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class FrameParserTest {
-
     private val parser = FrameParser()
 
     // --- isAck / isNack ---

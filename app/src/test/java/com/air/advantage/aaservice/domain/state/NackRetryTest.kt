@@ -26,7 +26,6 @@ import org.junit.Test
  * `setCAN 1 2` and any rebuilt frame is observably different.
  */
 class NackRetryTest {
-
     private val sink = RecordingSink()
     private val typeBytes = "17".toByteArray(Charsets.UTF_8)
     private val appStoreBytes = "MyAir5".toByteArray(Charsets.UTF_8)
@@ -34,8 +33,7 @@ class NackRetryTest {
     private fun engine(pollTags: List<String> = listOf("getClock")): UartDispatchEngine =
         UartDispatchEngine(pollTags, typeBytes, appStoreBytes, sink)
 
-    private fun frameOf(content: String): String =
-        "<U>$content</U=${CrcCalculator.computeHex(content)}>"
+    private fun frameOf(content: String): String = "<U>$content</U=${CrcCalculator.computeHex(content)}>"
 
     // failed-ack NACK routed to the engine's isNack branch (log-only in the reference)
     private val nackPayload = "<ack>0</ack>".toByteArray(Charsets.UTF_8)
@@ -124,7 +122,7 @@ class NackRetryTest {
         assertEquals(
             "empty CAN queues must fall through to poll instead of empty setCAN",
             frameOf("getClock"),
-            afterClear
+            afterClear,
         )
     }
 
@@ -156,7 +154,10 @@ class NackRetryTest {
         val pollData = mutableListOf<Pair<String, ByteArray>>()
         val rawCan = mutableListOf<ByteArray>()
 
-        override fun onPollData(tag: String, payload: ByteArray) {
+        override fun onPollData(
+            tag: String,
+            payload: ByteArray,
+        ) {
             pollData.add(tag to payload)
         }
 

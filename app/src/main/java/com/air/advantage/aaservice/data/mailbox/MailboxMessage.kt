@@ -29,17 +29,19 @@ enum class MailboxAckStatus {
     ;
 
     companion object {
-        fun fromWire(value: String?): MailboxAckStatus? = when (value) {
-            "success" -> SUCCESS
-            "error" -> ERROR
-            else -> null
-        }
+        fun fromWire(value: String?): MailboxAckStatus? =
+            when (value) {
+                "success" -> SUCCESS
+                "error" -> ERROR
+                else -> null
+            }
     }
 
-    fun toWire(): String = when (this) {
-        SUCCESS -> "success"
-        ERROR -> "error"
-    }
+    fun toWire(): String =
+        when (this) {
+            SUCCESS -> "success"
+            ERROR -> "error"
+        }
 }
 
 /** Payload of an outbound [`MailboxOutbound.Write`] frame — typed object or raw hex string. */
@@ -152,40 +154,46 @@ sealed class MailboxInbound {
                         raw = json,
                     )
                 }
-                MailboxMessageType.EVENT -> Event(
-                    unitType = json.optStringOrNull("unit_type"),
-                    unitId = json.optStringOrNull("unit_id"),
-                    register = json.optStringOrNull("register"),
-                    zone = json.optIntOrNull("zone"),
-                    payload = json.optJSONObject("payload"),
-                    raw = json,
-                )
-                MailboxMessageType.READ_RESULT -> ReadResult(
-                    msgId = json.optStringOrNull("msg_id"),
-                    unitType = json.optStringOrNull("unit_type"),
-                    unitId = json.optStringOrNull("unit_id"),
-                    register = json.optStringOrNull("register"),
-                    zone = json.optIntOrNull("zone"),
-                    payload = json.optJSONObject("payload"),
-                    raw = json,
-                )
-                MailboxMessageType.ACK -> Ack(
-                    msgId = json.optStringOrNull("msg_id"),
-                    status = MailboxAckStatus.fromWire(json.optStringOrNull("status")),
-                    reason = json.optStringOrNull("reason"),
-                    raw = json,
-                )
-                MailboxMessageType.STATUS -> Status(
-                    state = json.optStringOrNull("state"),
-                    detail = json.optStringOrNull("detail"),
-                    raw = json,
-                )
-                MailboxMessageType.ERROR -> Error(
-                    message = json.optStringOrNull("message")
-                        ?: json.optStringOrNull("reason"),
-                    reason = json.optStringOrNull("reason"),
-                    raw = json,
-                )
+                MailboxMessageType.EVENT ->
+                    Event(
+                        unitType = json.optStringOrNull("unit_type"),
+                        unitId = json.optStringOrNull("unit_id"),
+                        register = json.optStringOrNull("register"),
+                        zone = json.optIntOrNull("zone"),
+                        payload = json.optJSONObject("payload"),
+                        raw = json,
+                    )
+                MailboxMessageType.READ_RESULT ->
+                    ReadResult(
+                        msgId = json.optStringOrNull("msg_id"),
+                        unitType = json.optStringOrNull("unit_type"),
+                        unitId = json.optStringOrNull("unit_id"),
+                        register = json.optStringOrNull("register"),
+                        zone = json.optIntOrNull("zone"),
+                        payload = json.optJSONObject("payload"),
+                        raw = json,
+                    )
+                MailboxMessageType.ACK ->
+                    Ack(
+                        msgId = json.optStringOrNull("msg_id"),
+                        status = MailboxAckStatus.fromWire(json.optStringOrNull("status")),
+                        reason = json.optStringOrNull("reason"),
+                        raw = json,
+                    )
+                MailboxMessageType.STATUS ->
+                    Status(
+                        state = json.optStringOrNull("state"),
+                        detail = json.optStringOrNull("detail"),
+                        raw = json,
+                    )
+                MailboxMessageType.ERROR ->
+                    Error(
+                        message =
+                            json.optStringOrNull("message")
+                                ?: json.optStringOrNull("reason"),
+                        reason = json.optStringOrNull("reason"),
+                        raw = json,
+                    )
                 else -> Unknown(type = type, raw = json)
             }
         }
@@ -217,18 +225,19 @@ sealed class MailboxOutbound {
     ) : MailboxOutbound() {
         override val type: String get() = MailboxMessageType.WRITE
 
-        override fun toJson(): JSONObject = JSONObject().apply {
-            put("type", type)
-            put("msg_id", msgId)
-            put("register", register)
-            when (payload) {
-                is MailboxPayload.Typed -> put("payload", payload.payload)
-                is MailboxPayload.RawHex -> put("payload", payload.hex)
+        override fun toJson(): JSONObject =
+            JSONObject().apply {
+                put("type", type)
+                put("msg_id", msgId)
+                put("register", register)
+                when (payload) {
+                    is MailboxPayload.Typed -> put("payload", payload.payload)
+                    is MailboxPayload.RawHex -> put("payload", payload.hex)
+                }
+                unitType?.let { put("unit_type", it) }
+                unitId?.let { put("unit_id", it) }
+                zone?.let { put("zone", it) }
             }
-            unitType?.let { put("unit_type", it) }
-            unitId?.let { put("unit_id", it) }
-            zone?.let { put("zone", it) }
-        }
     }
 
     /**
@@ -243,14 +252,15 @@ sealed class MailboxOutbound {
     ) : MailboxOutbound() {
         override val type: String get() = MailboxMessageType.READ
 
-        override fun toJson(): JSONObject = JSONObject().apply {
-            put("type", type)
-            put("msg_id", msgId)
-            put("register", register)
-            unitType?.let { put("unit_type", it) }
-            unitId?.let { put("unit_id", it) }
-            zone?.let { put("zone", it) }
-        }
+        override fun toJson(): JSONObject =
+            JSONObject().apply {
+                put("type", type)
+                put("msg_id", msgId)
+                put("register", register)
+                unitType?.let { put("unit_type", it) }
+                unitId?.let { put("unit_id", it) }
+                zone?.let { put("zone", it) }
+            }
     }
 
     /** One-shot broker command ([`MailboxCommandAction`]). */
@@ -260,11 +270,12 @@ sealed class MailboxOutbound {
     ) : MailboxOutbound() {
         override val type: String get() = MailboxMessageType.COMMAND
 
-        override fun toJson(): JSONObject = JSONObject().apply {
-            put("type", type)
-            put("msg_id", msgId)
-            put("action", action)
-        }
+        override fun toJson(): JSONObject =
+            JSONObject().apply {
+                put("type", type)
+                put("msg_id", msgId)
+                put("action", action)
+            }
     }
 }
 

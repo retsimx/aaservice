@@ -13,9 +13,9 @@ import javax.inject.Singleton
 @Module
 @InstallIn(SingletonComponent::class)
 object ServiceModule {
-
     @Provides
     @Singleton
-    fun provideUartDataSource(@ApplicationContext context: Context): UartDataSource =
-        UsbAccessoryDataSource(context)
+    fun provideUartDataSource(
+        @ApplicationContext context: Context,
+    ): UartDataSource = UsbAccessoryDataSource(context)
 }

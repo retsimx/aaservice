@@ -65,24 +65,27 @@ data class ZoneConfigDto(
     val constantZoneIds: List<Int>,
     val filterCleanRequired: Boolean,
 ) {
-    fun toJson(): JSONObject = JSONObject().apply {
-        put("header", header)
-        put("total_zones", totalZones)
-        put("constant_zones", constantZones)
-        put("constant_zone_ids", JSONArray(constantZoneIds))
-        put("filter_clean_required", filterCleanRequired)
-    }
+    fun toJson(): JSONObject =
+        JSONObject().apply {
+            put("header", header)
+            put("total_zones", totalZones)
+            put("constant_zones", constantZones)
+            put("constant_zone_ids", JSONArray(constantZoneIds))
+            put("filter_clean_required", filterCleanRequired)
+        }
 
     companion object {
-        fun fromJson(json: JSONObject): ZoneConfigDto = ZoneConfigDto(
-            header = json.optInt("header"),
-            totalZones = json.optInt("total_zones"),
-            constantZones = json.optInt("constant_zones"),
-            constantZoneIds = json.optJSONArray("constant_zone_ids")?.let { arr ->
-                buildList { for (i in 0 until arr.length()) add(arr.optInt(i)) }
-            } ?: emptyList(),
-            filterCleanRequired = json.optBoolean("filter_clean_required"),
-        )
+        fun fromJson(json: JSONObject): ZoneConfigDto =
+            ZoneConfigDto(
+                header = json.optInt("header"),
+                totalZones = json.optInt("total_zones"),
+                constantZones = json.optInt("constant_zones"),
+                constantZoneIds =
+                    json.optJSONArray("constant_zone_ids")?.let { arr ->
+                        buildList { for (i in 0 until arr.length()) add(arr.optInt(i)) }
+                    } ?: emptyList(),
+                filterCleanRequired = json.optBoolean("filter_clean_required"),
+            )
     }
 }
 
@@ -93,20 +96,22 @@ data class UnitActivationDto(
     val dictFwMajor: Int,
     val dictFwMinor: Int,
 ) {
-    fun toJson(): JSONObject = JSONObject().apply {
-        put("unit_type", unitType)
-        put("activation_status", activationStatus)
-        put("dict_fw_major", dictFwMajor)
-        put("dict_fw_minor", dictFwMinor)
-    }
+    fun toJson(): JSONObject =
+        JSONObject().apply {
+            put("unit_type", unitType)
+            put("activation_status", activationStatus)
+            put("dict_fw_major", dictFwMajor)
+            put("dict_fw_minor", dictFwMinor)
+        }
 
     companion object {
-        fun fromJson(json: JSONObject): UnitActivationDto = UnitActivationDto(
-            unitType = json.optString("unit_type"),
-            activationStatus = json.optString("activation_status"),
-            dictFwMajor = json.optInt("dict_fw_major"),
-            dictFwMinor = json.optInt("dict_fw_minor"),
-        )
+        fun fromJson(json: JSONObject): UnitActivationDto =
+            UnitActivationDto(
+                unitType = json.optString("unit_type"),
+                activationStatus = json.optString("activation_status"),
+                dictFwMajor = json.optInt("dict_fw_major"),
+                dictFwMinor = json.optInt("dict_fw_minor"),
+            )
     }
 }
 
@@ -118,22 +123,24 @@ data class ZoneStateDto(
     val targetTempC: Double,
     val measuredTempC: Double,
 ) {
-    fun toJson(): JSONObject = JSONObject().apply {
-        put("open", open)
-        put("damper_pct", damperPct)
-        put("sensor_type", sensorType)
-        put("target_temp_c", targetTempC)
-        put("measured_temp_c", measuredTempC)
-    }
+    fun toJson(): JSONObject =
+        JSONObject().apply {
+            put("open", open)
+            put("damper_pct", damperPct)
+            put("sensor_type", sensorType)
+            put("target_temp_c", targetTempC)
+            put("measured_temp_c", measuredTempC)
+        }
 
     companion object {
-        fun fromJson(json: JSONObject): ZoneStateDto = ZoneStateDto(
-            open = json.optBoolean("open"),
-            damperPct = json.optInt("damper_pct"),
-            sensorType = json.optString("sensor_type"),
-            targetTempC = json.optDouble("target_temp_c"),
-            measuredTempC = json.optDouble("measured_temp_c"),
-        )
+        fun fromJson(json: JSONObject): ZoneStateDto =
+            ZoneStateDto(
+                open = json.optBoolean("open"),
+                damperPct = json.optInt("damper_pct"),
+                sensorType = json.optString("sensor_type"),
+                targetTempC = json.optDouble("target_temp_c"),
+                measuredTempC = json.optDouble("measured_temp_c"),
+            )
     }
 }
 
@@ -146,24 +153,26 @@ data class ZoneLimitsDto(
     val zoneError: Int,
     val rssi: Int,
 ) {
-    fun toJson(): JSONObject = JSONObject().apply {
-        put("min_damper", minDamper)
-        put("max_damper", maxDamper)
-        put("motion_status", motionStatus)
-        put("motion_config", motionConfig)
-        put("zone_error", zoneError)
-        put("rssi", rssi)
-    }
+    fun toJson(): JSONObject =
+        JSONObject().apply {
+            put("min_damper", minDamper)
+            put("max_damper", maxDamper)
+            put("motion_status", motionStatus)
+            put("motion_config", motionConfig)
+            put("zone_error", zoneError)
+            put("rssi", rssi)
+        }
 
     companion object {
-        fun fromJson(json: JSONObject): ZoneLimitsDto = ZoneLimitsDto(
-            minDamper = json.optInt("min_damper"),
-            maxDamper = json.optInt("max_damper"),
-            motionStatus = json.optInt("motion_status"),
-            motionConfig = json.optInt("motion_config"),
-            zoneError = json.optInt("zone_error"),
-            rssi = json.optInt("rssi"),
-        )
+        fun fromJson(json: JSONObject): ZoneLimitsDto =
+            ZoneLimitsDto(
+                minDamper = json.optInt("min_damper"),
+                maxDamper = json.optInt("max_damper"),
+                motionStatus = json.optInt("motion_status"),
+                motionConfig = json.optInt("motion_config"),
+                zoneError = json.optInt("zone_error"),
+                rssi = json.optInt("rssi"),
+            )
     }
 }
 
@@ -177,26 +186,28 @@ data class SystemStatusDto(
     val freshAir: String,
     val rfSysId: Int,
 ) {
-    fun toJson(): JSONObject = JSONObject().apply {
-        put("power", power)
-        put("mode", mode)
-        put("fan", fan)
-        put("target_temp_c", targetTempC)
-        put("myzone_id", myzoneId)
-        put("fresh_air", freshAir)
-        put("rf_sys_id", rfSysId)
-    }
+    fun toJson(): JSONObject =
+        JSONObject().apply {
+            put("power", power)
+            put("mode", mode)
+            put("fan", fan)
+            put("target_temp_c", targetTempC)
+            put("myzone_id", myzoneId)
+            put("fresh_air", freshAir)
+            put("rf_sys_id", rfSysId)
+        }
 
     companion object {
-        fun fromJson(json: JSONObject): SystemStatusDto = SystemStatusDto(
-            power = json.optString("power"),
-            mode = json.optString("mode"),
-            fan = json.optString("fan"),
-            targetTempC = json.optDouble("target_temp_c"),
-            myzoneId = json.optInt("myzone_id"),
-            freshAir = freshAirFromJson(json),
-            rfSysId = json.optInt("rf_sys_id"),
-        )
+        fun fromJson(json: JSONObject): SystemStatusDto =
+            SystemStatusDto(
+                power = json.optString("power"),
+                mode = json.optString("mode"),
+                fan = json.optString("fan"),
+                targetTempC = json.optDouble("target_temp_c"),
+                myzoneId = json.optInt("myzone_id"),
+                freshAir = freshAirFromJson(json),
+                rfSysId = json.optInt("rf_sys_id"),
+            )
 
         /** Tolerates both the legacy boolean and the tri-state string wire shape. */
         private fun freshAirFromJson(json: JSONObject): String {
@@ -204,9 +215,10 @@ data class SystemStatusDto(
             val value = json.opt("fresh_air")
             return when (value) {
                 is Boolean -> if (value) "on" else "off"
-                else -> json.optString("fresh_air", "none").lowercase().let {
-                    if (it in FRESH_AIR_VALUES) it else "none"
-                }
+                else ->
+                    json.optString("fresh_air", "none").lowercase().let {
+                        if (it in FRESH_AIR_VALUES) it else "none"
+                    }
             }
         }
 
@@ -221,20 +233,22 @@ data class FirmwareDto(
     val cbType: Int,
     val rfFwMajor: Int,
 ) {
-    fun toJson(): JSONObject = JSONObject().apply {
-        put("fw_major", fwMajor)
-        put("fw_minor", fwMinor)
-        put("cb_type", cbType)
-        put("rf_fw_major", rfFwMajor)
-    }
+    fun toJson(): JSONObject =
+        JSONObject().apply {
+            put("fw_major", fwMajor)
+            put("fw_minor", fwMinor)
+            put("cb_type", cbType)
+            put("rf_fw_major", rfFwMajor)
+        }
 
     companion object {
-        fun fromJson(json: JSONObject): FirmwareDto = FirmwareDto(
-            fwMajor = json.optInt("fw_major"),
-            fwMinor = json.optInt("fw_minor"),
-            cbType = json.optInt("cb_type"),
-            rfFwMajor = json.optInt("rf_fw_major"),
-        )
+        fun fromJson(json: JSONObject): FirmwareDto =
+            FirmwareDto(
+                fwMajor = json.optInt("fw_major"),
+                fwMinor = json.optInt("fw_minor"),
+                cbType = json.optInt("cb_type"),
+                rfFwMajor = json.optInt("rf_fw_major"),
+            )
     }
 }
 
@@ -242,14 +256,16 @@ data class FirmwareDto(
 data class SystemErrorDto(
     val errorCode: String,
 ) {
-    fun toJson(): JSONObject = JSONObject().apply {
-        put("error_code", errorCode)
-    }
+    fun toJson(): JSONObject =
+        JSONObject().apply {
+            put("error_code", errorCode)
+        }
 
     companion object {
-        fun fromJson(json: JSONObject): SystemErrorDto = SystemErrorDto(
-            errorCode = json.optString("error_code"),
-        )
+        fun fromJson(json: JSONObject): SystemErrorDto =
+            SystemErrorDto(
+                errorCode = json.optString("error_code"),
+            )
     }
 }
 
@@ -259,18 +275,20 @@ data class ActivationCodeDto(
     val unlockCode: String,
     val activationDays: Int,
 ) {
-    fun toJson(): JSONObject = JSONObject().apply {
-        put("action", action)
-        put("unlock_code", unlockCode)
-        put("activation_days", activationDays)
-    }
+    fun toJson(): JSONObject =
+        JSONObject().apply {
+            put("action", action)
+            put("unlock_code", unlockCode)
+            put("activation_days", activationDays)
+        }
 
     companion object {
-        fun fromJson(json: JSONObject): ActivationCodeDto = ActivationCodeDto(
-            action = json.optString("action"),
-            unlockCode = json.optString("unlock_code"),
-            activationDays = json.optInt("activation_days"),
-        )
+        fun fromJson(json: JSONObject): ActivationCodeDto =
+            ActivationCodeDto(
+                action = json.optString("action"),
+                unlockCode = json.optString("unlock_code"),
+                activationDays = json.optInt("activation_days"),
+            )
     }
 }
 
@@ -291,18 +309,20 @@ data class SensorPairingReadDto(
     val pairing: Boolean,
     val sensorRev: Int,
 ) {
-    fun toJson(): JSONObject = JSONObject().apply {
-        put("sensor_uid", sensorUid)
-        put("pairing", pairing)
-        put("sensor_rev", sensorRev)
-    }
+    fun toJson(): JSONObject =
+        JSONObject().apply {
+            put("sensor_uid", sensorUid)
+            put("pairing", pairing)
+            put("sensor_rev", sensorRev)
+        }
 
     companion object {
-        fun fromJson(json: JSONObject): SensorPairingReadDto = SensorPairingReadDto(
-            sensorUid = json.optString("sensor_uid"),
-            pairing = json.optBoolean("pairing"),
-            sensorRev = json.optInt("sensor_rev"),
-        )
+        fun fromJson(json: JSONObject): SensorPairingReadDto =
+            SensorPairingReadDto(
+                sensorUid = json.optString("sensor_uid"),
+                pairing = json.optBoolean("pairing"),
+                sensorRev = json.optInt("sensor_rev"),
+            )
     }
 }
 
@@ -311,16 +331,18 @@ data class SensorPairingWriteDto(
     val sensorUid: String,
     val zone: Int,
 ) {
-    fun toJson(): JSONObject = JSONObject().apply {
-        put("sensor_uid", sensorUid)
-        put("zone", zone)
-    }
+    fun toJson(): JSONObject =
+        JSONObject().apply {
+            put("sensor_uid", sensorUid)
+            put("zone", zone)
+        }
 
     companion object {
-        fun fromJson(json: JSONObject): SensorPairingWriteDto = SensorPairingWriteDto(
-            sensorUid = json.optString("sensor_uid"),
-            zone = json.optInt("zone"),
-        )
+        fun fromJson(json: JSONObject): SensorPairingWriteDto =
+            SensorPairingWriteDto(
+                sensorUid = json.optString("sensor_uid"),
+                zone = json.optInt("zone"),
+            )
     }
 }
 
@@ -328,14 +350,16 @@ data class SensorPairingWriteDto(
 data class InfoByteDto(
     val infoByte: Int,
 ) {
-    fun toJson(): JSONObject = JSONObject().apply {
-        put("info_byte", infoByte)
-    }
+    fun toJson(): JSONObject =
+        JSONObject().apply {
+            put("info_byte", infoByte)
+        }
 
     companion object {
-        fun fromJson(json: JSONObject): InfoByteDto = InfoByteDto(
-            infoByte = json.optInt("info_byte"),
-        )
+        fun fromJson(json: JSONObject): InfoByteDto =
+            InfoByteDto(
+                infoByte = json.optInt("info_byte"),
+            )
     }
 }
 
@@ -345,18 +369,20 @@ data class RfDevicePairingDto(
     val rfDeviceType: Int,
     val zoneChannel: Int,
 ) {
-    fun toJson(): JSONObject = JSONObject().apply {
-        put("pairing_control", pairingControl)
-        put("rf_device_type", rfDeviceType)
-        put("zone_channel", zoneChannel)
-    }
+    fun toJson(): JSONObject =
+        JSONObject().apply {
+            put("pairing_control", pairingControl)
+            put("rf_device_type", rfDeviceType)
+            put("zone_channel", zoneChannel)
+        }
 
     companion object {
-        fun fromJson(json: JSONObject): RfDevicePairingDto = RfDevicePairingDto(
-            pairingControl = json.optInt("pairing_control"),
-            rfDeviceType = json.optInt("rf_device_type"),
-            zoneChannel = json.optInt("zone_channel"),
-        )
+        fun fromJson(json: JSONObject): RfDevicePairingDto =
+            RfDevicePairingDto(
+                pairingControl = json.optInt("pairing_control"),
+                rfDeviceType = json.optInt("rf_device_type"),
+                zoneChannel = json.optInt("zone_channel"),
+            )
     }
 }
 
@@ -366,17 +392,19 @@ data class RfDeviceCalibrationDto(
     val channel: Int,
     val upDownPosition: Int,
 ) {
-    fun toJson(): JSONObject = JSONObject().apply {
-        put("calibration_control", calibrationControl)
-        put("channel", channel)
-        put("up_down_position", upDownPosition)
-    }
+    fun toJson(): JSONObject =
+        JSONObject().apply {
+            put("calibration_control", calibrationControl)
+            put("channel", channel)
+            put("up_down_position", upDownPosition)
+        }
 
     companion object {
-        fun fromJson(json: JSONObject): RfDeviceCalibrationDto = RfDeviceCalibrationDto(
-            calibrationControl = json.optInt("calibration_control"),
-            channel = json.optInt("channel"),
-            upDownPosition = json.optInt("up_down_position"),
-        )
+        fun fromJson(json: JSONObject): RfDeviceCalibrationDto =
+            RfDeviceCalibrationDto(
+                calibrationControl = json.optInt("calibration_control"),
+                channel = json.optInt("channel"),
+                upDownPosition = json.optInt("up_down_position"),
+            )
     }
 }
