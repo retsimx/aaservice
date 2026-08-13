@@ -23,6 +23,7 @@ import com.air.advantage.aaservice.data.mailbox.MailboxAckTimeoutException
 import com.air.advantage.aaservice.data.mailbox.MailboxCommandAction
 import com.air.advantage.aaservice.data.mailbox.MailboxConnectionState
 import com.air.advantage.aaservice.data.mailbox.MailboxInbound
+import com.air.advantage.aaservice.data.mailbox.MailboxPayload
 import com.air.advantage.aaservice.data.mailbox.MailboxWsClient
 import com.air.advantage.aaservice.data.mailbox.MailboxWsClientFactory
 import com.air.advantage.aaservice.data.mailbox.MyAir5OutboundMailboxMapper
@@ -777,7 +778,10 @@ class UartForegroundService : Service() {
                     when (action) {
                         is OutboundMailboxAction.Write -> {
                             try {
-                                val ack = client.sendWrite(action.register, action.payload)
+                                val ack = client.sendWrite(
+                                    action.register,
+                                    MailboxPayload.Typed(action.payload),
+                                )
                                 if (ack.status != MailboxAckStatus.SUCCESS) {
                                     Log.e(
                                         TAG,

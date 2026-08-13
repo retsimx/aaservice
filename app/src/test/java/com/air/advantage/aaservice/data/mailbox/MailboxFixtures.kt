@@ -16,6 +16,11 @@ object MailboxFixtures {
     fun ackError(msgId: String): String =
         load("mailbox/ack_error.json").replace("__MSG_ID__", msgId)
 
+    fun readResult(msgId: String, register: String): String =
+        load("mailbox/read_result.json")
+            .replace("__MSG_ID__", msgId)
+            .replace("__REGISTER__", register)
+
     fun protocolError(): String = load("mailbox/protocol_error.json")
 
     fun unknownType(): String = load("mailbox/unknown_type.json")

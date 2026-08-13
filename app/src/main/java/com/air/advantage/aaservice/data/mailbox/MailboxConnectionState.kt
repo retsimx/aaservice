@@ -13,6 +13,11 @@ package com.air.advantage.aaservice.data.mailbox
  * design §3. [Error] is reserved for future client-local failures distinct from
  * transport drops and from protocol `error` frames on
  * [MailboxWsClient.incoming]. Downstream (A2) must treat drops as Disconnected.
+ *
+ * ## Link health vs connection state
+ * Daemon/link health (broker `status` frames) is exposed via
+ * [MailboxWsClient.daemonStatus], not through this state type — a live socket
+ * with a degraded link still reports [Connected] here.
  */
 sealed class MailboxConnectionState {
     data object Idle : MailboxConnectionState()

@@ -1,0 +1,11 @@
+{
+  "type": "read_result",
+  "msg_id": "__MSG_ID__",
+  "unit_type": "07",
+  "unit_id": "181f3",
+  "register": "__REGISTER__",
+  "payload": {
+    "power": true,
+    "mode": "cool"
+  }
+}
