@@ -13,6 +13,22 @@ import org.json.JSONObject
  * so the existing `broadcastData` / `DataCacheRepository` / `GetSystemDataTransformer`
  * pipeline can stay unchanged (design doc `41-mailbox-to-message-from-cb.md`).
  *
+ * **Best-effort, secondary to rawCan.** This mapped XML is broadcast as a best-effort
+ * companion channel and is SECONDARY to the `MESSAGE_FROM_CB_SECURE` rawCan channel —
+ * MyAir5 fills its `:2025` aircons from secure rawCan, not from this XML. Verified
+ * against the real consumer (the MyAir5 tablet app, `com.air.advantage.myair5`,
+ * decompiled): the mapped XML is rejected before parsing by
+ * `com.air.advantage.uart.Xml2JsonFunctions`, which requires the stock `iZS10.3` root
+ * start/stop tags in every `MESSAGE_FROM_CB` payload ("XML failed - no start and stop
+ * tags"); additionally `parseXmlToData` requires mandatory
+ * `name` / `zoneStationHasUnitControl` / `airconOnOff` / `fanSpeed` / numeric `mode` /
+ * `centralDesiredTemp` / `numberOfZones` / `zsConstantZone1..3` and `parseZoneXml`
+ * requires mandatory `name` — none of which this mapper emits. Zone `name` has no
+ * register representation, so stock-shaped XML cannot be synthesized from daemon data.
+ * Consequently this XML is inert for the consumer (rejected → discarded) and must not
+ * be claimed as MyAir5-compatible. The path is scheduled for REMOVAL in issue B-11
+ * (retsimx/aaservice#93, blocked by B-10 #91) — the rawCan-only inbound contract.
+ *
  * Pure Kotlin — no Android framework imports. `org.json.JSONObject` is used because
  * [MailboxInbound] already parses frames with it (see `MailboxMessage.kt`).
  */

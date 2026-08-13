@@ -15,7 +15,7 @@
         "1": {
           "open": true,
           "damper_pct": 100,
-          "sensor_type": "temp",
+          "sensor_type": "rf",
           "target_temp_c": 22.5,
           "measured_temp_c": 23.1
         }
