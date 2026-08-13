@@ -13,8 +13,8 @@ android {
         applicationId = "com.air.advantage.aaservice2"
         minSdk = 19
         targetSdk = 30
-        versionCode = 4151
-        versionName = "14.150-rebuild.1"
+        versionCode = 4152
+        versionName = "14.150-rebuild.2"
         vectorDrawables {
             useSupportLibrary = true
         }
