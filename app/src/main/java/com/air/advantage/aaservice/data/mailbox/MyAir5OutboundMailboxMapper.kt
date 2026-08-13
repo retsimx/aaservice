@@ -57,6 +57,13 @@ object MyAir5OutboundMailboxMapper {
     /** Stock reg-06 flush token; any reg-06 CAN token triggers resync. */
     const val REG06_FLUSH_TOKEN = "0701000000600000000000000"
 
+    /**
+     * Registers the daemon treats as internal (`07`) or read-only
+     * (`02`, `06`, `08`, `0a`) in its write policy; raw token writes to
+     * these are dropped instead of rejected with an ERROR ack.
+     */
+    val DAEMON_NON_WRITABLE_REGISTERS = setOf("07", "02", "06", "08", "0a")
+
     private val ZONE_KEY = Regex("^z(\\d{1,2})$", RegexOption.IGNORE_CASE)
 
     private val MODE_BY_ID = mapOf(
@@ -117,12 +124,21 @@ object MyAir5OutboundMailboxMapper {
             val parsed = parseCanToken(token) ?: return@mapNotNull null
             when (parsed.type) {
                 "02" -> null
-                "07", "08" -> OutboundMailboxAction.Write(
-                    register = parsed.register,
-                    payload = MailboxPayload.RawHex(parsed.data),
-                    unitType = parsed.type,
-                    unitId = parsed.uid,
-                )
+                "07", "08" -> {
+                    // Registers the daemon treats as internal or read-only
+                    // (aa-mailbox write policy): writes are rejected with an
+                    // ERROR ack, so drop them here to avoid spurious alerts.
+                    if (parsed.register in DAEMON_NON_WRITABLE_REGISTERS) {
+                        null
+                    } else {
+                        OutboundMailboxAction.Write(
+                            register = parsed.register,
+                            payload = MailboxPayload.RawHex(parsed.data),
+                            unitType = parsed.type,
+                            unitId = parsed.uid,
+                        )
+                    }
+                }
                 else -> null
             }
         }
@@ -197,8 +213,9 @@ object MyAir5OutboundMailboxMapper {
         }
         if (info.has("freshAir") && !info.isNull("freshAir")) {
             when (info.optString("freshAir").lowercase()) {
-                "on" -> payload.put("fresh_air", true)
-                "off" -> payload.put("fresh_air", false)
+                "on" -> payload.put("fresh_air", "on")
+                "off" -> payload.put("fresh_air", "off")
+                "none" -> payload.put("fresh_air", "none")
             }
         }
         if (payload.length() == 0) return null

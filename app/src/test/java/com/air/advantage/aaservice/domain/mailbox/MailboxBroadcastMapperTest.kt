@@ -58,7 +58,7 @@ class MailboxBroadcastMapperTest {
         assertTrue("fan mapped", xml.contains("<fan>auto</fan>"))
         assertTrue("target_temp_c mapped", xml.contains("<setTemp>22.5</setTemp>"))
         assertTrue("myzone_id mapped", xml.contains("<myZone>1</myZone>"))
-        assertTrue("fresh_air mapped", xml.contains("<freshAir>off</freshAir>"))
+        assertTrue("FAstatus mapped", xml.contains("<FAstatus>1</FAstatus>"))
     }
 
     // ── snapshot → zones ──────────────────────────────────────────
