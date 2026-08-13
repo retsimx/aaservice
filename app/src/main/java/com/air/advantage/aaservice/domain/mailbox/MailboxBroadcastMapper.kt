@@ -164,7 +164,14 @@ object MailboxBroadcastMapper {
         status.optStringOrNull("fan")?.let { mutations += "fan" to it }
         status.optDoubleOrNull("target_temp_c")?.let { mutations += "setTemp" to it.toString() }
         status.optIntOrNull("myzone_id")?.let { mutations += "myZone" to it.toString() }
-        status.optBooleanOrNull("fresh_air")?.let { mutations += "freshAir" to onOff(it) }
+        status.optStringOrNull("fresh_air")?.let { value ->
+            val fa = when (value.lowercase()) {
+                "on" -> "2"
+                "off" -> "1"
+                else -> "0"
+            }
+            mutations += "FAstatus" to fa
+        }
         return mutations
     }
 

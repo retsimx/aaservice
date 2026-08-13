@@ -174,7 +174,7 @@ data class SystemStatusDto(
     val fan: String,
     val targetTempC: Double,
     val myzoneId: Int,
-    val freshAir: Boolean,
+    val freshAir: String,
     val rfSysId: Int,
 ) {
     fun toJson(): JSONObject = JSONObject().apply {
@@ -194,9 +194,23 @@ data class SystemStatusDto(
             fan = json.optString("fan"),
             targetTempC = json.optDouble("target_temp_c"),
             myzoneId = json.optInt("myzone_id"),
-            freshAir = json.optBoolean("fresh_air"),
+            freshAir = freshAirFromJson(json),
             rfSysId = json.optInt("rf_sys_id"),
         )
+
+        /** Tolerates both the legacy boolean and the tri-state string wire shape. */
+        private fun freshAirFromJson(json: JSONObject): String {
+            if (json.isNull("fresh_air") || !json.has("fresh_air")) return "none"
+            val value = json.opt("fresh_air")
+            return when (value) {
+                is Boolean -> if (value) "on" else "off"
+                else -> json.optString("fresh_air", "none").lowercase().let {
+                    if (it in FRESH_AIR_VALUES) it else "none"
+                }
+            }
+        }
+
+        private val FRESH_AIR_VALUES = setOf("none", "off", "on")
     }
 }
 
