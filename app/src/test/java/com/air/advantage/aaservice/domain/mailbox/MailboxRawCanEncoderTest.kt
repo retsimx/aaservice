@@ -65,6 +65,47 @@ class MailboxRawCanEncoderTest {
         assertEquals("getCAN 1 0703181f30605030403000000", MailboxRawCanEncoder.encodeEventToCan(event))
     }
 
+    /**
+     * Documented cb-daemon wire examples (issue #80 / cb-daemon docs) that must
+     * stay pinned byte-exact against encoder output:
+     *  - reg-05 system status: `0703<uid>0501010330000100` (uid placeholder)
+     *  - reg-06 firmware flush token: `0701000000600000000000000`
+     * Pinned below by the two following tests. Note the flush token uses dest
+     * `01` while the encoder hardcodes dest `03` (tablet), so the encoded flush
+     * record is `0703000000600000000000000` — identical in every byte except dest.
+     */
+
+    @Test
+    fun `reg 05 documented system status example encodes byte-exact`() {
+        // Documented example data `01010330000100` = power on(01), mode cool(01),
+        // fan high(03), set_temp_x2 0x30 (24.0 C), myzone_id 0, fresh_air off(01),
+        // rf_sys_id 0 — per the encoder's `[power][mode][fan][set_temp_x2][myzone][fresh][rf_sys]`
+        // layout. Encodes as the documented record `0703<181f3>0501010330000100`.
+        val event = event(
+            "05",
+            """{ "power": "on", "mode": "cool", "fan": "high", "target_temp_c": 24.0, "myzone_id": 0, "fresh_air": false, "rf_sys_id": 0 }""",
+        )
+        assertEquals("getCAN 1 0703181f30501010330000100", MailboxRawCanEncoder.encodeEventToCan(event))
+    }
+
+    @Test
+    fun `reg 06 flush token input encodes byte-exact record`() {
+        // The documented cb-daemon flush token `0701000000600000000000000` is
+        // type 07, dest 01, uid 00000, reg 06, all-zero firmware data (0/0/0/0).
+        // The encoder hardcodes dest 03 (tablet) and there is no full-record
+        // passthrough, so the flush input encodes as `0703000000600000000000000`:
+        // identical to the documented token in every byte except dest 01 -> 03.
+        val event = event(
+            "06",
+            """{ "fw_major": 0, "fw_minor": 0, "cb_type": 0, "rf_fw_major": 0 }""",
+            unitId = "00000",
+        )
+        val record = MailboxRawCanEncoder.encodeEventToCan(event)!!.removePrefix("getCAN 1 ")
+        assertEquals("0703000000600000000000000", record)
+        // Pin the documented token byte-exact: the only delta is the dest byte.
+        assertEquals("0701000000600000000000000".replaceRange(2, 4, "03"), record)
+    }
+
     @Test
     fun `reg 08 system error NUL pads error code to 5 ASCII`() {
         val event = event("08", """{ "error_code": "AA1" }""")
