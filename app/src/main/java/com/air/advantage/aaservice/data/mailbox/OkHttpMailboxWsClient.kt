@@ -36,7 +36,7 @@ import org.json.JSONObject
  * ## Session policy
  * - **Keepalive:** OkHttp `pingInterval` from [MailboxWsConfig.pingIntervalMs]
  *   (default [MailboxWsConfig.DEFAULT_PING_INTERVAL_MS] ≈ 30s).
- * - **Connected** only after the first `mailbox_snapshot` ([MailboxInbound.Snapshot]);
+ * - **Connected** only after the first `snapshot` ([MailboxInbound.Snapshot]);
  *   bare socket open alone leaves the client in [MailboxConnectionState.Connecting].
  * - Unexpected close / failure → [MailboxConnectionState.Disconnected], then
  *   **auto-reconnect** with exponential backoff from
@@ -55,7 +55,7 @@ import org.json.JSONObject
  * [connect] / [disconnect] schedule work on [scope]; collect [connectionState]
  * rather than assuming synchronous transitions.
  *
- * Ack wait: [sendUpdate] / [sendResync] throw [MailboxAckTimeoutException] on timeout
+ * Ack wait: [sendWrite] / [sendCommand] throw [MailboxAckTimeoutException] on timeout
  * (they do not synthesize an error [MailboxInbound.Ack]).
  */
 class OkHttpMailboxWsClient(
@@ -81,7 +81,7 @@ class OkHttpMailboxWsClient(
 
     private val _incoming = MutableSharedFlow<MailboxInbound>(
         // Replay last frame so UartForegroundService's collector, which attaches only
-        // after Connected (post-snapshot), still receives the mailbox_snapshot that
+        // after Connected (post-snapshot), still receives the snapshot that
         // carries system_status / zones for :2025.
         extraBufferCapacity = 64,
         replay = 1,
@@ -131,30 +131,24 @@ class OkHttpMailboxWsClient(
         }
     }
 
-    override suspend fun sendUpdate(
+    override suspend fun sendWrite(
         register: String,
         payload: JSONObject,
+        zone: Int?,
     ): MailboxInbound.Ack {
         val msgId = newMsgId()
-        val frame = MailboxOutbound.update(msgId, register, payload)
+        val frame = MailboxOutbound.Write(
+            msgId = msgId,
+            register = register,
+            payload = MailboxPayload.Typed(payload),
+            zone = zone,
+        )
         return sendAndAwaitAck(msgId, frame.toJsonString())
     }
 
-    override suspend fun sendResync(): MailboxInbound.Ack {
+    override suspend fun sendCommand(action: String): MailboxInbound.Ack {
         val msgId = newMsgId()
-        val frame = MailboxOutbound.resyncMailbox(msgId)
-        return sendAndAwaitAck(msgId, frame.toJsonString())
-    }
-
-    override suspend fun sendWriteCan(tokens: List<String>): MailboxInbound.Ack {
-        val msgId = newMsgId()
-        val frame = MailboxOutbound.writeCan(msgId, tokens)
-        return sendAndAwaitAck(msgId, frame.toJsonString())
-    }
-
-    override suspend fun sendDirect(payload: String): MailboxInbound.Ack {
-        val msgId = newMsgId()
-        val frame = MailboxOutbound.direct(msgId, payload)
+        val frame = MailboxOutbound.Command(msgId = msgId, action = action)
         return sendAndAwaitAck(msgId, frame.toJsonString())
     }
 
@@ -264,8 +258,8 @@ class OkHttpMailboxWsClient(
                 Log.w(TAG, "Mailbox protocol error: ${inbound.message}")
             }
             is MailboxInbound.Event -> Unit
-            is MailboxInbound.RawCan -> Unit
-            is MailboxInbound.DirectReply -> Unit
+            is MailboxInbound.ReadResult -> Unit
+            is MailboxInbound.Status -> Unit
         }
 
         if (!_incoming.tryEmit(inbound)) {

@@ -80,13 +80,13 @@ class OkHttpMailboxWsClientTest {
     }
 
     @Test
-    fun `sendUpdate awaits matching ack success by msg_id`() = runBlocking {
+    fun `sendWrite awaits matching ack success by msg_id`() = runBlocking {
         installAckingDispatcher(success = true)
         createClient(ackTimeoutMs = 2_000L)
         client.connect()
         awaitState { it is MailboxConnectionState.Connected }
 
-        val ack = client.sendUpdate(
+        val ack = client.sendWrite(
             register = "system_status",
             payload = JSONObject().put("airconOn", false),
         )
@@ -94,19 +94,19 @@ class OkHttpMailboxWsClientTest {
         assertEquals(MailboxAckStatus.SUCCESS, ack.status)
         assertFalse(ack.msgId.isNullOrBlank())
 
-        val outbound = awaitOutbound { it.optString("type") == MailboxMessageType.MAILBOX_UPDATE }
+        val outbound = awaitOutbound { it.optString("type") == MailboxMessageType.WRITE }
         assertEquals(ack.msgId, outbound.getString("msg_id"))
         assertEquals("system_status", outbound.getString("register"))
     }
 
     @Test
-    fun `sendUpdate surfaces matching ack error by msg_id`() = runBlocking {
+    fun `sendWrite surfaces matching ack error by msg_id`() = runBlocking {
         installAckingDispatcher(success = false)
         createClient(ackTimeoutMs = 2_000L)
         client.connect()
         awaitState { it is MailboxConnectionState.Connected }
 
-        val ack = client.sendUpdate(
+        val ack = client.sendWrite(
             register = "zone_config",
             payload = JSONObject().put("zones", 99),
         )
@@ -115,35 +115,35 @@ class OkHttpMailboxWsClientTest {
         assertEquals("register write rejected", ack.reason)
         assertFalse(ack.msgId.isNullOrBlank())
 
-        val outbound = awaitOutbound { it.optString("type") == MailboxMessageType.MAILBOX_UPDATE }
+        val outbound = awaitOutbound { it.optString("type") == MailboxMessageType.WRITE }
         assertEquals(ack.msgId, outbound.getString("msg_id"))
     }
 
     @Test
-    fun `sendResync awaits matching ack success by msg_id`() = runBlocking {
+    fun `sendCommand resync awaits matching ack success by msg_id`() = runBlocking {
         installAckingDispatcher(success = true)
         createClient(ackTimeoutMs = 2_000L)
         client.connect()
         awaitState { it is MailboxConnectionState.Connected }
 
-        val ack = client.sendResync()
+        val ack = client.sendCommand(MailboxCommandAction.RESYNC)
 
         assertEquals(MailboxAckStatus.SUCCESS, ack.status)
         assertFalse(ack.msgId.isNullOrBlank())
 
         val outbound = awaitOutbound { it.optString("type") == MailboxMessageType.COMMAND }
-        assertEquals(MailboxCommandAction.RESYNC_MAILBOX, outbound.getString("action"))
+        assertEquals(MailboxCommandAction.RESYNC, outbound.getString("action"))
         assertEquals(ack.msgId, outbound.getString("msg_id"))
     }
 
     @Test
-    fun `sendResync surfaces matching ack error by msg_id`() = runBlocking {
+    fun `sendCommand resync surfaces matching ack error by msg_id`() = runBlocking {
         installAckingDispatcher(success = false)
         createClient(ackTimeoutMs = 2_000L)
         client.connect()
         awaitState { it is MailboxConnectionState.Connected }
 
-        val ack = client.sendResync()
+        val ack = client.sendCommand(MailboxCommandAction.RESYNC)
 
         assertEquals(MailboxAckStatus.ERROR, ack.status)
         assertEquals("register write rejected", ack.reason)
@@ -299,9 +299,9 @@ class OkHttpMailboxWsClientTest {
         asInterface.connect()
         assertEquals(MailboxConnectionState.Connecting, asInterface.connectionState.value)
 
-        val ack = asInterface.sendUpdate("system_status", JSONObject().put("airconOn", true))
+        val ack = asInterface.sendWrite("system_status", JSONObject().put("airconOn", true))
         assertEquals(MailboxAckStatus.SUCCESS, ack.status)
-        assertEquals(1, fake.sentUpdates.size)
+        assertEquals(1, fake.sentWrites.size)
 
         asInterface.disconnect()
         assertEquals(MailboxConnectionState.Idle, asInterface.connectionState.value)

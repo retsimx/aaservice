@@ -20,13 +20,13 @@ import android.util.Log
 import com.air.advantage.aaservice.R
 import com.air.advantage.aaservice.data.mailbox.MailboxAckStatus
 import com.air.advantage.aaservice.data.mailbox.MailboxAckTimeoutException
+import com.air.advantage.aaservice.data.mailbox.MailboxCommandAction
 import com.air.advantage.aaservice.data.mailbox.MailboxConnectionState
 import com.air.advantage.aaservice.data.mailbox.MailboxInbound
 import com.air.advantage.aaservice.data.mailbox.MailboxWsClient
 import com.air.advantage.aaservice.data.mailbox.MailboxWsClientFactory
 import com.air.advantage.aaservice.data.mailbox.MyAir5OutboundMailboxMapper
 import com.air.advantage.aaservice.data.mailbox.OutboundMailboxAction
-import com.air.advantage.aaservice.data.protocol.FrameParser
 import com.air.advantage.aaservice.data.repository.DataCacheRepository
 import com.air.advantage.aaservice.data.uart.UartDataSource
 import com.air.advantage.aaservice.data.uart.UsbAccessoryDataSource
@@ -168,7 +168,7 @@ class UartForegroundService : Service() {
     }
 
     private val ioScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
-    /** Serializes WS outbound sendUpdate/sendResync so acks cannot interleave. */
+    /** Serializes WS outbound sendWrite/sendCommand so acks cannot interleave. */
     private val outboundWsMutex = Mutex()
     internal var uartIoJob: Job? = null
     internal var periodicJob: Job? = null
@@ -222,19 +222,6 @@ class UartForegroundService : Service() {
         if (inbound is MailboxInbound.Snapshot) {
             MailboxRawCanEncoder.encodeGetCan(inbound.raw)?.let { handleGetCan(it) }
         }
-        // Steady-state getCAN deltas (USB rawCan parity).
-        if (inbound is MailboxInbound.RawCan && inbound.payload.isNotEmpty()) {
-            handleGetCan(inbound.payload)
-        }
-        // One-shot direct request reply: re-broadcast as a poll-tag payload.
-        if (inbound is MailboxInbound.DirectReply && inbound.payload.isNotEmpty()) {
-            val tag = extractRequestTag(inbound.payload)
-            if (tag != null) {
-                val payload = inbound.payload.toByteArray(Charsets.UTF_8)
-                dataCache.put(tag, payload)
-                broadcastData(tag)
-            }
-        }
         val polls = MailboxBroadcastMapper.map(inbound, cachedPayload = dataCache::get)
         for (poll in polls) {
             if (!dataCache.hasChanged(poll.tag, poll.payload)) {
@@ -249,12 +236,6 @@ class UartForegroundService : Service() {
                 broadcastData(poll.tag)
             }
         }
-    }
-
-    private fun extractRequestTag(payload: String): String? = try {
-        FrameParser().extractTag(payload.toByteArray(Charsets.UTF_8), REQUEST_TAG_BYTES)
-    } catch (e: IllegalArgumentException) {
-        null
     }
 
     /**
@@ -794,69 +775,46 @@ class UartForegroundService : Service() {
             outboundWsMutex.withLock {
                 for (action in meaningful) {
                     when (action) {
-                        is OutboundMailboxAction.Update -> {
+                        is OutboundMailboxAction.Write -> {
                             try {
-                                val ack = client.sendUpdate(action.register, action.payload)
+                                val ack = client.sendWrite(action.register, action.payload)
                                 if (ack.status != MailboxAckStatus.SUCCESS) {
                                     Log.e(
                                         TAG,
-                                        "mailbox_update ack failure register=${action.register} " +
+                                        "write ack failure register=${action.register} " +
                                             "status=${ack.status} reason=${ack.reason}",
                                     )
                                 }
                             } catch (e: MailboxAckTimeoutException) {
-                                Log.e(TAG, "mailbox_update ack timeout msg_id=${e.msgId}", e)
+                                Log.e(TAG, "write ack timeout msg_id=${e.msgId}", e)
                             } catch (e: Exception) {
-                                Log.e(TAG, "mailbox_update failed register=${action.register}", e)
+                                Log.e(TAG, "write failed register=${action.register}", e)
                             }
                         }
                         OutboundMailboxAction.Resync -> {
                             try {
-                                val ack = client.sendResync()
+                                val ack = client.sendCommand(MailboxCommandAction.RESYNC)
                                 if (ack.status != MailboxAckStatus.SUCCESS) {
                                     Log.e(
                                         TAG,
-                                        "resync_mailbox ack failure status=${ack.status} " +
+                                        "resync ack failure status=${ack.status} " +
                                             "reason=${ack.reason}",
                                     )
                                 }
                             } catch (e: MailboxAckTimeoutException) {
-                                Log.e(TAG, "resync_mailbox ack timeout msg_id=${e.msgId}", e)
+                                Log.e(TAG, "resync ack timeout msg_id=${e.msgId}", e)
                             } catch (e: Exception) {
-                                Log.e(TAG, "resync_mailbox failed", e)
+                                Log.e(TAG, "resync failed", e)
                             }
                         }
-                        is OutboundMailboxAction.WriteCan -> {
-                            try {
-                                val ack = client.sendWriteCan(action.tokens)
-                                if (ack.status != MailboxAckStatus.SUCCESS) {
-                                    Log.e(
-                                        TAG,
-                                        "write_can ack failure status=${ack.status} " +
-                                            "reason=${ack.reason}",
-                                    )
-                                }
-                            } catch (e: MailboxAckTimeoutException) {
-                                Log.e(TAG, "write_can ack timeout msg_id=${e.msgId}", e)
-                            } catch (e: Exception) {
-                                Log.e(TAG, "write_can failed", e)
-                            }
-                        }
+                        is OutboundMailboxAction.WriteCan,
                         is OutboundMailboxAction.Direct -> {
-                            try {
-                                val ack = client.sendDirect(action.payload)
-                                if (ack.status != MailboxAckStatus.SUCCESS) {
-                                    Log.e(
-                                        TAG,
-                                        "direct ack failure payload=${action.payload} " +
-                                            "status=${ack.status} reason=${ack.reason}",
-                                    )
-                                }
-                            } catch (e: MailboxAckTimeoutException) {
-                                Log.e(TAG, "direct ack timeout payload=${action.payload}", e)
-                            } catch (e: Exception) {
-                                Log.e(TAG, "direct failed payload=${action.payload}", e)
-                            }
+                            // No client surface for raw-CAN tokens / verbatim direct yet.
+                            Log.d(
+                                TAG,
+                                "dispatchOutboundMailboxActions: " +
+                                    "${action::class.simpleName} not wired, dropping",
+                            )
                         }
                         OutboundMailboxAction.Ignore -> Unit
                     }
@@ -1098,7 +1056,6 @@ class UartForegroundService : Service() {
     companion object {
         private const val TAG = "AAService2/Uart"
         private const val MYAIR5_PACKAGE = "com.air.advantage.myair5"
-        private val REQUEST_TAG_BYTES: ByteArray = "request".toByteArray(Charsets.UTF_8)
         /**
          * Upper bound for joining a mode-switch job in [applyTransportModeFromPrefs].
          * Covers Magisk [com.air.advantage.aaservice.service.daemon.RuntimeProcessRunner]

@@ -25,15 +25,11 @@ class FakeMailboxWsClient : MailboxWsClient {
         private set
     var disconnectCalls: Int = 0
         private set
-    val sentUpdates = mutableListOf<Pair<String, JSONObject>>()
-    val sentResyncs = mutableListOf<Unit>()
-    val sentWriteCan = mutableListOf<List<String>>()
-    val sentDirects = mutableListOf<String>()
+    val sentWrites = mutableListOf<Triple<String, JSONObject, Int?>>()
+    val sentCommands = mutableListOf<String>()
 
-    var nextUpdateAck: MailboxInbound.Ack = successAck("fake-update")
-    var nextResyncAck: MailboxInbound.Ack = successAck("fake-resync")
-    var nextWriteCanAck: MailboxInbound.Ack = successAck("fake-write-can")
-    var nextDirectAck: MailboxInbound.Ack = successAck("fake-direct")
+    var nextWriteAck: MailboxInbound.Ack = successAck("fake-write")
+    var nextCommandAck: MailboxInbound.Ack = successAck("fake-command")
 
     /**
      * When true, [connect] moves straight to [MailboxConnectionState.Connected]
@@ -64,24 +60,18 @@ class FakeMailboxWsClient : MailboxWsClient {
         _connectionState.value = MailboxConnectionState.Idle
     }
 
-    override suspend fun sendUpdate(register: String, payload: JSONObject): MailboxInbound.Ack {
-        sentUpdates += register to payload
-        return nextUpdateAck
+    override suspend fun sendWrite(
+        register: String,
+        payload: JSONObject,
+        zone: Int?,
+    ): MailboxInbound.Ack {
+        sentWrites += Triple(register, payload, zone)
+        return nextWriteAck
     }
 
-    override suspend fun sendResync(): MailboxInbound.Ack {
-        sentResyncs += Unit
-        return nextResyncAck
-    }
-
-    override suspend fun sendWriteCan(tokens: List<String>): MailboxInbound.Ack {
-        sentWriteCan += tokens
-        return nextWriteCanAck
-    }
-
-    override suspend fun sendDirect(payload: String): MailboxInbound.Ack {
-        sentDirects += payload
-        return nextDirectAck
+    override suspend fun sendCommand(action: String): MailboxInbound.Ack {
+        sentCommands += action
+        return nextCommandAck
     }
 
     companion object {

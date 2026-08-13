@@ -127,7 +127,7 @@ class MailboxBroadcastMapperTest {
     fun `system_status event without cache builds getSystemData and applies transform`() {
         val event = MailboxInbound.parse(
             JSONObject()
-                .put("type", "mailbox_event")
+                .put("type", "event")
                 .put("register", "system_status")
                 .put(
                     "payload",
@@ -150,7 +150,7 @@ class MailboxBroadcastMapperTest {
 
         val event = MailboxInbound.parse(
             JSONObject()
-                .put("type", "mailbox_event")
+                .put("type", "event")
                 .put("register", "system_status")
                 .put("payload", JSONObject().put("fan", "high")),
         ) as MailboxInbound.Event
@@ -168,7 +168,7 @@ class MailboxBroadcastMapperTest {
     fun `event with unknown register maps to empty list`() {
         val event = MailboxInbound.parse(
             JSONObject()
-                .put("type", "mailbox_event")
+                .put("type", "event")
                 .put("register", "zone_config")
                 .put("payload", JSONObject().put("total_zones", 4)),
         ) as MailboxInbound.Event
@@ -179,12 +179,12 @@ class MailboxBroadcastMapperTest {
     @Test
     fun `event with missing register or payload maps to empty list without throwing`() {
         val noRegister = MailboxInbound.parse(
-            JSONObject().put("type", "mailbox_event").put("payload", JSONObject()),
+            JSONObject().put("type", "event").put("payload", JSONObject()),
         ) as MailboxInbound.Event
         assertTrue(map(noRegister).isEmpty())
 
         val noPayload = MailboxInbound.parse(
-            JSONObject().put("type", "mailbox_event").put("register", "system_status"),
+            JSONObject().put("type", "event").put("register", "system_status"),
         ) as MailboxInbound.Event
         assertTrue(map(noPayload).isEmpty())
     }
@@ -193,7 +193,7 @@ class MailboxBroadcastMapperTest {
     fun `zone_state event with non-numeric zone_id maps to empty list without throwing`() {
         val event = MailboxInbound.parse(
             JSONObject()
-                .put("type", "mailbox_event")
+                .put("type", "event")
                 .put("register", "zone_state")
                 .put("payload", JSONObject().put("zone_id", "not-a-number").put("open", true)),
         ) as MailboxInbound.Event
@@ -204,7 +204,7 @@ class MailboxBroadcastMapperTest {
     @Test
     fun `snapshot missing system_status and zones maps to empty list`() {
         val snapshot = MailboxInbound.parse(
-            JSONObject().put("type", "mailbox_snapshot").put("unit_id", "AA-TEST-002"),
+            JSONObject().put("type", "snapshot").put("unit_id", "AA-TEST-002"),
         ) as MailboxInbound.Snapshot
 
         assertTrue(map(snapshot).isEmpty())
@@ -229,7 +229,7 @@ class MailboxBroadcastMapperTest {
     fun `merge onto cache without matching tag falls back safely instead of throwing`() {
         val event = MailboxInbound.parse(
             JSONObject()
-                .put("type", "mailbox_event")
+                .put("type", "event")
                 .put("register", "zone_state")
                 .put("payload", JSONObject().put("zone_id", "3").put("open", true)),
         ) as MailboxInbound.Event

@@ -76,7 +76,7 @@ class OutboundMailboxGatewayTest {
     }
 
     @Test
-    fun `WS setAircon power sends mailbox_update system_status`() {
+    fun `WS setAircon power sends write system_status`() {
         injectWsConnected()
         service.deviceOpen.set(false)
 
@@ -84,30 +84,30 @@ class OutboundMailboxGatewayTest {
         service.enqueueUartMessage(msg)
         awaitOutbound()
 
-        assertEquals(1, fakeWs.sentUpdates.size)
-        assertEquals("system_status", fakeWs.sentUpdates[0].first)
-        assertEquals("on", fakeWs.sentUpdates[0].second.getString("power"))
-        assertEquals("cool", fakeWs.sentUpdates[0].second.getString("mode"))
-        assertEquals("high", fakeWs.sentUpdates[0].second.getString("fan"))
+        assertEquals(1, fakeWs.sentWrites.size)
+        assertEquals("system_status", fakeWs.sentWrites[0].first)
+        assertEquals("on", fakeWs.sentWrites[0].second.getString("power"))
+        assertEquals("cool", fakeWs.sentWrites[0].second.getString("mode"))
+        assertEquals("high", fakeWs.sentWrites[0].second.getString("fan"))
     }
 
     @Test
-    fun `WS setAircon zone sends mailbox_update zone_state`() {
+    fun `WS setAircon zone sends write zone_state`() {
         injectWsConnected()
         val msg = """setAircon?json={"aircons":{"ac1":{"zones":{"z03":{"state":"open","setTemp":22}}}}}"""
         service.enqueueUartMessage(msg)
         awaitOutbound()
 
-        assertEquals(1, fakeWs.sentUpdates.size)
-        assertEquals("zone_state", fakeWs.sentUpdates[0].first)
-        assertEquals(3, fakeWs.sentUpdates[0].second.getInt("zone_id"))
-        assertTrue(fakeWs.sentUpdates[0].second.getBoolean("open"))
+        assertEquals(1, fakeWs.sentWrites.size)
+        assertEquals("zone_state", fakeWs.sentWrites[0].first)
+        assertEquals(3, fakeWs.sentWrites[0].second.getInt("zone_id"))
+        assertTrue(fakeWs.sentWrites[0].second.getBoolean("open"))
     }
 
     @Test
     fun `WS ack error does not pretend success`() {
         injectWsConnected()
-        fakeWs.nextUpdateAck = MailboxInbound.Ack(
+        fakeWs.nextWriteAck = MailboxInbound.Ack(
             msgId = "err",
             status = MailboxAckStatus.ERROR,
             reason = "denied",
@@ -121,26 +121,26 @@ class OutboundMailboxGatewayTest {
         )
         awaitOutbound()
         // Send still attempted (recorded); status is error — gateway must not throw/crash.
-        assertEquals(1, fakeWs.sentUpdates.size)
+        assertEquals(1, fakeWs.sentWrites.size)
     }
 
     @Test
-    fun `USB mode does not call WS sendUpdate`() {
+    fun `USB mode does not call WS sendWrite`() {
         injectUsb()
         service.deviceOpen.set(true)
         service.enqueueUartMessage("setZoneData?zone=1")
         awaitOutbound()
-        assertTrue(fakeWs.sentUpdates.isEmpty())
-        assertTrue(fakeWs.sentResyncs.isEmpty())
+        assertTrue(fakeWs.sentWrites.isEmpty())
+        assertTrue(fakeWs.sentCommands.isEmpty())
     }
 
     @Test
-    fun `WS GET_ALL_DATA triggers sendResync`() {
+    fun `WS GET_ALL_DATA triggers resync command`() {
         injectWsConnected()
         service.handleGetAllDataWs()
         awaitOutbound()
-        assertEquals(1, fakeWs.sentResyncs.size)
-        assertTrue(fakeWs.sentUpdates.isEmpty())
+        assertEquals(1, fakeWs.sentCommands.size)
+        assertTrue(fakeWs.sentWrites.isEmpty())
     }
 
     @Test
@@ -160,7 +160,7 @@ class OutboundMailboxGatewayTest {
             "WS GetAllData must not flood poll XML (USB cold-start parity), got ${pollTags.size}",
             pollTags.isEmpty(),
         )
-        assertEquals(1, fakeWs.sentResyncs.size)
+        assertEquals(1, fakeWs.sentCommands.size)
     }
 
     @Test
@@ -178,7 +178,7 @@ class OutboundMailboxGatewayTest {
         val secure = org.robolectric.Shadows.shadowOf(service).broadcastIntents
             .filter { it.action == "com.air.advantage.MESSAGE_FROM_CB_SECURE" }
         assertTrue("expected forced rawCan rebroadcast", secure.isNotEmpty())
-        assertEquals(1, fakeWs.sentResyncs.size)
+        assertEquals(1, fakeWs.sentCommands.size)
     }
 
     @Test
@@ -186,16 +186,16 @@ class OutboundMailboxGatewayTest {
         injectWsConnected()
         service.processCanIds("5 6 7")
         awaitOutbound()
-        assertTrue(fakeWs.sentUpdates.isEmpty())
-        assertTrue(fakeWs.sentResyncs.isEmpty())
+        assertTrue(fakeWs.sentWrites.isEmpty())
+        assertTrue(fakeWs.sentCommands.isEmpty())
     }
 
     @Test
-    fun `WS reg06 flush triggers sendResync`() {
+    fun `WS reg06 flush triggers resync command`() {
         injectWsConnected()
         service.processCanIds(MyAir5OutboundMailboxMapper.REG06_FLUSH_TOKEN)
         awaitOutbound()
-        assertEquals(1, fakeWs.sentResyncs.size)
+        assertEquals(1, fakeWs.sentCommands.size)
     }
 
     @Test
@@ -209,7 +209,7 @@ class OutboundMailboxGatewayTest {
         )
         receiver.onReceive(service, intent)
         awaitOutbound()
-        assertEquals(1, fakeWs.sentUpdates.size)
+        assertEquals(1, fakeWs.sentWrites.size)
     }
 
     @Test
@@ -218,6 +218,6 @@ class OutboundMailboxGatewayTest {
         service.deviceOpen.set(false)
         GetAllDataReceiver().onReceive(service, Intent("com.air.advantage.GET_ALL_DATA"))
         awaitOutbound()
-        assertEquals(1, fakeWs.sentResyncs.size)
+        assertEquals(1, fakeWs.sentCommands.size)
     }
 }
