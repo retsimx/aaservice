@@ -20,10 +20,8 @@ import android.util.Log
 import com.air.advantage.aaservice.R
 import com.air.advantage.aaservice.data.mailbox.MailboxAckStatus
 import com.air.advantage.aaservice.data.mailbox.MailboxAckTimeoutException
-import com.air.advantage.aaservice.data.mailbox.MailboxCommandAction
 import com.air.advantage.aaservice.data.mailbox.MailboxConnectionState
 import com.air.advantage.aaservice.data.mailbox.MailboxInbound
-import com.air.advantage.aaservice.data.mailbox.MailboxPayload
 import com.air.advantage.aaservice.data.mailbox.MailboxWsClient
 import com.air.advantage.aaservice.data.mailbox.MailboxWsClientFactory
 import com.air.advantage.aaservice.data.mailbox.MyAir5OutboundMailboxMapper
@@ -663,8 +661,7 @@ class UartForegroundService : Service() {
 
     fun requestSinglePoll(tag: String) {
         if (isWsMode()) {
-            Log.d(TAG, "requestSinglePoll: WS mode direct poll '$tag'")
-            dispatchOutboundMailboxActions(listOf(OutboundMailboxAction.Direct(tag)))
+            Log.d(TAG, "WS mode direct poll dropped: $tag")
             return
         }
         Log.d(TAG, "requestSinglePoll: '$tag'")
@@ -674,7 +671,7 @@ class UartForegroundService : Service() {
     fun enqueueUartMessage(message: String) {
         if (isWsMode()) {
             Log.d(TAG, "enqueueUartMessage: WS mode mapping '$message'")
-            dispatchOutboundMailboxActions(MyAir5OutboundMailboxMapper.mapMessageToCb(message))
+            dispatchOutboundMailboxActions(MyAir5OutboundMailboxMapper.mapMessage(message))
             return
         }
         Log.d(TAG, "enqueueUartMessage: '$message'")
@@ -691,17 +688,12 @@ class UartForegroundService : Service() {
     }
 
     private fun dispatchWsCanTokens(canIds: String, label: String) {
-        when (val action = MyAir5OutboundMailboxMapper.mapCanTokens(canIds)) {
-            OutboundMailboxAction.Resync -> {
-                Log.d(TAG, "$label: WS mode reg-06 flush → resync")
-                dispatchOutboundMailboxActions(listOf(action))
-            }
-            is OutboundMailboxAction.WriteCan -> {
-                Log.d(TAG, "$label: WS mode forwarding ${action.tokens.size} CAN tokens")
-                dispatchOutboundMailboxActions(listOf(action))
-            }
-            else -> Log.d(TAG, "$label: WS mode ignoring CAN tokens '$canIds'")
-        }
+        val actions = MyAir5OutboundMailboxMapper.mapCanTokens(canIds)
+        actions.filterIsInstance<OutboundMailboxAction.Ignore>()
+            .forEach { Log.d(TAG, "$label: WS mode ignoring CAN token: ${it.reason}") }
+        val meaningful = actions.filter { it !is OutboundMailboxAction.Ignore }
+        Log.d(TAG, "$label: WS mode mapped ${meaningful.size} action(s) from '$canIds'")
+        dispatchOutboundMailboxActions(meaningful)
     }
 
     fun enqueueCanIds(canIds: String) {
@@ -780,7 +772,8 @@ class UartForegroundService : Service() {
                             try {
                                 val ack = client.sendWrite(
                                     action.register,
-                                    MailboxPayload.Typed(action.payload),
+                                    action.payload,
+                                    action.zone,
                                 )
                                 if (ack.status != MailboxAckStatus.SUCCESS) {
                                     Log.e(
@@ -795,32 +788,27 @@ class UartForegroundService : Service() {
                                 Log.e(TAG, "write failed register=${action.register}", e)
                             }
                         }
-                        OutboundMailboxAction.Resync -> {
+                        is OutboundMailboxAction.Read -> Log.d(
+                            TAG,
+                            "read not wired until B-2 register=${action.register}",
+                        )
+                        is OutboundMailboxAction.Command -> {
                             try {
-                                val ack = client.sendCommand(MailboxCommandAction.RESYNC)
+                                val ack = client.sendCommand(action.action)
                                 if (ack.status != MailboxAckStatus.SUCCESS) {
                                     Log.e(
                                         TAG,
-                                        "resync ack failure status=${ack.status} " +
-                                            "reason=${ack.reason}",
+                                        "command ack failure action=${action.action} " +
+                                            "status=${ack.status} reason=${ack.reason}",
                                     )
                                 }
                             } catch (e: MailboxAckTimeoutException) {
-                                Log.e(TAG, "resync ack timeout msg_id=${e.msgId}", e)
+                                Log.e(TAG, "command ack timeout msg_id=${e.msgId}", e)
                             } catch (e: Exception) {
-                                Log.e(TAG, "resync failed", e)
+                                Log.e(TAG, "command failed action=${action.action}", e)
                             }
                         }
-                        is OutboundMailboxAction.WriteCan,
-                        is OutboundMailboxAction.Direct -> {
-                            // No client surface for raw-CAN tokens / verbatim direct yet.
-                            Log.d(
-                                TAG,
-                                "dispatchOutboundMailboxActions: " +
-                                    "${action::class.simpleName} not wired, dropping",
-                            )
-                        }
-                        OutboundMailboxAction.Ignore -> Unit
+                        is OutboundMailboxAction.Ignore -> Unit
                     }
                 }
             }
