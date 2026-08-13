@@ -1,26 +1,25 @@
 package com.air.advantage.aaservice.data.mailbox
 
-import org.json.JSONArray
 import org.json.JSONException
 import org.json.JSONObject
 
 /** Wire `type` string constants for mailbox WebSocket frames. */
 object MailboxMessageType {
-    const val MAILBOX_SNAPSHOT = "mailbox_snapshot"
-    const val MAILBOX_EVENT = "mailbox_event"
+    const val SNAPSHOT = "snapshot"
+    const val EVENT = "event"
+    const val READ_RESULT = "read_result"
     const val ACK = "ack"
+    const val STATUS = "status"
     const val ERROR = "error"
-    const val MAILBOX_UPDATE = "mailbox_update"
+    const val WRITE = "write"
+    const val READ = "read"
     const val COMMAND = "command"
-    const val WRITE_CAN = "write_can"
-    const val DIRECT = "direct"
-    const val RAW_CAN = "raw_can"
-    const val DIRECT_REPLY = "direct_reply"
 }
 
 /** Known `action` values for outbound `command` frames. */
 object MailboxCommandAction {
-    const val RESYNC_MAILBOX = "resync_mailbox"
+    const val RESYNC = "resync"
+    const val FLUSH_UNIT = "flush_unit"
 }
 
 /** Ack frame `status` values. */
@@ -43,46 +42,58 @@ enum class MailboxAckStatus {
     }
 }
 
+/** Payload of an outbound [`MailboxOutbound.Write`] frame — typed object or raw hex string. */
+sealed class MailboxPayload {
+    data class Typed(val payload: JSONObject) : MailboxPayload()
+
+    data class RawHex(val hex: String) : MailboxPayload()
+}
+
 /**
  * Server → client mailbox frames.
  *
- * Payload / register fields stay loosely typed ([JSONObject]) so A4 can own
- * schema details. Unknown `type` values become [Unknown] for log-and-ignore.
+ * Payload / register fields stay loosely typed ([JSONObject]) so the mapper
+ * layer can own schema details. Unknown `type` values become [Unknown] for
+ * log-and-ignore.
  */
 sealed class MailboxInbound {
     abstract val type: String
     abstract val raw: JSONObject
 
-    /** Full bank on connect / after resync. Register fields remain on [raw]. */
+    /**
+     * Full register bank on connect / after resync, keyed
+     * `"{unit_type}:{unit_id}"` → register → payload.
+     */
     data class Snapshot(
+        val units: Map<String, Map<String, JSONObject>>,
         override val raw: JSONObject,
     ) : MailboxInbound() {
-        override val type: String get() = MailboxMessageType.MAILBOX_SNAPSHOT
-        val unitId: String? get() = raw.optStringOrNull("unit_id")
+        override val type: String get() = MailboxMessageType.SNAPSHOT
     }
 
+    /** Register change pushed by the broker. Raw-hex payloads stay on [raw]. */
     data class Event(
+        val unitType: String?,
+        val unitId: String?,
         val register: String?,
+        val zone: Int?,
         val payload: JSONObject?,
         override val raw: JSONObject,
     ) : MailboxInbound() {
-        override val type: String get() = MailboxMessageType.MAILBOX_EVENT
+        override val type: String get() = MailboxMessageType.EVENT
     }
 
-    /** Raw steady-state `getCAN` frame (`getCAN 1 <records…>`) — USB rawCan parity. */
-    data class RawCan(
-        val payload: String,
+    /** Reply to a one-shot [`MailboxOutbound.Read`] request. */
+    data class ReadResult(
+        val msgId: String?,
+        val unitType: String?,
+        val unitId: String?,
+        val register: String?,
+        val zone: Int?,
+        val payload: JSONObject?,
         override val raw: JSONObject,
     ) : MailboxInbound() {
-        override val type: String get() = MailboxMessageType.RAW_CAN
-    }
-
-    /** Reply to a one-shot [`MailboxOutbound.Direct`] request (CB XML/raw payload). */
-    data class DirectReply(
-        val payload: String,
-        override val raw: JSONObject,
-    ) : MailboxInbound() {
-        override val type: String get() = MailboxMessageType.DIRECT_REPLY
+        override val type: String get() = MailboxMessageType.READ_RESULT
     }
 
     data class Ack(
@@ -94,9 +105,19 @@ sealed class MailboxInbound {
         override val type: String get() = MailboxMessageType.ACK
     }
 
+    /** Broker link state; `state` stays raw — typed mapping is B-2 scope. */
+    data class Status(
+        val state: String?,
+        val detail: String?,
+        override val raw: JSONObject,
+    ) : MailboxInbound() {
+        override val type: String get() = MailboxMessageType.STATUS
+    }
+
     /** Optional recoverable protocol/client error — does not fail the socket. */
     data class Error(
         val message: String?,
+        val reason: String?,
         override val raw: JSONObject,
     ) : MailboxInbound() {
         override val type: String get() = MailboxMessageType.ERROR
@@ -117,18 +138,25 @@ sealed class MailboxInbound {
         fun parse(json: JSONObject): MailboxInbound {
             val type = json.optString("type", "")
             return when (type) {
-                MailboxMessageType.MAILBOX_SNAPSHOT -> Snapshot(raw = json)
-                MailboxMessageType.MAILBOX_EVENT -> Event(
+                MailboxMessageType.SNAPSHOT -> Snapshot(
+                    units = parseUnits(json.optJSONObject("units")),
+                    raw = json,
+                )
+                MailboxMessageType.EVENT -> Event(
+                    unitType = json.optStringOrNull("unit_type"),
+                    unitId = json.optStringOrNull("unit_id"),
                     register = json.optStringOrNull("register"),
+                    zone = json.optIntOrNull("zone"),
                     payload = json.optJSONObject("payload"),
                     raw = json,
                 )
-                MailboxMessageType.RAW_CAN -> RawCan(
-                    payload = json.optString("payload", ""),
-                    raw = json,
-                )
-                MailboxMessageType.DIRECT_REPLY -> DirectReply(
-                    payload = json.optString("payload", ""),
+                MailboxMessageType.READ_RESULT -> ReadResult(
+                    msgId = json.optStringOrNull("msg_id"),
+                    unitType = json.optStringOrNull("unit_type"),
+                    unitId = json.optStringOrNull("unit_id"),
+                    register = json.optStringOrNull("register"),
+                    zone = json.optIntOrNull("zone"),
+                    payload = json.optJSONObject("payload"),
                     raw = json,
                 )
                 MailboxMessageType.ACK -> Ack(
@@ -137,9 +165,15 @@ sealed class MailboxInbound {
                     reason = json.optStringOrNull("reason"),
                     raw = json,
                 )
+                MailboxMessageType.STATUS -> Status(
+                    state = json.optStringOrNull("state"),
+                    detail = json.optStringOrNull("detail"),
+                    raw = json,
+                )
                 MailboxMessageType.ERROR -> Error(
                     message = json.optStringOrNull("message")
                         ?: json.optStringOrNull("reason"),
+                    reason = json.optStringOrNull("reason"),
                     raw = json,
                 )
                 else -> Unknown(type = type, raw = json)
@@ -159,26 +193,62 @@ sealed class MailboxOutbound {
 
     abstract fun toJson(): JSONObject
 
-    data class Update(
+    /**
+     * Write a register value; [zone] is only for zone-bearing registers (03/04)
+     * and is omitted when null. Addressing fields are optional (default primary unit).
+     */
+    data class Write(
         override val msgId: String,
         val register: String,
-        val payload: JSONObject,
+        val payload: MailboxPayload,
+        val unitType: String? = null,
+        val unitId: String? = null,
+        val zone: Int? = null,
     ) : MailboxOutbound() {
-        override val type: String get() = MailboxMessageType.MAILBOX_UPDATE
+        override val type: String get() = MailboxMessageType.WRITE
 
         override fun toJson(): JSONObject = JSONObject().apply {
             put("type", type)
             put("msg_id", msgId)
             put("register", register)
-            put("payload", payload)
+            when (payload) {
+                is MailboxPayload.Typed -> put("payload", payload.payload)
+                is MailboxPayload.RawHex -> put("payload", payload.hex)
+            }
+            unitType?.let { put("unit_type", it) }
+            unitId?.let { put("unit_id", it) }
+            zone?.let { put("zone", it) }
         }
     }
 
-    data class Resync(
+    /**
+     * Request a register value; optional addressing fields are omitted when null.
+     */
+    data class Read(
         override val msgId: String,
+        val register: String,
+        val unitType: String? = null,
+        val unitId: String? = null,
+        val zone: Int? = null,
+    ) : MailboxOutbound() {
+        override val type: String get() = MailboxMessageType.READ
+
+        override fun toJson(): JSONObject = JSONObject().apply {
+            put("type", type)
+            put("msg_id", msgId)
+            put("register", register)
+            unitType?.let { put("unit_type", it) }
+            unitId?.let { put("unit_id", it) }
+            zone?.let { put("zone", it) }
+        }
+    }
+
+    /** One-shot broker command ([`MailboxCommandAction`]). */
+    data class Command(
+        override val msgId: String,
+        val action: String,
     ) : MailboxOutbound() {
         override val type: String get() = MailboxMessageType.COMMAND
-        val action: String get() = MailboxCommandAction.RESYNC_MAILBOX
 
         override fun toJson(): JSONObject = JSONObject().apply {
             put("type", type)
@@ -186,51 +256,29 @@ sealed class MailboxOutbound {
             put("action", action)
         }
     }
-
-    /** Raw CAN2 token write (25-char hex records) — CAN_TO_CB / BROADCAST_CAN_TO_CB parity. */
-    data class WriteCan(
-        override val msgId: String,
-        val tokens: List<String>,
-    ) : MailboxOutbound() {
-        override val type: String get() = MailboxMessageType.WRITE_CAN
-
-        override fun toJson(): JSONObject = JSONObject().apply {
-            put("type", type)
-            put("msg_id", msgId)
-            put("tokens", JSONArray(tokens))
-        }
-    }
-
-    /** One-shot raw request (poll tag / `setAllZoneSensorData?`); reply is a DirectReply. */
-    data class Direct(
-        override val msgId: String,
-        val payload: String,
-    ) : MailboxOutbound() {
-        override val type: String get() = MailboxMessageType.DIRECT
-
-        override fun toJson(): JSONObject = JSONObject().apply {
-            put("type", type)
-            put("msg_id", msgId)
-            put("payload", payload)
-        }
-    }
-
-    companion object {
-        fun update(msgId: String, register: String, payload: JSONObject): Update =
-            Update(msgId = msgId, register = register, payload = payload)
-
-        fun resyncMailbox(msgId: String): Resync = Resync(msgId = msgId)
-
-        fun writeCan(msgId: String, tokens: List<String>): WriteCan =
-            WriteCan(msgId = msgId, tokens = tokens)
-
-        fun direct(msgId: String, payload: String): Direct =
-            Direct(msgId = msgId, payload = payload)
-    }
 }
 
 private fun JSONObject.optStringOrNull(key: String): String? {
     if (!has(key) || isNull(key)) return null
     val value = optString(key, "")
     return value.ifEmpty { null }
+}
+
+private fun JSONObject.optIntOrNull(key: String): Int? {
+    if (!has(key) || isNull(key)) return null
+    return optInt(key)
+}
+
+private fun parseUnits(units: JSONObject?): Map<String, Map<String, JSONObject>> {
+    if (units == null) return emptyMap()
+    val result = mutableMapOf<String, Map<String, JSONObject>>()
+    for (unitKey in units.keys()) {
+        val registers = units.optJSONObject(unitKey) ?: continue
+        val registerMap = mutableMapOf<String, JSONObject>()
+        for (register in registers.keys()) {
+            registers.optJSONObject(register)?.let { registerMap[register] = it }
+        }
+        result[unitKey] = registerMap
+    }
+    return result
 }

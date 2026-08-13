@@ -11,7 +11,7 @@ import org.json.JSONObject
  * - **Keepalive:** OkHttp WebSocket pings at [MailboxWsConfig.pingIntervalMs]
  *   (default ~30s via [MailboxWsConfig.DEFAULT_PING_INTERVAL_MS]).
  * - [connect] → [MailboxConnectionState.Connecting], then open the socket.
- * - [MailboxConnectionState.Connected] only after the first `mailbox_snapshot`
+ * - [MailboxConnectionState.Connected] only after the first `snapshot`
  *   ([MailboxInbound.Snapshot]) — not on bare socket open.
  * - Unexpected close / network drop → [MailboxConnectionState.Disconnected], then
  *   **auto-reconnect** with exponential backoff
@@ -29,7 +29,7 @@ import org.json.JSONObject
  * Protocol `error` frames are emitted on [incoming] and do not alone fail the socket.
  * Unknown inbound `type` values are ignored.
  *
- * [sendUpdate] / [sendResync] generate a unique `msg_id`, wait for the matching
+ * [sendWrite] / [sendCommand] generate a unique `msg_id`, wait for the matching
  * [MailboxInbound.Ack], and throw [MailboxAckTimeoutException] if no ack arrives
  * within [MailboxWsConfig.ackTimeoutMs].
  */
@@ -44,27 +44,27 @@ interface MailboxWsClient {
     fun disconnect()
 
     /**
-     * Sends `mailbox_update` and awaits the matching ack.
+     * Sends a `write` frame and awaits the matching ack.
+     * [zone] is only for zone-bearing registers (03/04) and is omitted when null.
      * @throws MailboxAckTimeoutException if no ack within the config timeout
      * @throws IllegalStateException if the socket is not open
      */
-    suspend fun sendUpdate(register: String, payload: JSONObject): MailboxInbound.Ack
+    suspend fun sendWrite(
+        register: String,
+        payload: JSONObject,
+        zone: Int? = null,
+    ): MailboxInbound.Ack
 
     /**
-     * Sends `command` / `resync_mailbox` and awaits the matching ack.
+     * Sends a `command` frame (e.g. [`MailboxCommandAction.RESYNC`]) and awaits
+     * the matching ack.
      * @throws MailboxAckTimeoutException if no ack within the config timeout
      * @throws IllegalStateException if the socket is not open
      */
-    suspend fun sendResync(): MailboxInbound.Ack
-
-    /** Forward raw CAN2 tokens (25-char hex records) to the CB via the daemon. */
-    suspend fun sendWriteCan(tokens: List<String>): MailboxInbound.Ack
-
-    /** One-shot raw request (poll tag / `setAllZoneSensorData?`); reply is a DirectReply. */
-    suspend fun sendDirect(payload: String): MailboxInbound.Ack
+    suspend fun sendCommand(action: String): MailboxInbound.Ack
 }
 
-/** Thrown when [MailboxWsClient.sendUpdate] / [sendResync] exceed [MailboxWsConfig.ackTimeoutMs]. */
+/** Thrown when [MailboxWsClient.sendWrite] / [MailboxWsClient.sendCommand] exceed [MailboxWsConfig.ackTimeoutMs]. */
 class MailboxAckTimeoutException(
     val msgId: String,
 ) : Exception("Timed out waiting for mailbox ack msg_id=$msgId")

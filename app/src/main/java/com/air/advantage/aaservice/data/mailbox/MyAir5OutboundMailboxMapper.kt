@@ -4,7 +4,7 @@ import org.json.JSONObject
 
 /** Result of mapping a MyAir5 outbound intent to a mailbox WebSocket action. */
 sealed class OutboundMailboxAction {
-    data class Update(
+    data class Write(
         val register: String,
         val payload: JSONObject,
     ) : OutboundMailboxAction()
@@ -14,7 +14,7 @@ sealed class OutboundMailboxAction {
         val tokens: List<String>,
     ) : OutboundMailboxAction()
 
-    /** One-shot raw request; the CB reply is delivered as a DirectReply. */
+    /** One-shot raw request; reply handling is not wired yet. */
     data class Direct(
         val payload: String,
     ) : OutboundMailboxAction()
@@ -122,7 +122,7 @@ object MyAir5OutboundMailboxMapper {
                     payload.put("target_temp_c", info.optDouble("setTemp"))
                 }
                 if (payload.length() > 0) {
-                    systemActions += OutboundMailboxAction.Update(
+                    systemActions += OutboundMailboxAction.Write(
                         register = REGISTER_SYSTEM_STATUS,
                         payload = payload,
                     )
@@ -158,7 +158,7 @@ object MyAir5OutboundMailboxMapper {
                     hasField = true
                 }
                 if (hasField) {
-                    zoneActions += OutboundMailboxAction.Update(
+                    zoneActions += OutboundMailboxAction.Write(
                         register = REGISTER_ZONE_STATE,
                         payload = payload,
                     )
