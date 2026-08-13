@@ -71,6 +71,10 @@ class UartForegroundServiceMailboxTest {
     private fun snapshotInbound(): MailboxInbound.Snapshot =
         MailboxInbound.parse(MailboxFixtures.snapshot()) as MailboxInbound.Snapshot
 
+    private fun brokerSnapshotInbound(): MailboxInbound.Snapshot =
+        MailboxInbound.parse(MailboxFixtures.load("mailbox/mailbox_snapshot_broker.json"))
+            as MailboxInbound.Snapshot
+
     private fun zoneEventInbound(): MailboxInbound.Event =
         MailboxInbound.parse(MailboxFixtures.event()) as MailboxInbound.Event
 
@@ -90,11 +94,11 @@ class UartForegroundServiceMailboxTest {
     }
 
     @Test
-    fun `snapshot emits MESSAGE_FROM_CB_SECURE rawCan from can_records`() {
+    fun `snapshot emits MESSAGE_FROM_CB_SECURE rawCan re-encoded from typed registers`() {
         service.attachMailboxWsClient(fakeClient)
         fakeClient.emitState(MailboxConnectionState.Connected)
 
-        fakeClient.emitIncoming(snapshotInbound())
+        fakeClient.emitIncoming(brokerSnapshotInbound())
 
         val secure = capturedIntents.filter {
             it.action == "com.air.advantage.MESSAGE_FROM_CB_SECURE"
@@ -127,8 +131,8 @@ class UartForegroundServiceMailboxTest {
         service.attachMailboxWsClient(fakeClient)
         fakeClient.emitState(MailboxConnectionState.Connected)
 
-        fakeClient.emitIncoming(snapshotInbound())
-        fakeClient.emitIncoming(snapshotInbound())
+        fakeClient.emitIncoming(brokerSnapshotInbound())
+        fakeClient.emitIncoming(brokerSnapshotInbound())
 
         assertTrue(sentMessageFromCb().isEmpty())
         assertTrue(
