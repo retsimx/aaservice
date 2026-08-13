@@ -17,7 +17,6 @@ import java.util.concurrent.TimeUnit
 import org.json.JSONObject
 import org.junit.After
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
@@ -31,8 +30,8 @@ import org.robolectric.annotation.Config
 /**
  * B-6 (#78) service wiring: [UartForegroundService.attachMailboxWsClient] /
  * [UartForegroundService.onMailboxInbound] dispatch every broker inbound type —
- * `snapshot` → `MESSAGE_FROM_CB` XML poll tags + `MESSAGE_FROM_CB_SECURE` full rawCan,
- * `event` → XML merge + single-record rawCan delta, `read_result` → reconciliation
+ * `snapshot` → `MESSAGE_FROM_CB_SECURE` full rawCan re-encode, `event` → single-record
+ * rawCan delta, `read_result` → reconciliation
  * rawCan, `status` → [TransportStatusStore] + notification via the daemonStatus
  * collector, `error` → transient alert — plus the `deviceOpen || mailbox Connected`
  * publish gate (design `41-mailbox-to-message-from-cb.md` §6, `078-…dispatch.md`).
@@ -126,24 +125,27 @@ class UartForegroundServiceMailboxTest {
         return reads
     }
 
-    // ── snapshot → MESSAGE_FROM_CB XML + MESSAGE_FROM_CB_SECURE full rawCan (D1) ──
+    // ── snapshot → MESSAGE_FROM_CB_SECURE full rawCan re-encode (D1) ──
 
     @Test
-    fun `snapshot broadcasts MESSAGE_FROM_CB poll tags and secure rawCan`() {
+    fun `snapshot broadcasts only the MESSAGE_FROM_CB_SECURE rawCan re-encode`() {
         service.attachMailboxWsClient(fakeClient)
         fakeClient.emitState(MailboxConnectionState.Connected)
 
         fakeClient.emitIncoming(brokerSnapshotInbound())
 
-        val tags = sentMessageFromCb().mapNotNull {
-            it.getStringExtra("com.air.advantage.GET_DATA_REQUEST")
-        }
-        assertTrue("snapshot must broadcast getSystemData", tags.contains("getSystemData"))
-        assertTrue("snapshot must broadcast zone 1", tags.contains("getZoneData?zone=1"))
-        assertTrue("snapshot must broadcast zone 2", tags.contains("getZoneData?zone=2"))
+        assertEquals(
+            "WS-path XML poll broadcasts must not exist, got ${sentMessageFromCb().size}",
+            0,
+            sentMessageFromCb().size,
+        )
 
         val secure = secureRawCanFrames()
-        assertTrue("expected rawCan secure broadcast", secure.isNotEmpty())
+        assertEquals(
+            "snapshot must broadcast exactly one secure rawCan frame, got ${secure.size}",
+            1,
+            secure.size,
+        )
         assertEquals(
             "rawCan",
             secure.first().getStringExtra("com.air.advantage.GET_DATA_REQUEST"),
@@ -172,39 +174,6 @@ class UartForegroundServiceMailboxTest {
     }
 
     @Test
-    fun `snapshot caches poll payloads and broadcasts them`() {
-        service.attachMailboxWsClient(fakeClient)
-        fakeClient.emitState(MailboxConnectionState.Connected)
-
-        fakeClient.emitIncoming(snapshotInbound())
-
-        assertNotNull(service.dataCache.get("getSystemData"))
-        assertNotNull(service.dataCache.get("getZoneData?zone=1"))
-        assertNotNull(service.dataCache.get("getZoneData?zone=2"))
-        assertTrue("snapshot-mapped polls must broadcast (B-6 D1)", sentMessageFromCb().isNotEmpty())
-    }
-
-    @Test
-    fun `duplicate snapshot skips unchanged XML and content-identical rawCan`() {
-        service.attachMailboxWsClient(fakeClient)
-        fakeClient.emitState(MailboxConnectionState.Connected)
-
-        fakeClient.emitIncoming(brokerSnapshotInbound())
-        fakeClient.emitIncoming(brokerSnapshotInbound())
-
-        // XML dedup via dataCache.hasChanged: first snapshot broadcast 3 tags, the
-        // identical second snapshot must not rebroadcast them.
-        assertEquals(3, sentMessageFromCb().size)
-        // rawCan content dedup: identical snapshots re-encode to content-equal frames,
-        // so lastRawCan (now content-compared) suppresses the second secure broadcast.
-        assertEquals(
-            "content-identical rawCan must be deduped, got ${secureRawCanFrames().size}",
-            1,
-            secureRawCanFrames().size,
-        )
-    }
-
-    @Test
     fun `handleGetCan content-dedups identical frames and forwards different frames`() {
         service.handleGetCan("getCAN 1 0703181f30a00000000000000")
         service.handleGetCan("getCAN 1 0703181f30a00000000000000")
@@ -224,7 +193,7 @@ class UartForegroundServiceMailboxTest {
         )
     }
 
-    // ── mailbox_event → XML merge + single-record rawCan delta ────
+    // ── mailbox_event → single-record rawCan delta ────
 
     @Test
     fun `mailbox_event updates propagate without restart`() {
@@ -234,26 +203,12 @@ class UartForegroundServiceMailboxTest {
         fakeClient.emitIncoming(snapshotInbound())
         fakeClient.emitIncoming(zoneEventInbound())
 
-        val zoneBroadcasts = sentMessageFromCb().filter {
-            it.getStringExtra("com.air.advantage.GET_DATA_REQUEST") == "getZoneData?zone=1"
-        }
-        assertTrue(
-            "incremental event broadcasts the zone tag, got ${zoneBroadcasts.size}",
-            zoneBroadcasts.size >= 1
-        )
-
-        val latestXml = String(
-            zoneBroadcasts.last().getByteArrayExtra("com.air.advantage.MESSAGE_FROM_CB")!!,
-            Charsets.UTF_8
-        )
-        // mailbox_event.json fixture: register "03", zone 1 at the message level (CAN address,
-        // not in the payload), open=true, damper_pct=80, measured_temp_c=23.4
-        assertTrue("event field applied", latestXml.contains("<damper>80</damper>"))
-        assertTrue("event field applied", latestXml.contains("<measuredTemp>23.4</measuredTemp>"))
-        // sensor_type/target_temp_c are only in the original snapshot, not this sparse event —
-        // merge-onto-cache must preserve them rather than rebuilding from scratch.
-        assertTrue("cache-only field preserved by merge", latestXml.contains("<sensor>rf</sensor>"))
-        assertTrue("cache-only field preserved by merge", latestXml.contains("<temp>22.5</temp>"))
+        val secure = secureRawCanFrames()
+        assertTrue("expected event rawCan delta broadcast", secure.isNotEmpty())
+        val frame = secure.last().getStringExtra("com.air.advantage.MESSAGE_FROM_CB_SECURE")!!
+        assertTrue("delta must be a getCAN 1 frame", frame.startsWith("getCAN 1 "))
+        val record = frame.substringAfter("getCAN 1 ")
+        assertEquals("delta must be a single 25-char record, got: $frame", 25, record.length)
 
         // No onCreate/onDestroy round trip happened between snapshot and event.
         assertEquals(service, UartForegroundService.instance)
@@ -478,50 +433,16 @@ class UartForegroundServiceMailboxTest {
     // ── publish gate ──────────────────────────────────────────────
 
     @Test
-    fun `deviceOpen false but mailbox Connected still broadcasts mailbox path`() {
-        service.deviceOpen.set(false)
-        service.attachMailboxWsClient(fakeClient)
-        fakeClient.emitState(MailboxConnectionState.Connected)
-
-        fakeClient.emitIncoming(zoneEventInbound())
-
-        assertFalse(service.deviceOpen.get())
-        assertTrue("mailbox-ready broadcast should still fire", sentMessageFromCb().isNotEmpty())
-    }
-
-    @Test
-    fun `mailbox attached but not yet Connected and deviceOpen false suppresses broadcast`() {
+    fun `mailbox attached but not yet Connected and deviceOpen false still broadcasts secure rawCan`() {
         service.deviceOpen.set(false)
         service.attachMailboxWsClient(fakeClient)
         // FakeMailboxWsClient starts at Idle and is never moved to Connected here.
 
         fakeClient.emitIncoming(zoneEventInbound())
 
-        assertNotNull(
-            "mapped poll is still cached even when not yet broadcast",
-            service.dataCache.get("getZoneData?zone=1")
-        )
         assertTrue(
-            "no broadcast while neither deviceOpen nor mailbox-ready",
-            sentMessageFromCb().isEmpty()
-        )
-    }
-
-    @Test
-    fun `mailbox Disconnected after being Connected falls back to requiring deviceOpen`() {
-        service.deviceOpen.set(false)
-        service.attachMailboxWsClient(fakeClient)
-        fakeClient.emitState(MailboxConnectionState.Connected)
-        fakeClient.emitIncoming(zoneEventInbound())
-        assertTrue(sentMessageFromCb().isNotEmpty())
-        capturedIntents.clear()
-
-        fakeClient.emitState(MailboxConnectionState.Disconnected)
-        fakeClient.emitIncoming(zoneEventInbound())
-
-        assertTrue(
-            "no broadcast once mailbox drops out of Connected and USB is still closed",
-            sentMessageFromCb().isEmpty()
+            "mailbox inbound secure rawCan is not gated by deviceOpen or the mailbox state",
+            secureRawCanFrames().isNotEmpty()
         )
     }
 

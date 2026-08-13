@@ -35,27 +35,6 @@ class DataCacheRepositoryTest {
     }
 
     @Test
-    fun hasChangedReturnsTrueForNewTag() {
-        val data = byteArrayOf(1, 2, 3)
-        assertTrue(repository.hasChanged("newTag", data))
-    }
-
-    @Test
-    fun hasChangedReturnsFalseForSameData() {
-        val data = byteArrayOf(1, 2, 3)
-        repository.put("tag", data)
-        assertFalse(repository.hasChanged("tag", data))
-    }
-
-    @Test
-    fun hasChangedReturnsTrueForDifferentData() {
-        val original = byteArrayOf(1, 2, 3)
-        val different = byteArrayOf(4, 5, 6)
-        repository.put("tag", original)
-        assertTrue(repository.hasChanged("tag", different))
-    }
-
-    @Test
     fun putEmitsViaSharedFlowOnlyWhenDataChanges() = runBlocking {
         val data1 = byteArrayOf(1, 2, 3)
         val data2 = byteArrayOf(4, 5, 6)
