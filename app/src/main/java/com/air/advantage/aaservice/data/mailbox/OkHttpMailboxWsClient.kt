@@ -86,8 +86,7 @@ class OkHttpMailboxWsClient(
 
     private val _incoming = MutableSharedFlow<MailboxInbound>(
         // Replay last frame so UartForegroundService's collector, which attaches only
-        // after Connected (post-snapshot), still receives the snapshot that
-        // carries system_status / zones for :2025.
+        // after Connected (post-snapshot), still receives the snapshot for :2025.
         extraBufferCapacity = 64,
         replay = 1,
     )

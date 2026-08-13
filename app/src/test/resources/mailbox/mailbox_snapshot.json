@@ -1,16 +1,17 @@
 {
   "type": "snapshot",
   "units": {
-    "aircon:1": {
-      "system_status": {
+    "07:181f3": {
+      "05": {
         "power": "on",
         "mode": "cool",
         "fan": "auto",
         "target_temp_c": 22.5,
         "myzone_id": 1,
-        "fresh_air": false
+        "fresh_air": false,
+        "rf_sys_id": 0
       },
-      "zones": {
+      "03": {
         "1": {
           "open": true,
           "damper_pct": 100,
@@ -25,12 +26,17 @@
           "target_temp_c": 21.0,
           "measured_temp_c": 24.4
         }
+      },
+      "04": {
+        "1": {
+          "min_damper": 0,
+          "max_damper": 100,
+          "motion_status": 0,
+          "motion_config": 0,
+          "zone_error": 0,
+          "rssi": 0
+        }
       }
     }
-  },
-  "can_records": [
-    "0703abcde0120040100000000",
-    "0703abcde0501030330010000",
-    "0703abcde0301e4642d170100"
-  ]
+  }
 }

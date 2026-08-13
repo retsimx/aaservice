@@ -1,11 +1,10 @@
 {
   "type": "event",
-  "unit_type": "aircon",
-  "unit_id": "1",
-  "register": "zone_state",
+  "unit_type": "07",
+  "unit_id": "181f3",
+  "register": "03",
   "zone": 1,
   "payload": {
-    "zone_id": "1",
     "open": true,
     "damper_pct": 80,
     "measured_temp_c": 23.4
