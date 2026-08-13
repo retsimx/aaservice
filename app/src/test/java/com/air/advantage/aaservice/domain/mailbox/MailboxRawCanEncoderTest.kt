@@ -54,9 +54,18 @@ class MailboxRawCanEncoderTest {
     fun `reg 05 system status encodes power mode fan fresh air`() {
         val event = event(
             "05",
-            """{ "power": "on", "mode": "cool", "fan": "auto", "target_temp_c": 22.0, "myzone_id": 1, "fresh_air": false, "rf_sys_id": 0 }""",
+            """{ "power": "on", "mode": "cool", "fan": "auto", "target_temp_c": 22.0, "myzone_id": 1, "fresh_air": "off", "rf_sys_id": 0 }""",
         )
         assertEquals("getCAN 1 0703181f3050101042c010100", MailboxRawCanEncoder.encodeEventToCan(event))
+    }
+
+    @Test
+    fun `reg 05 fresh air none encodes byte 00 not 01`() {
+        val event = event(
+            "05",
+            """{ "power": "on", "mode": "cool", "fan": "auto", "target_temp_c": 22.0, "myzone_id": 1, "fresh_air": "none", "rf_sys_id": 0 }""",
+        )
+        assertEquals("getCAN 1 0703181f3050101042c010000", MailboxRawCanEncoder.encodeEventToCan(event))
     }
 
     @Test
@@ -83,7 +92,7 @@ class MailboxRawCanEncoderTest {
         // layout. Encodes as the documented record `0703<181f3>0501010330000100`.
         val event = event(
             "05",
-            """{ "power": "on", "mode": "cool", "fan": "high", "target_temp_c": 24.0, "myzone_id": 0, "fresh_air": false, "rf_sys_id": 0 }""",
+            """{ "power": "on", "mode": "cool", "fan": "high", "target_temp_c": 24.0, "myzone_id": 0, "fresh_air": "off", "rf_sys_id": 0 }""",
         )
         assertEquals("getCAN 1 0703181f30501010330000100", MailboxRawCanEncoder.encodeEventToCan(event))
     }
@@ -162,7 +171,7 @@ class MailboxRawCanEncoderTest {
               "type": "snapshot",
               "units": {
                 "07:181f3": {
-                  "05": { "power": "on", "mode": "cool", "fan": "auto", "target_temp_c": 22.0, "myzone_id": 1, "fresh_air": false, "rf_sys_id": 0 },
+                  "05": { "power": "on", "mode": "cool", "fan": "auto", "target_temp_c": 22.0, "myzone_id": 1, "fresh_air": "off", "rf_sys_id": 0 },
                   "0a": {},
                   "03": {
                     "2": { "open": false, "damper_pct": 50, "sensor_type": "rf", "target_temp_c": 21.0, "measured_temp_c": 20.0 },
@@ -193,7 +202,7 @@ class MailboxRawCanEncoderTest {
     fun `event encodes single record delta`() {
         val event = event(
             "05",
-            """{ "power": "on", "mode": "cool", "fan": "auto", "target_temp_c": 22.0, "myzone_id": 1, "fresh_air": false, "rf_sys_id": 0 }""",
+            """{ "power": "on", "mode": "cool", "fan": "auto", "target_temp_c": 22.0, "myzone_id": 1, "fresh_air": "off", "rf_sys_id": 0 }""",
         )
         assertEquals("getCAN 1 0703181f3050101042c010100", MailboxRawCanEncoder.encodeEventToCan(event))
     }
@@ -247,7 +256,7 @@ class MailboxRawCanEncoderTest {
             units = mapOf(
                 "07:181f3" to mapOf(
                     "05" to JSONObject(
-                        """{ "power": "on", "mode": "cool", "fan": "auto", "target_temp_c": 22.0, "myzone_id": 1, "fresh_air": false, "rf_sys_id": 0 }""",
+                        """{ "power": "on", "mode": "cool", "fan": "auto", "target_temp_c": 22.0, "myzone_id": 1, "fresh_air": "off", "rf_sys_id": 0 }""",
                     ),
                 ),
             ),
@@ -309,7 +318,7 @@ class MailboxRawCanEncoderTest {
     fun `read result encodes typed payload as single getCAN record`() {
         val result = readResult(
             "05",
-            """{ "power": "on", "mode": "cool", "fan": "auto", "target_temp_c": 22.0, "myzone_id": 1, "fresh_air": false, "rf_sys_id": 0 }""",
+            """{ "power": "on", "mode": "cool", "fan": "auto", "target_temp_c": 22.0, "myzone_id": 1, "fresh_air": "off", "rf_sys_id": 0 }""",
         )
         assertEquals("getCAN 1 0703181f3050101042c010100", MailboxRawCanEncoder.encodeReadResultToCan(result))
     }

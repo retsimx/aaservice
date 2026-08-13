@@ -77,19 +77,27 @@ class MyAir5OutboundMailboxMapperTest {
     }
 
     @Test
-    fun `setAircon freshAir on maps to fresh_air true`() {
+    fun `setAircon freshAir on maps to fresh_air on`() {
         val msg = """setAircon?json={"aircons":{"ac1":{"info":{"freshAir":"on"}}}}"""
         val write = asWrite(MyAir5OutboundMailboxMapper.mapMessage(msg).single())
         assertEquals(MyAir5OutboundMailboxMapper.REG_SYSTEM_STATUS, write.register)
-        assertTrue(typed(write).getBoolean("fresh_air"))
+        assertEquals("on", typed(write).getString("fresh_air"))
     }
 
     @Test
-    fun `setAircon freshAir off maps to fresh_air false`() {
+    fun `setAircon freshAir off maps to fresh_air off`() {
         val msg = """setAircon?json={"aircons":{"ac1":{"info":{"freshAir":"off"}}}}"""
         val write = asWrite(MyAir5OutboundMailboxMapper.mapMessage(msg).single())
         assertEquals(MyAir5OutboundMailboxMapper.REG_SYSTEM_STATUS, write.register)
-        assertFalse(typed(write).getBoolean("fresh_air"))
+        assertEquals("off", typed(write).getString("fresh_air"))
+    }
+
+    @Test
+    fun `setAircon freshAir none maps to fresh_air none`() {
+        val msg = """setAircon?json={"aircons":{"ac1":{"info":{"freshAir":"none"}}}}"""
+        val write = asWrite(MyAir5OutboundMailboxMapper.mapMessage(msg).single())
+        assertEquals(MyAir5OutboundMailboxMapper.REG_SYSTEM_STATUS, write.register)
+        assertEquals("none", typed(write).getString("fresh_air"))
     }
 
     // ── setAircon zones ─────────────────────────────────────────────
@@ -339,6 +347,24 @@ class MyAir5OutboundMailboxMapperTest {
     fun `lights can tokens dropped and double spaces collapsed`() {
         val actions = MyAir5OutboundMailboxMapper.mapCanTokens(
             "0201000000000360000000000  0201000000236000000000000",
+        )
+        assertTrue(actions.isEmpty())
+    }
+
+    @Test
+    fun `reg07 jz18 tokens dropped as daemon-internal`() {
+        val actions = MyAir5OutboundMailboxMapper.mapCanTokens(
+            "0701181f30700000000000000 0701181f3120052a601000000",
+        )
+        val write = actions.single() as OutboundMailboxAction.Write
+        assertEquals("12", write.register)
+    }
+
+    @Test
+    fun `read-only register tokens dropped (02 08 0a)`() {
+        val actions = MyAir5OutboundMailboxMapper.mapCanTokens(
+            "0801000000236000000000000 0701181f30a60000000000000 " +
+                "0701181f30800000000000000",
         )
         assertTrue(actions.isEmpty())
     }

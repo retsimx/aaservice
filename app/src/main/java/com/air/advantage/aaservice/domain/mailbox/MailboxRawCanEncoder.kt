@@ -280,7 +280,15 @@ object MailboxRawCanEncoder {
         }
         val setTempX2 = tempCToX2(status.optDouble("target_temp_c", 24.0))
         val myzone = status.optInt("myzone_id", 1).coerceIn(0, 255)
-        val fresh = if (status.optBoolean("fresh_air", false)) 0x02 else 0x01
+        val freshRaw = status.opt("fresh_air")
+        val fresh = when (freshRaw) {
+            is Boolean -> if (freshRaw) 0x02 else 0x01
+            else -> when (status.optString("fresh_air", "none").lowercase()) {
+                "on" -> 0x02
+                "off" -> 0x01
+                else -> 0x00
+            }
+        }
         val rfSysId = status.optInt("rf_sys_id", 0).coerceIn(0, 255)
         return byteArrayOf(
             power.toByte(),
