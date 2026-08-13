@@ -8,6 +8,9 @@ import org.json.JSONObject
 object MailboxFixtures {
     fun snapshot(): String = load("mailbox/mailbox_snapshot.json")
 
+    /** Snapshot containing a raw-hex string register (unknown register passthrough). */
+    fun snapshotRawHex(): String = load("mailbox/mailbox_snapshot_rawhex.json")
+
     fun event(): String = load("mailbox/mailbox_event.json")
 
     fun ackSuccess(msgId: String): String =
