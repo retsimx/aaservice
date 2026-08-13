@@ -2,12 +2,14 @@ package com.air.advantage.aaservice.data.repository
 
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
-import org.junit.Assert.*
+import org.junit.Assert.assertArrayEquals
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 
 class DataCacheRepositoryTest {
-
     private lateinit var repository: DataCacheRepository
 
     @Before
@@ -35,31 +37,33 @@ class DataCacheRepositoryTest {
     }
 
     @Test
-    fun putEmitsViaSharedFlowOnlyWhenDataChanges() = runBlocking {
-        val data1 = byteArrayOf(1, 2, 3)
-        val data2 = byteArrayOf(4, 5, 6)
+    fun putEmitsViaSharedFlowOnlyWhenDataChanges() =
+        runBlocking {
+            val data1 = byteArrayOf(1, 2, 3)
+            val data2 = byteArrayOf(4, 5, 6)
 
-        repository.put("temp", data1)
-        val first = repository.getUpdates().first()
+            repository.put("temp", data1)
+            val first = repository.getUpdates().first()
 
-        repository.put("temp", data2)
-        val second = repository.getUpdates().first()
+            repository.put("temp", data2)
+            val second = repository.getUpdates().first()
 
-        assertEquals("temp", first.tag)
-        assertArrayEquals(data1, first.data)
-        assertArrayEquals(data2, second.data)
-    }
+            assertEquals("temp", first.tag)
+            assertArrayEquals(data1, first.data)
+            assertArrayEquals(data2, second.data)
+        }
 
     @Test
-    fun putDoesNotEmitWhenDataIsUnchanged() = runBlocking {
-        val data = byteArrayOf(1, 2, 3)
-        repository.put("temp", data)
-        repository.put("temp", data)
+    fun putDoesNotEmitWhenDataIsUnchanged() =
+        runBlocking {
+            val data = byteArrayOf(1, 2, 3)
+            repository.put("temp", data)
+            repository.put("temp", data)
 
-        val first = repository.getUpdates().first()
+            val first = repository.getUpdates().first()
 
-        assertArrayEquals(data, first.data)
-    }
+            assertArrayEquals(data, first.data)
+        }
 
     @Test
     fun getAllKeysReturnsAllStoredKeys() {

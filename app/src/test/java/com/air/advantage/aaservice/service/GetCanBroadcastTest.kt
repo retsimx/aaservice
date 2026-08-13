@@ -3,12 +3,23 @@ package com.air.advantage.aaservice.service
 import android.content.Intent
 import com.air.advantage.aaservice.util.CryptoHelper
 import org.junit.After
-import org.junit.Assert.*
+import org.junit.Assert.assertArrayEquals
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.mockito.ArgumentCaptor
-import org.mockito.kotlin.*
+import org.mockito.kotlin.any
+import org.mockito.kotlin.anyOrNull
+import org.mockito.kotlin.capture
+import org.mockito.kotlin.doNothing
+import org.mockito.kotlin.doReturn
+import org.mockito.kotlin.eq
+import org.mockito.kotlin.spy
+import org.mockito.kotlin.verify
+import org.mockito.kotlin.whenever
 import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
@@ -16,7 +27,6 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [33], manifest = Config.NONE)
 class GetCanBroadcastTest {
-
     private lateinit var service: UartForegroundService
 
     private val getCanPayload = "getCAN zone1"
@@ -67,7 +77,7 @@ class GetCanBroadcastTest {
         assertEquals("com.air.advantage.zone10", noPermIntent.component?.packageName)
         assertEquals(
             "com.air.advantage.ReceiverDataUartForNoPermissionBroadcast",
-            noPermIntent.component?.className
+            noPermIntent.component?.className,
         )
         assertEquals("rawCan", noPermIntent.getStringExtra("com.air.advantage.GET_DATA_REQUEST"))
         val encrypted = noPermIntent.getByteArrayExtra("com.air.advantage.MESSAGE_TO_CB_NO_PERMISSION_BROADCAST")
@@ -75,7 +85,7 @@ class GetCanBroadcastTest {
         assertTrue("Encrypted bytes should be non-empty", encrypted!!.isNotEmpty())
         assertArrayEquals(
             getCanPayload.toByteArray(Charsets.UTF_8),
-            CryptoHelper.decrypt(encrypted)
+            CryptoHelper.decrypt(encrypted),
         )
     }
 

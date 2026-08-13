@@ -6,7 +6,9 @@ import android.net.Uri
 import androidx.test.core.app.ApplicationProvider
 import com.air.advantage.aaservice.service.RebootNotificationService
 import com.air.advantage.aaservice.ui.main.MainActivity
-import org.junit.Assert.*
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -17,7 +19,6 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [33], manifest = Config.NONE)
 class PackageUpgradeReceiverTest {
-
     private lateinit var context: Context
     private lateinit var receiver: PackageUpgradeReceiver
 
@@ -37,9 +38,10 @@ class PackageUpgradeReceiverTest {
         val app = context as android.app.Application
         shadowOf(app).clearStartedServices()
 
-        val intent = Intent(Intent.ACTION_MY_PACKAGE_REPLACED).apply {
-            data = Uri.parse("package:${context.packageName}")
-        }
+        val intent =
+            Intent(Intent.ACTION_MY_PACKAGE_REPLACED).apply {
+                data = Uri.parse("package:${context.packageName}")
+            }
 
         receiver.onReceive(context, intent)
 
@@ -54,9 +56,9 @@ class PackageUpgradeReceiverTest {
         assertEquals(MainActivity::class.java.name, startedActivity.component?.className)
         assertEquals(
             Intent.FLAG_ACTIVITY_NEW_TASK or
-                    Intent.FLAG_ACTIVITY_SINGLE_TOP or
-                    Intent.FLAG_ACTIVITY_CLEAR_TOP,
-            startedActivity.flags
+                Intent.FLAG_ACTIVITY_SINGLE_TOP or
+                Intent.FLAG_ACTIVITY_CLEAR_TOP,
+            startedActivity.flags,
         )
         assertEquals(872415232, startedActivity.flags)
     }
@@ -66,9 +68,10 @@ class PackageUpgradeReceiverTest {
         val app = context as android.app.Application
         shadowOf(app).clearStartedServices()
 
-        val intent = Intent(Intent.ACTION_MY_PACKAGE_REPLACED).apply {
-            data = Uri.parse("package:com.other.app")
-        }
+        val intent =
+            Intent(Intent.ACTION_MY_PACKAGE_REPLACED).apply {
+                data = Uri.parse("package:com.other.app")
+            }
 
         receiver.onReceive(context, intent)
 

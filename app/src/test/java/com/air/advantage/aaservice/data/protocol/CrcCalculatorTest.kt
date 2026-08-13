@@ -4,7 +4,6 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class CrcCalculatorTest {
-
     @Test
     fun `computeHex returns expected value for getSystemData`() {
         assertEquals("15", CrcCalculator.computeHex("getSystemData"))

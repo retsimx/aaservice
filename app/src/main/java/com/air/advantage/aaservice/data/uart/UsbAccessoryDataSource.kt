@@ -1,3 +1,10 @@
+@file:Suppress("ktlint:standard:backing-property-naming")
+// Rationale: `_readFlow` is a private mutable backing flow paired with a private `readFlow`.
+// Satisfying this rule requires renaming or public visibility, both out of scope for the
+// formatting-only sweep. Note: ktlint 1.2.1 ignores `// ktlint-disable` comment directives unless
+// formatter tags are enabled in .editorconfig, so @file:Suppress is the only functional
+// file-level mechanism.
+
 package com.air.advantage.aaservice.data.uart
 
 import android.content.Context
@@ -36,11 +43,10 @@ class UsbAccessoryDataSource(
      * `q(true)` so the foreground notification flips to "Connected" as soon as the CB
      * is talking — not only after a successful poll payload (which CAN2 can starve).
      */
-    private val onPingObserved: (() -> Unit)? = null
+    private val onPingObserved: (() -> Unit)? = null,
 ) : UartDataSource {
-
     constructor(context: Context) : this(
-        usbManager = context.getSystemService(Context.USB_SERVICE) as? UsbManager
+        usbManager = context.getSystemService(Context.USB_SERVICE) as? UsbManager,
     )
 
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
@@ -95,7 +101,10 @@ class UsbAccessoryDataSource(
      * runs config then the read loop sequentially on the same thread). Returns `false` if the
      * config packet could not be sent.
      */
-    suspend fun connectWithStreams(input: InputStream, output: OutputStream): Boolean {
+    suspend fun connectWithStreams(
+        input: InputStream,
+        output: OutputStream,
+    ): Boolean {
         Log.i(TAG, "connectWithStreams: connecting")
         fileInputStream = input
         fileOutputStream = output
@@ -199,13 +208,14 @@ class UsbAccessoryDataSource(
                     _isConnected.value = false
                     return
                 }
-                val readSize = if (bufferOffset + READ_SIZE > buffer.size) {
-                    buffer.fill(0)
-                    bufferOffset = 0
-                    READ_SIZE
-                } else {
-                    READ_SIZE
-                }
+                val readSize =
+                    if (bufferOffset + READ_SIZE > buffer.size) {
+                        buffer.fill(0)
+                        bufferOffset = 0
+                        READ_SIZE
+                    } else {
+                        READ_SIZE
+                    }
                 val bytesRead = inputStream.read(buffer, bufferOffset, readSize)
                 if (bytesRead > 0) {
                     Log.v(TAG, "readLoop: read $bytesRead bytes, preview=${previewOf(buffer, bufferOffset, bytesRead)}")
@@ -299,7 +309,11 @@ class UsbAccessoryDataSource(
         }
     }
 
-    private fun previewOf(data: ByteArray, offset: Int = 0, length: Int = data.size - offset): String {
+    private fun previewOf(
+        data: ByteArray,
+        offset: Int = 0,
+        length: Int = data.size - offset,
+    ): String {
         val previewLength = minOf(length, PREVIEW_BYTES)
         return data.copyOfRange(offset, offset + previewLength).joinToString(" ") { "%02x".format(it) } +
             if (previewLength < length) "..." else ""

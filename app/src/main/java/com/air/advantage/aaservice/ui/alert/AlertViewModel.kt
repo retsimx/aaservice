@@ -8,12 +8,13 @@ import kotlinx.coroutines.flow.asStateFlow
 import javax.inject.Inject
 
 @HiltViewModel
-class AlertViewModel @Inject constructor() : ViewModel() {
+class AlertViewModel
+    @Inject
+    constructor() : ViewModel() {
+        private val _alertActive = MutableStateFlow(false)
+        val alertActive: StateFlow<Boolean> = _alertActive.asStateFlow()
 
-    private val _alertActive = MutableStateFlow(false)
-    val alertActive: StateFlow<Boolean> = _alertActive.asStateFlow()
-
-    fun dismiss() {
-        _alertActive.value = false
+        fun dismiss() {
+            _alertActive.value = false
+        }
     }
-}

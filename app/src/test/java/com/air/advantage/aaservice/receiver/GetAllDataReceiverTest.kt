@@ -3,35 +3,48 @@ package com.air.advantage.aaservice.receiver
 import android.content.Context
 import android.content.Intent
 import com.air.advantage.aaservice.service.UartForegroundService
-import java.util.concurrent.atomic.AtomicBoolean
 import org.junit.After
 import org.junit.Before
 import org.junit.Test
-import org.mockito.Mockito.*
+import org.mockito.ArgumentMatchers.anyString
+import org.mockito.Mockito.mock
+import org.mockito.Mockito.never
+import org.mockito.Mockito.times
+import org.mockito.Mockito.verify
+import org.mockito.Mockito.verifyNoInteractions
 import org.mockito.kotlin.whenever
+import java.util.concurrent.atomic.AtomicBoolean
 
 class GetAllDataReceiverTest {
-
     private lateinit var receiver: GetAllDataReceiver
     private lateinit var context: Context
     private lateinit var service: UartForegroundService
 
-    private val baseTags = listOf(
-        "getSystemData", "getClock",
-        "getZoneData?zone=1", "getZoneData?zone=2", "getZoneData?zone=3",
-        "getZoneData?zone=4", "getZoneData?zone=5", "getZoneData?zone=6",
-        "getZoneData?zone=7", "getZoneData?zone=8", "getZoneData?zone=9",
-        "getZoneData?zone=10"
-    )
+    private val baseTags =
+        listOf(
+            "getSystemData",
+            "getClock",
+            "getZoneData?zone=1",
+            "getZoneData?zone=2",
+            "getZoneData?zone=3",
+            "getZoneData?zone=4",
+            "getZoneData?zone=5",
+            "getZoneData?zone=6",
+            "getZoneData?zone=7",
+            "getZoneData?zone=8",
+            "getZoneData?zone=9",
+            "getZoneData?zone=10",
+        )
 
-    private val scheduleTags = listOf(
-        "getZoneTimer",
-        "getScheduleData?schedule=1",
-        "getScheduleData?schedule=2",
-        "getScheduleData?schedule=3",
-        "getScheduleData?schedule=4",
-        "getScheduleData?schedule=5"
-    )
+    private val scheduleTags =
+        listOf(
+            "getZoneTimer",
+            "getScheduleData?schedule=1",
+            "getScheduleData?schedule=2",
+            "getScheduleData?schedule=3",
+            "getScheduleData?schedule=4",
+            "getScheduleData?schedule=5",
+        )
 
     @Before
     fun setUp() {

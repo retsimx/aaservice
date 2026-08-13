@@ -1,3 +1,10 @@
+@file:Suppress("ktlint:standard:backing-property-naming")
+// Rationale: `_readFlow` is a private mutable backing flow paired with a private `readFlow`.
+// Satisfying this rule requires renaming or public visibility, both out of scope for the
+// formatting-only sweep. Note: ktlint 1.2.1 ignores `// ktlint-disable` comment directives unless
+// formatter tags are enabled in .editorconfig, so @file:Suppress is the only functional
+// file-level mechanism.
+
 package com.air.advantage.aaservice.data.uart
 
 import android.hardware.usb.UsbAccessory
@@ -22,8 +29,8 @@ import java.nio.charset.StandardCharsets
  * so a real [UsbAccessoryDataSource] framing loop can detect and validate them.
  */
 class MockUartDataSource : UartDataSource {
-
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
+
     @Volatile
     private var connected = false
     private val _readFlow = MutableSharedFlow<ByteArray>(replay = 1, extraBufferCapacity = 16)
@@ -64,31 +71,34 @@ class MockUartDataSource : UartDataSource {
 
     private fun generateResponse(message: String): ByteArray {
         val pingFrame = PING_FRAME
-        val responseFrame = when {
-            message.contains("Ping") -> frame(ACK_PAYLOAD)
-            message.contains("getSystemData") -> buildSystemDataFrame()
-            message.contains("getClock") -> buildClockFrame()
-            message.contains("getZoneData") -> buildZoneDataFrame(message)
-            else -> frame(ACK_PAYLOAD)
-        }
+        val responseFrame =
+            when {
+                message.contains("Ping") -> frame(ACK_PAYLOAD)
+                message.contains("getSystemData") -> buildSystemDataFrame()
+                message.contains("getClock") -> buildClockFrame()
+                message.contains("getZoneData") -> buildZoneDataFrame(message)
+                else -> frame(ACK_PAYLOAD)
+            }
         val combined = pingFrame + responseFrame
         Log.d(TAG, "Mock response: $combined")
         return combined.toByteArray(StandardCharsets.UTF_8)
     }
 
-    private fun buildSystemDataFrame(): String = frame(
-        "<request>getSystemData</request>" +
-            "<type>00</type>" +
-            "<AppStore>x</AppStore>" +
-            "<dhcp>192.168.1.1</dhcp>" +
-            "<subnet>255.255.255.0</subnet>" +
-            "<gateway>192.168.1.254</gateway>" +
-            "<MyAppRev>14.148</MyAppRev>"
-    )
+    private fun buildSystemDataFrame(): String =
+        frame(
+            "<request>getSystemData</request>" +
+                "<type>00</type>" +
+                "<AppStore>x</AppStore>" +
+                "<dhcp>192.168.1.1</dhcp>" +
+                "<subnet>255.255.255.0</subnet>" +
+                "<gateway>192.168.1.254</gateway>" +
+                "<MyAppRev>14.148</MyAppRev>",
+        )
 
-    private fun buildClockFrame(): String = frame(
-        "<request>getClock</request><time>2026-08-02 12:00:00</time>"
-    )
+    private fun buildClockFrame(): String =
+        frame(
+            "<request>getClock</request><time>2026-08-02 12:00:00</time>",
+        )
 
     private fun buildZoneDataFrame(message: String): String {
         val zoneMatch = Regex("zone=(\\d+)").find(message)
@@ -98,12 +108,11 @@ class MockUartDataSource : UartDataSource {
                 "<zone>$zoneNum</zone>" +
                 "<state>off</state>" +
                 "<temp>21.0</temp>" +
-                "<fan>auto</fan>"
+                "<fan>auto</fan>",
         )
     }
 
-    private fun frame(payload: String): String =
-        "<U>$payload</U=${CrcCalculator.computeHex(payload)}>"
+    private fun frame(payload: String): String = "<U>$payload</U=${CrcCalculator.computeHex(payload)}>"
 
     companion object {
         private const val TAG = "AAService2/Mock"

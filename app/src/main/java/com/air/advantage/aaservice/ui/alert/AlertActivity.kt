@@ -11,12 +11,15 @@ import com.air.advantage.aaservice.R
 import com.air.advantage.aaservice.receiver.AlertDialogReceiver
 
 class AlertActivity : Activity() {
-
-    private val hideWarningReceiver = object : BroadcastReceiver() {
-        override fun onReceive(context: Context, intent: Intent) {
-            finish()
+    private val hideWarningReceiver =
+        object : BroadcastReceiver() {
+            override fun onReceive(
+                context: Context,
+                intent: Intent,
+            ) {
+                finish()
+            }
         }
-    }
 
     public override fun onCreate(bundle: Bundle?) {
         super.onCreate(bundle)

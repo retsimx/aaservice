@@ -5,7 +5,6 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class DaemonUrlsTest {
-
     @Test
     fun `default mailbox URL is loopback`() {
         assertTrue(isLoopbackDaemonUrl("ws://127.0.0.1:2026/v1/mailbox-stream"))

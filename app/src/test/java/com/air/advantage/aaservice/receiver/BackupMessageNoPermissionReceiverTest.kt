@@ -5,15 +5,18 @@ import android.content.Intent
 import com.air.advantage.aaservice.service.UartForegroundService
 import com.air.advantage.aaservice.util.CryptoHelper
 import org.junit.After
-import org.junit.Assert.*
+import org.junit.Assert.assertEquals
 import org.junit.Before
 import org.junit.Test
-import org.mockito.Mockito.*
+import org.mockito.Mockito.mock
+import org.mockito.Mockito.mockConstruction
+import org.mockito.Mockito.mockStatic
+import org.mockito.Mockito.never
+import org.mockito.Mockito.verify
 import org.mockito.kotlin.any
 import org.mockito.kotlin.whenever
 
 class BackupMessageNoPermissionReceiverTest {
-
     private lateinit var receiver: BackupMessageNoPermissionReceiver
     private lateinit var context: Context
 
@@ -43,10 +46,12 @@ class BackupMessageNoPermissionReceiverTest {
 
                 val constructed = mockedIntent.constructed()
                 assertEquals(1, constructed.size)
-                
+
                 verify(context).sendBroadcast(constructed[0])
                 verify(constructed[0]).putExtra("com.air.advantage.GET_DATA_REQUEST", "backupMessage")
-                verify(constructed[0]).putExtra("com.air.advantage.MESSAGE_TO_CB_NO_PERMISSION_BROADCAST", expectedEncrypted)
+                verify(
+                    constructed[0],
+                ).putExtra("com.air.advantage.MESSAGE_TO_CB_NO_PERMISSION_BROADCAST", expectedEncrypted)
             }
         }
     }

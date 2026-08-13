@@ -1,13 +1,14 @@
 package com.air.advantage.aaservice.service
 
-import android.app.AlarmManager
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.content.Context
 import androidx.test.core.app.ApplicationProvider
-import com.air.advantage.aaservice.receiver.AlertDialogReceiver
 import org.junit.After
-import org.junit.Assert.*
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -19,7 +20,6 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [33], manifest = Config.NONE)
 class RebootNotificationServiceTest {
-
     @Before
     fun setUp() {
         RebootNotificationService.rebootRequired.set(false)
@@ -65,10 +65,11 @@ class RebootNotificationServiceTest {
         val legacyChannel =
             ApplicationProvider.getApplicationContext<Context>()
                 .getString(com.air.advantage.aaservice.R.string.service_name) + " Notification"
-        val nm = ApplicationProvider.getApplicationContext<Context>()
-            .getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
+        val nm =
+            ApplicationProvider.getApplicationContext<Context>()
+                .getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         nm.createNotificationChannel(
-            NotificationChannel(legacyChannel, "legacy", NotificationManager.IMPORTANCE_LOW)
+            NotificationChannel(legacyChannel, "legacy", NotificationManager.IMPORTANCE_LOW),
         )
 
         Robolectric.buildService(RebootNotificationService::class.java).create()

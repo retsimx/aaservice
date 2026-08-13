@@ -1,3 +1,9 @@
+@file:Suppress("ktlint:standard:max-line-length")
+// Rationale: the overlong lines are JSON payload string literals passed as expected-argument
+// fixtures; wrapping them would alter the payload text under test. Note: ktlint 1.2.1 ignores
+// `// ktlint-disable` comment directives unless formatter tags are enabled in .editorconfig, so
+// @file:Suppress is the only functional file-level mechanism.
+
 package com.air.advantage.aaservice.domain.mailbox
 
 import com.air.advantage.aaservice.data.mailbox.MailboxFixtures
@@ -11,60 +17,65 @@ import org.robolectric.RobolectricTestRunner
 
 @RunWith(RobolectricTestRunner::class)
 class MailboxRawCanEncoderTest {
-
     @Test
     fun `reg 01 zone config encodes header total constant ids and filter byte`() {
-        val event = event(
-            "01",
-            """{ "header": 32, "total_zones": 4, "constant_zones": 1, "constant_zone_ids": [1, 0, 0], "filter_clean_required": false }""",
-        )
+        val event =
+            event(
+                "01",
+                """{ "header": 32, "total_zones": 4, "constant_zones": 1, "constant_zone_ids": [1, 0, 0], "filter_clean_required": false }""",
+            )
         assertEquals("getCAN 1 0703181f30120040101000000", MailboxRawCanEncoder.encodeEventToCan(event))
     }
 
     @Test
     fun `reg 02 unit activation encodes brand activation and dict firmware`() {
-        val event = event(
-            "02",
-            """{ "unit_type": "daikin", "activation_status": "code_enabled", "dict_fw_major": 2, "dict_fw_minor": 3 }""",
-        )
+        val event =
+            event(
+                "02",
+                """{ "unit_type": "daikin", "activation_status": "code_enabled", "dict_fw_major": 2, "dict_fw_minor": 3 }""",
+            )
         assertEquals("getCAN 1 0703181f30211010203000000", MailboxRawCanEncoder.encodeEventToCan(event))
     }
 
     @Test
     fun `reg 03 zone state encodes open pct sensor and temps`() {
-        val event = event(
-            "03",
-            """{ "open": true, "damper_pct": 100, "sensor_type": "wired", "target_temp_c": 22.0, "measured_temp_c": 20.5 }""",
-            zone = 1,
-        )
+        val event =
+            event(
+                "03",
+                """{ "open": true, "damper_pct": 100, "sensor_type": "wired", "target_temp_c": 22.0, "measured_temp_c": 20.5 }""",
+                zone = 1,
+            )
         assertEquals("getCAN 1 0703181f30301e4022c140500", MailboxRawCanEncoder.encodeEventToCan(event))
     }
 
     @Test
     fun `reg 04 zone limits encodes min max motion and rssi`() {
-        val event = event(
-            "04",
-            """{ "min_damper": 20, "max_damper": 80, "motion_status": 2, "motion_config": 1, "zone_error": 3, "rssi": 42 }""",
-            zone = 1,
-        )
+        val event =
+            event(
+                "04",
+                """{ "min_damper": 20, "max_damper": 80, "motion_status": 2, "motion_config": 1, "zone_error": 3, "rssi": 42 }""",
+                zone = 1,
+            )
         assertEquals("getCAN 1 0703181f3040114500201032a", MailboxRawCanEncoder.encodeEventToCan(event))
     }
 
     @Test
     fun `reg 05 system status encodes power mode fan fresh air`() {
-        val event = event(
-            "05",
-            """{ "power": "on", "mode": "cool", "fan": "auto", "target_temp_c": 22.0, "myzone_id": 1, "fresh_air": "off", "rf_sys_id": 0 }""",
-        )
+        val event =
+            event(
+                "05",
+                """{ "power": "on", "mode": "cool", "fan": "auto", "target_temp_c": 22.0, "myzone_id": 1, "fresh_air": "off", "rf_sys_id": 0 }""",
+            )
         assertEquals("getCAN 1 0703181f3050101042c010100", MailboxRawCanEncoder.encodeEventToCan(event))
     }
 
     @Test
     fun `reg 05 fresh air none encodes byte 00 not 01`() {
-        val event = event(
-            "05",
-            """{ "power": "on", "mode": "cool", "fan": "auto", "target_temp_c": 22.0, "myzone_id": 1, "fresh_air": "none", "rf_sys_id": 0 }""",
-        )
+        val event =
+            event(
+                "05",
+                """{ "power": "on", "mode": "cool", "fan": "auto", "target_temp_c": 22.0, "myzone_id": 1, "fresh_air": "none", "rf_sys_id": 0 }""",
+            )
         assertEquals("getCAN 1 0703181f3050101042c010000", MailboxRawCanEncoder.encodeEventToCan(event))
     }
 
@@ -90,10 +101,11 @@ class MailboxRawCanEncoderTest {
         // fan high(03), set_temp_x2 0x30 (24.0 C), myzone_id 0, fresh_air off(01),
         // rf_sys_id 0 — per the encoder's `[power][mode][fan][set_temp_x2][myzone][fresh][rf_sys]`
         // layout. Encodes as the documented record `0703<181f3>0501010330000100`.
-        val event = event(
-            "05",
-            """{ "power": "on", "mode": "cool", "fan": "high", "target_temp_c": 24.0, "myzone_id": 0, "fresh_air": "off", "rf_sys_id": 0 }""",
-        )
+        val event =
+            event(
+                "05",
+                """{ "power": "on", "mode": "cool", "fan": "high", "target_temp_c": 24.0, "myzone_id": 0, "fresh_air": "off", "rf_sys_id": 0 }""",
+            )
         assertEquals("getCAN 1 0703181f30501010330000100", MailboxRawCanEncoder.encodeEventToCan(event))
     }
 
@@ -104,11 +116,12 @@ class MailboxRawCanEncoderTest {
         // The encoder hardcodes dest 03 (tablet) and there is no full-record
         // passthrough, so the flush input encodes as `0703000000600000000000000`:
         // identical to the documented token in every byte except dest 01 -> 03.
-        val event = event(
-            "06",
-            """{ "fw_major": 0, "fw_minor": 0, "cb_type": 0, "rf_fw_major": 0 }""",
-            unitId = "00000",
-        )
+        val event =
+            event(
+                "06",
+                """{ "fw_major": 0, "fw_minor": 0, "cb_type": 0, "rf_fw_major": 0 }""",
+                unitId = "00000",
+            )
         val record = MailboxRawCanEncoder.encodeEventToCan(event)!!.removePrefix("getCAN 1 ")
         assertEquals("0703000000600000000000000", record)
         // Pin the documented token byte-exact: the only delta is the dest byte.
@@ -123,10 +136,11 @@ class MailboxRawCanEncoderTest {
 
     @Test
     fun `reg 09 activation code encodes action hex code and days`() {
-        val event = event(
-            "09",
-            """{ "action": "set_code", "unlock_code": "A1B2", "activation_days": 43 }""",
-        )
+        val event =
+            event(
+                "09",
+                """{ "action": "set_code", "unlock_code": "A1B2", "activation_days": 43 }""",
+            )
         assertEquals("getCAN 1 0703181f30901a1b22b000000", MailboxRawCanEncoder.encodeEventToCan(event))
     }
 
@@ -138,10 +152,11 @@ class MailboxRawCanEncoderTest {
 
     @Test
     fun `reg 12 sensor pairing encodes uid info byte and rev`() {
-        val event = event(
-            "12",
-            """{ "sensor_uid": "aabbcc", "pairing": true, "sensor_rev": 3 }""",
-        )
+        val event =
+            event(
+                "12",
+                """{ "sensor_uid": "aabbcc", "pairing": true, "sensor_rev": 3 }""",
+            )
         assertEquals("getCAN 1 0703181f312aabbcc40030000", MailboxRawCanEncoder.encodeEventToCan(event))
     }
 
@@ -165,27 +180,28 @@ class MailboxRawCanEncoderTest {
 
     @Test
     fun `snapshot encodes full register bank across units`() {
-        val snapshot = snapshot(
-            """
-            {
-              "type": "snapshot",
-              "units": {
-                "07:181f3": {
-                  "05": { "power": "on", "mode": "cool", "fan": "auto", "target_temp_c": 22.0, "myzone_id": 1, "fresh_air": "off", "rf_sys_id": 0 },
-                  "0a": {},
-                  "03": {
-                    "2": { "open": false, "damper_pct": 50, "sensor_type": "rf", "target_temp_c": 21.0, "measured_temp_c": 20.0 },
-                    "1": { "open": true, "damper_pct": 100, "sensor_type": "wired", "target_temp_c": 22.0, "measured_temp_c": 20.5 }
-                  },
-                  "04": { "1": { "min_damper": 20, "max_damper": 80, "motion_status": 2, "motion_config": 1, "zone_error": 3, "rssi": 42 } }
-                },
-                "08:181f3": {
-                  "12": { "sensor_uid": "aabbcc", "pairing": true, "sensor_rev": 3 }
+        val snapshot =
+            snapshot(
+                """
+                {
+                  "type": "snapshot",
+                  "units": {
+                    "07:181f3": {
+                      "05": { "power": "on", "mode": "cool", "fan": "auto", "target_temp_c": 22.0, "myzone_id": 1, "fresh_air": "off", "rf_sys_id": 0 },
+                      "0a": {},
+                      "03": {
+                        "2": { "open": false, "damper_pct": 50, "sensor_type": "rf", "target_temp_c": 21.0, "measured_temp_c": 20.0 },
+                        "1": { "open": true, "damper_pct": 100, "sensor_type": "wired", "target_temp_c": 22.0, "measured_temp_c": 20.5 }
+                      },
+                      "04": { "1": { "min_damper": 20, "max_damper": 80, "motion_status": 2, "motion_config": 1, "zone_error": 3, "rssi": 42 } }
+                    },
+                    "08:181f3": {
+                      "12": { "sensor_uid": "aabbcc", "pairing": true, "sensor_rev": 3 }
+                    }
+                  }
                 }
-              }
-            }
-            """.trimIndent(),
-        )
+                """.trimIndent(),
+            )
         assertEquals(
             "getCAN 1 " +
                 "0703181f30301e4022c140500 " +
@@ -200,10 +216,11 @@ class MailboxRawCanEncoderTest {
 
     @Test
     fun `event encodes single record delta`() {
-        val event = event(
-            "05",
-            """{ "power": "on", "mode": "cool", "fan": "auto", "target_temp_c": 22.0, "myzone_id": 1, "fresh_air": "off", "rf_sys_id": 0 }""",
-        )
+        val event =
+            event(
+                "05",
+                """{ "power": "on", "mode": "cool", "fan": "auto", "target_temp_c": 22.0, "myzone_id": 1, "fresh_air": "off", "rf_sys_id": 0 }""",
+            )
         assertEquals("getCAN 1 0703181f3050101042c010100", MailboxRawCanEncoder.encodeEventToCan(event))
     }
 
@@ -227,9 +244,10 @@ class MailboxRawCanEncoderTest {
 
     @Test
     fun `snapshot with only unknown register objects returns null`() {
-        val snapshot = snapshot(
-            """{ "type": "snapshot", "units": { "07:181f3": { "ff": { "anything": 1 } } } }""",
-        )
+        val snapshot =
+            snapshot(
+                """{ "type": "snapshot", "units": { "07:181f3": { "ff": { "anything": 1 } } } }""",
+            )
         assertNull(MailboxRawCanEncoder.encodeGetCan(snapshot))
     }
 
@@ -252,19 +270,24 @@ class MailboxRawCanEncoderTest {
 
     @Test
     fun `encodeGetCan keeps typed record when rawUnits also present for same register`() {
-        val snapshot = MailboxInbound.Snapshot(
-            units = mapOf(
-                "07:181f3" to mapOf(
-                    "05" to JSONObject(
-                        """{ "power": "on", "mode": "cool", "fan": "auto", "target_temp_c": 22.0, "myzone_id": 1, "fresh_air": "off", "rf_sys_id": 0 }""",
+        val snapshot =
+            MailboxInbound.Snapshot(
+                units =
+                    mapOf(
+                        "07:181f3" to
+                            mapOf(
+                                "05" to
+                                    JSONObject(
+                                        """{ "power": "on", "mode": "cool", "fan": "auto", "target_temp_c": 22.0, "myzone_id": 1, "fresh_air": "off", "rf_sys_id": 0 }""",
+                                    ),
+                            ),
                     ),
-                ),
-            ),
-            rawUnits = mapOf(
-                "07:181f3" to mapOf("05" to "deadbeefdeadbe"),
-            ),
-            raw = JSONObject(),
-        )
+                rawUnits =
+                    mapOf(
+                        "07:181f3" to mapOf("05" to "deadbeefdeadbe"),
+                    ),
+                raw = JSONObject(),
+            )
         assertEquals(
             "getCAN 1 0703181f3050101042c010100",
             MailboxRawCanEncoder.encodeGetCan(snapshot),
@@ -273,17 +296,21 @@ class MailboxRawCanEncoderTest {
 
     @Test
     fun `encodeGetCan falls back to raw hex when typed encode returns null`() {
-        val snapshot = MailboxInbound.Snapshot(
-            units = mapOf(
-                "07:181f3" to mapOf(
-                    "09" to JSONObject("""{ "action": "bogus", "unlock_code": "A1B2" }"""),
-                ),
-            ),
-            rawUnits = mapOf(
-                "07:181f3" to mapOf("09" to "aabbccddeeff00"),
-            ),
-            raw = JSONObject(),
-        )
+        val snapshot =
+            MailboxInbound.Snapshot(
+                units =
+                    mapOf(
+                        "07:181f3" to
+                            mapOf(
+                                "09" to JSONObject("""{ "action": "bogus", "unlock_code": "A1B2" }"""),
+                            ),
+                    ),
+                rawUnits =
+                    mapOf(
+                        "07:181f3" to mapOf("09" to "aabbccddeeff00"),
+                    ),
+                raw = JSONObject(),
+            )
         assertEquals(
             "getCAN 1 0703181f309aabbccddeeff00",
             MailboxRawCanEncoder.encodeGetCan(snapshot),
@@ -292,13 +319,15 @@ class MailboxRawCanEncoderTest {
 
     @Test
     fun `encodeGetCan ignores raw hex on zone bearing register`() {
-        val snapshot = MailboxInbound.Snapshot(
-            units = emptyMap(),
-            rawUnits = mapOf(
-                "07:181f3" to mapOf("03" to "aabbccddeeff00"),
-            ),
-            raw = JSONObject(),
-        )
+        val snapshot =
+            MailboxInbound.Snapshot(
+                units = emptyMap(),
+                rawUnits =
+                    mapOf(
+                        "07:181f3" to mapOf("03" to "aabbccddeeff00"),
+                    ),
+                raw = JSONObject(),
+            )
         assertNull(MailboxRawCanEncoder.encodeGetCan(snapshot))
     }
 
@@ -316,10 +345,11 @@ class MailboxRawCanEncoderTest {
 
     @Test
     fun `read result encodes typed payload as single getCAN record`() {
-        val result = readResult(
-            "05",
-            """{ "power": "on", "mode": "cool", "fan": "auto", "target_temp_c": 22.0, "myzone_id": 1, "fresh_air": "off", "rf_sys_id": 0 }""",
-        )
+        val result =
+            readResult(
+                "05",
+                """{ "power": "on", "mode": "cool", "fan": "auto", "target_temp_c": 22.0, "myzone_id": 1, "fresh_air": "off", "rf_sys_id": 0 }""",
+            )
         assertEquals("getCAN 1 0703181f3050101042c010100", MailboxRawCanEncoder.encodeReadResultToCan(result))
     }
 
@@ -341,18 +371,19 @@ class MailboxRawCanEncoderTest {
         zone: Int? = null,
         unitId: String? = "181f3",
     ): MailboxInbound.Event {
-        val json = JSONObject().apply {
-            put("type", "event")
-            put("unit_type", "07")
-            unitId?.let { put("unit_id", it) }
-            put("register", register)
-            zone?.let { put("zone", it) }
-            if (payload.startsWith('{')) {
-                put("payload", JSONObject(payload))
-            } else {
-                put("payload", payload.trim('"'))
+        val json =
+            JSONObject().apply {
+                put("type", "event")
+                put("unit_type", "07")
+                unitId?.let { put("unit_id", it) }
+                put("register", register)
+                zone?.let { put("zone", it) }
+                if (payload.startsWith('{')) {
+                    put("payload", JSONObject(payload))
+                } else {
+                    put("payload", payload.trim('"'))
+                }
             }
-        }
         return MailboxInbound.parse(json) as MailboxInbound.Event
     }
 
@@ -364,18 +395,19 @@ class MailboxRawCanEncoderTest {
         payload: String,
         unitId: String? = "181f3",
     ): MailboxInbound.ReadResult {
-        val json = JSONObject().apply {
-            put("type", "read_result")
-            put("msg_id", "r1")
-            put("unit_type", "07")
-            unitId?.let { put("unit_id", it) }
-            put("register", register)
-            if (payload.startsWith('{')) {
-                put("payload", JSONObject(payload))
-            } else {
-                put("payload", payload.trim('"'))
+        val json =
+            JSONObject().apply {
+                put("type", "read_result")
+                put("msg_id", "r1")
+                put("unit_type", "07")
+                unitId?.let { put("unit_id", it) }
+                put("register", register)
+                if (payload.startsWith('{')) {
+                    put("payload", JSONObject(payload))
+                } else {
+                    put("payload", payload.trim('"'))
+                }
             }
-        }
         return MailboxInbound.parse(json) as MailboxInbound.ReadResult
     }
 }

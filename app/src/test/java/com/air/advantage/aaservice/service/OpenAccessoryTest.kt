@@ -11,12 +11,18 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import org.junit.After
-import org.junit.Assert.*
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.mockito.Mockito.mock
-import org.mockito.kotlin.*
+import org.mockito.kotlin.doReturn
+import org.mockito.kotlin.times
+import org.mockito.kotlin.verify
+import org.mockito.kotlin.whenever
 import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
@@ -27,7 +33,6 @@ import org.robolectric.shadows.ShadowContextImpl
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [33], manifest = Config.NONE)
 class OpenAccessoryTest {
-
     private lateinit var controller: org.robolectric.android.controller.ServiceController<UartForegroundService>
     private lateinit var service: UartForegroundService
 
@@ -103,7 +108,7 @@ class OpenAccessoryTest {
         assertFalse(result)
         assertTrue(
             "reboot broadcast should be sent",
-            broadcastActions().contains(ServiceHelper.ACTION_REBOOT_DEVICE)
+            broadcastActions().contains(ServiceHelper.ACTION_REBOOT_DEVICE),
         )
         assertTrue("service should stopSelf", shadowOf(service).isStoppedBySelf)
     }

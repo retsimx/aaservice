@@ -19,7 +19,6 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [33], manifest = Config.NONE)
 class TransportRouterTest {
-
     private lateinit var wsClient: FakeMailboxWsClient
     private lateinit var usb: FakeUsbTransportController
     private lateinit var router: TransportRouter
@@ -36,10 +35,11 @@ class TransportRouterTest {
     }
 
     private fun newRouter(initialMode: TransportMode): TransportRouter {
-        val factory = MailboxWsClientFactory { url ->
-            createdUrls += url
-            wsClient
-        }
+        val factory =
+            MailboxWsClientFactory { url ->
+                createdUrls += url
+                wsClient
+            }
         return TransportRouter(
             mailboxWsClientFactory = factory,
             daemonWsUrl = { daemonUrl },

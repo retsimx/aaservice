@@ -1,8 +1,5 @@
 package com.air.advantage.aaservice.ui.main
 
-import androidx.activity.ComponentActivity
-import androidx.activity.viewModels
-import androidx.lifecycle.lifecycleScope
 import android.app.AlertDialog
 import android.app.admin.DevicePolicyManager
 import android.content.ComponentName
@@ -15,6 +12,9 @@ import android.widget.ImageView
 import android.widget.RadioGroup
 import android.widget.TextView
 import android.widget.Toast
+import androidx.activity.ComponentActivity
+import androidx.activity.viewModels
+import androidx.lifecycle.lifecycleScope
 import com.air.advantage.aaservice.R
 import com.air.advantage.aaservice.receiver.DeviceAdminReceiver
 import com.air.advantage.aaservice.service.RebootNotificationService
@@ -23,14 +23,13 @@ import com.air.advantage.aaservice.util.PreferencesManager
 import com.air.advantage.aaservice.util.ServiceHelper
 import com.air.advantage.aaservice.util.TransportMode
 import dagger.hilt.android.AndroidEntryPoint
-import java.util.concurrent.atomic.AtomicBoolean
-import javax.inject.Inject
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
+import java.util.concurrent.atomic.AtomicBoolean
+import javax.inject.Inject
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity(), View.OnClickListener {
-
     companion object {
         private const val TAG = "AAService2/Main"
         val isVisible = AtomicBoolean(false)
@@ -125,27 +124,30 @@ class MainActivity : ComponentActivity(), View.OnClickListener {
         applyTransportStatusToView(statusView, viewModel.transportConnectionStatus.value)
 
         transportStatusJob?.cancel()
-        transportStatusJob = lifecycleScope.launch {
-            TransportStatusStore.status.collect { modeStatus ->
-                val ui = modeStatus.toTransportConnectionStatus()
-                viewModel.setTransportConnectionStatus(ui)
-                applyTransportStatusToView(statusView, ui)
+        transportStatusJob =
+            lifecycleScope.launch {
+                TransportStatusStore.status.collect { modeStatus ->
+                    val ui = modeStatus.toTransportConnectionStatus()
+                    viewModel.setTransportConnectionStatus(ui)
+                    applyTransportStatusToView(statusView, ui)
+                }
             }
-        }
 
         modeGroup.setOnCheckedChangeListener { _, checkedId ->
             if (suppressTransportModeCallback) return@setOnCheckedChangeListener
-            val selected = when (checkedId) {
-                R.id.transport_mode_usb -> TransportMode.Usb
-                R.id.transport_mode_ws -> TransportMode.Ws
-                else -> return@setOnCheckedChangeListener
-            }
+            val selected =
+                when (checkedId) {
+                    R.id.transport_mode_usb -> TransportMode.Usb
+                    R.id.transport_mode_ws -> TransportMode.Ws
+                    else -> return@setOnCheckedChangeListener
+                }
             if (selected == preferencesManager.transportMode) return@setOnCheckedChangeListener
 
             preferencesManager.transportMode = selected
-            val extras = Bundle().apply {
-                putString(ServiceHelper.EXTRA_TRANSPORT_MODE, selected.value)
-            }
+            val extras =
+                Bundle().apply {
+                    putString(ServiceHelper.EXTRA_TRANSPORT_MODE, selected.value)
+                }
             ServiceHelper.startUartService(
                 this,
                 ServiceHelper.ACTION_TRANSPORT_MODE_CHANGED,
@@ -167,12 +169,13 @@ class MainActivity : ComponentActivity(), View.OnClickListener {
         statusView.setText(statusStringRes(status))
     }
 
-    private fun statusStringRes(status: TransportConnectionStatus): Int = when (status) {
-        TransportConnectionStatus.Idle -> R.string.transport_status_idle
-        TransportConnectionStatus.Connecting -> R.string.transport_status_connecting
-        TransportConnectionStatus.Connected -> R.string.transport_status_connected
-        TransportConnectionStatus.Error -> R.string.transport_status_error
-    }
+    private fun statusStringRes(status: TransportConnectionStatus): Int =
+        when (status) {
+            TransportConnectionStatus.Idle -> R.string.transport_status_idle
+            TransportConnectionStatus.Connecting -> R.string.transport_status_connecting
+            TransportConnectionStatus.Connected -> R.string.transport_status_connected
+            TransportConnectionStatus.Error -> R.string.transport_status_error
+        }
 
     override fun onClick(view: View) {
         when (view.id) {
@@ -195,8 +198,10 @@ class MainActivity : ComponentActivity(), View.OnClickListener {
                 Log.d(TAG, "onClick: requesting device admin activation")
                 val intent = Intent("android.app.action.ADD_DEVICE_ADMIN")
                 intent.putExtra("android.app.extra.DEVICE_ADMIN", componentName)
-                intent.putExtra("android.app.extra.ADD_EXPLANATION",
-                    "Please click 'Activate' for the Air-Conditioning controller to start working.")
+                intent.putExtra(
+                    "android.app.extra.ADD_EXPLANATION",
+                    "Please click 'Activate' for the Air-Conditioning controller to start working.",
+                )
                 startActivityForResult(intent, 12345)
             }
             R.id.show_backup -> {
@@ -205,7 +210,11 @@ class MainActivity : ComponentActivity(), View.OnClickListener {
         }
     }
 
-    public override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+    public override fun onActivityResult(
+        requestCode: Int,
+        resultCode: Int,
+        data: Intent?,
+    ) {
         super.onActivityResult(requestCode, resultCode, data)
         if (requestCode == 12345) {
             if (resultCode != RESULT_OK) {
