@@ -87,7 +87,7 @@ class OutboundMailboxGatewayTest {
         service.deviceOpen.set(false)
 
         val msg = """setAircon?json={"aircons":{"ac1":{"info":{"state":"on","mode":"cool","fan":"high"}}}}"""
-        service.enqueueUartMessage(msg)
+        service.enqueueMailboxMessage(msg)
         awaitOutbound()
 
         assertEquals(1, fakeWs.sentWrites.size)
@@ -102,7 +102,7 @@ class OutboundMailboxGatewayTest {
     fun `WS setAircon zone sends write zone_state with zone address`() {
         injectWsConnected()
         val msg = """setAircon?json={"aircons":{"ac1":{"zones":{"z03":{"state":"open","setTemp":22}}}}}"""
-        service.enqueueUartMessage(msg)
+        service.enqueueMailboxMessage(msg)
         awaitOutbound()
 
         assertEquals(1, fakeWs.sentWrites.size)
@@ -127,7 +127,7 @@ class OutboundMailboxGatewayTest {
                 .put("msg_id", "err")
                 .put("status", "error"),
         )
-        service.enqueueUartMessage(
+        service.enqueueMailboxMessage(
             """setAircon?json={"aircons":{"ac1":{"info":{"state":"off"}}}}""",
         )
         awaitOutbound()

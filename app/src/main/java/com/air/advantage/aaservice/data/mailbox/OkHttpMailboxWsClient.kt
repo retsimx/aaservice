@@ -46,8 +46,6 @@ import org.json.JSONObject
  *   Transport drops intentionally use **Disconnected**, not
  *   [MailboxConnectionState.Error] (reserved for future client-local failures;
  *   A2 must map drops via Disconnected / reconnect, not Error).
- * - Close **4009** (single-client limit) → [MailboxConnectionState.Rejected];
- *   **no** auto-reconnect (reconnect job cancelled, session ended).
  * - Explicit [disconnect] cancels reconnect, closes the socket →
  *   [MailboxConnectionState.Idle]; **no** auto-reconnect.
  * - **No automatic USB fallback** — never opens USB accessories.
@@ -220,7 +218,7 @@ class OkHttpMailboxWsClient(
         object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) {
                 if (!isCurrentGeneration(generation)) return
-                Log.i(TAG, "onOpen: awaiting mailbox_snapshot before Connected")
+                Log.i(TAG, "onOpen: awaiting snapshot before Connected")
             }
 
             override fun onMessage(webSocket: WebSocket, text: String) {
@@ -239,7 +237,6 @@ class OkHttpMailboxWsClient(
                 onSocketEnded(
                     webSocket = webSocket,
                     generation = generation,
-                    code = code,
                     reason = reason,
                     throwable = null,
                 )
@@ -251,7 +248,6 @@ class OkHttpMailboxWsClient(
                 onSocketEnded(
                     webSocket = webSocket,
                     generation = generation,
-                    code = null,
                     reason = t.message,
                     throwable = t,
                 )
@@ -275,7 +271,7 @@ class OkHttpMailboxWsClient(
                 if (_connectionState.value is MailboxConnectionState.Connecting) {
                     _connectionState.value = MailboxConnectionState.Connected
                     reconnectDelayMs = config.reconnectInitialDelayMs
-                    Log.i(TAG, "Connected after mailbox_snapshot")
+                    Log.i(TAG, "Connected after snapshot")
                 }
             }
             is MailboxInbound.Ack -> {
@@ -320,7 +316,6 @@ class OkHttpMailboxWsClient(
     private fun onSocketEnded(
         webSocket: WebSocket,
         generation: Long,
-        code: Int?,
         reason: String?,
         throwable: Throwable?,
     ) {
@@ -329,13 +324,12 @@ class OkHttpMailboxWsClient(
             connectMutex.withLock {
                 // Skip if this socket was superseded (disconnect / reopen bumped generation).
                 if (socketGeneration.get() != generation) return@withLock
-                handleSocketEndedLocked(code = code, reason = reason, throwable = throwable)
+                handleSocketEndedLocked(reason = reason, throwable = throwable)
             }
         }
     }
 
     private fun handleSocketEndedLocked(
-        code: Int?,
         reason: String?,
         throwable: Throwable?,
     ) {
@@ -344,18 +338,6 @@ class OkHttpMailboxWsClient(
 
         if (!sessionActive.get()) {
             // Explicit disconnect owns Idle transition.
-            return
-        }
-
-        if (code == CLOSE_SINGLE_CLIENT) {
-            sessionActive.set(false)
-            reconnectJob?.cancel()
-            reconnectJob = null
-            _connectionState.value = MailboxConnectionState.Rejected(
-                code = CLOSE_SINGLE_CLIENT,
-                reason = reason?.takeIf { it.isNotBlank() } ?: "Single client limit enforced",
-            )
-            Log.w(TAG, "Rejected: close $CLOSE_SINGLE_CLIENT reason=$reason")
             return
         }
 
@@ -433,8 +415,5 @@ class OkHttpMailboxWsClient(
 
     companion object {
         private const val TAG = "AAService2/MailboxWs"
-
-        /** Daemon close code when another mailbox client already holds the session. */
-        const val CLOSE_SINGLE_CLIENT = 4009
     }
 }

@@ -172,14 +172,13 @@ class ModeSwitchCoordinator(
                 client.connectionState.first { state ->
                     state is MailboxConnectionState.Connected ||
                         state is MailboxConnectionState.Disconnected ||
-                        state is MailboxConnectionState.Rejected ||
                         state is MailboxConnectionState.Error
                 }
             }
         } catch (_: TimeoutCancellationException) {
             Log.e(
                 TAG,
-                "Timed out waiting for mailbox_snapshot (Connected) after ${snapshotTimeoutMs}ms " +
+                "Timed out waiting for snapshot (Connected) after ${snapshotTimeoutMs}ms " +
                     "(attempt $attempt/$WS_CONNECT_ATTEMPTS); disconnecting WS, no USB activate. " +
                     "Retry: ${SuDaemonLifecycle.AM_RETRY_TRANSPORT_MODE}",
             )
