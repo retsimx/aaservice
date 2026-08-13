@@ -209,12 +209,12 @@ class UartForegroundServiceTest {
     }
 
     @Test
-    fun `handleGetCan broadcasts for each raw CAN payload`() {
+    fun `handleGetCan dedups content-identical raw CAN payloads`() {
         service.handleGetCan("getCAN 1026")
         service.handleGetCan("getCAN 1026")
         val sent = sentBroadcasts()
-        assertEquals(2, sent.count { it.action == "com.air.advantage.MESSAGE_TO_CB_NO_PERMISSION_BROADCAST" })
-        assertEquals(2, sent.count { it.action == "com.air.advantage.MESSAGE_FROM_CB_SECURE" })
+        assertEquals(1, sent.count { it.action == "com.air.advantage.MESSAGE_TO_CB_NO_PERMISSION_BROADCAST" })
+        assertEquals(1, sent.count { it.action == "com.air.advantage.MESSAGE_FROM_CB_SECURE" })
     }
 
     @Test
