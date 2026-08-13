@@ -16,6 +16,7 @@ import com.air.advantage.aaservice.util.TransportMode
 import org.json.JSONObject
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -85,23 +86,28 @@ class OutboundMailboxGatewayTest {
         awaitOutbound()
 
         assertEquals(1, fakeWs.sentWrites.size)
-        assertEquals("system_status", fakeWs.sentWrites[0].first)
+        assertEquals(MyAir5OutboundMailboxMapper.REG_SYSTEM_STATUS, fakeWs.sentWrites[0].first)
+        assertNull(fakeWs.sentWrites[0].third)
         assertEquals("on", fakeWs.sentWrites[0].second.getString("power"))
         assertEquals("cool", fakeWs.sentWrites[0].second.getString("mode"))
         assertEquals("high", fakeWs.sentWrites[0].second.getString("fan"))
     }
 
     @Test
-    fun `WS setAircon zone sends write zone_state`() {
+    fun `WS setAircon zone sends write zone_state with zone address`() {
         injectWsConnected()
         val msg = """setAircon?json={"aircons":{"ac1":{"zones":{"z03":{"state":"open","setTemp":22}}}}}"""
         service.enqueueUartMessage(msg)
         awaitOutbound()
 
         assertEquals(1, fakeWs.sentWrites.size)
-        assertEquals("zone_state", fakeWs.sentWrites[0].first)
-        assertEquals(3, fakeWs.sentWrites[0].second.getInt("zone_id"))
+        assertEquals(MyAir5OutboundMailboxMapper.REG_ZONE_STATE, fakeWs.sentWrites[0].first)
+        assertEquals(3, fakeWs.sentWrites[0].third)
         assertTrue(fakeWs.sentWrites[0].second.getBoolean("open"))
+        assertEquals(22.0, fakeWs.sentWrites[0].second.getDouble("target_temp_c"), 0.001)
+        // zone is an address field (B-4 broker surface), never in the payload
+        assertTrue(!fakeWs.sentWrites[0].second.has("zone_id"))
+        assertTrue(!fakeWs.sentWrites[0].second.has("zone"))
     }
 
     @Test
