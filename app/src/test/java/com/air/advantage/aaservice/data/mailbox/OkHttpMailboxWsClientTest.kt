@@ -367,6 +367,45 @@ class OkHttpMailboxWsClientTest {
     }
 
     @Test
+    fun `sendWrite throws MailboxAckTimeoutException on timeout`() {
+        runBlocking {
+            installNoReplyDispatcher()
+            createClient(ackTimeoutMs = 500L)
+            client.connect()
+            awaitState { it is MailboxConnectionState.Connected }
+
+            val thrown = try {
+                client.sendWrite(
+                    register = "system_status",
+                    payload = MailboxPayload.Typed(JSONObject().put("airconOn", false)),
+                )
+                null
+            } catch (e: MailboxAckTimeoutException) {
+                e
+            }
+            checkNotNull(thrown)
+        }
+    }
+
+    @Test
+    fun `sendCommand throws MailboxAckTimeoutException on timeout`() {
+        runBlocking {
+            installNoReplyDispatcher()
+            createClient(ackTimeoutMs = 500L)
+            client.connect()
+            awaitState { it is MailboxConnectionState.Connected }
+
+            val thrown = try {
+                client.sendCommand(MailboxCommandAction.RESYNC)
+                null
+            } catch (e: MailboxAckTimeoutException) {
+                e
+            }
+            checkNotNull(thrown)
+        }
+    }
+
+    @Test
     fun `sendRead pending read resolves to ReadOutcome Error when socket drops`() = runBlocking {
         val serverSocket = AtomicReference<WebSocket>()
         installNoReplyDispatcher(serverSocket)
