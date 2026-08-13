@@ -221,7 +221,7 @@ class UartForegroundService : Service() {
         // getSystemData XML. USB cold-start only delivers MESSAGE_FROM_CB_SECURE
         // rawCan + aaServiceInfo — no MESSAGE_FROM_CB poll tags.
         if (inbound is MailboxInbound.Snapshot) {
-            MailboxRawCanEncoder.encodeGetCan(inbound.raw)?.let { handleGetCan(it) }
+            MailboxRawCanEncoder.encodeGetCan(inbound)?.let { handleGetCan(it) }
         }
         val polls = MailboxBroadcastMapper.map(inbound, cachedPayload = dataCache::get)
         for (poll in polls) {
