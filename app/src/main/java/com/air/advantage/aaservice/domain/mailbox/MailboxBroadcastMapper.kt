@@ -19,9 +19,9 @@ import org.json.JSONObject
 object MailboxBroadcastMapper {
 
     const val SYSTEM_TAG: String = "getSystemData"
-    private const val SYSTEM_STATUS_REGISTER = "system_status"
-    private const val ZONE_STATE_REGISTER = "zone_state"
-    private const val ZONES_KEY = "zones"
+    private const val SYSTEM_STATUS_REGISTER = "05"
+    private const val ZONE_STATE_REGISTER = "03"
+    private const val ZONE_LIMITS_REGISTER = "04"
 
     private val parser = FrameParser()
 
@@ -35,9 +35,10 @@ object MailboxBroadcastMapper {
         typeBytes: ByteArray = HardwareDetector.typeBytes(),
         appStoreBytes: ByteArray? = HardwareDetector.appStoreBytes(),
         cachedPayload: (String) -> ByteArray? = { null },
+        logger: (String) -> Unit = {},
     ): List<MappedPoll> = when (inbound) {
         is MailboxInbound.Snapshot -> mapSnapshot(inbound, typeBytes, appStoreBytes)
-        is MailboxInbound.Event -> mapEvent(inbound, typeBytes, appStoreBytes, cachedPayload)
+        is MailboxInbound.Event -> mapEvent(inbound, typeBytes, appStoreBytes, cachedPayload, logger)
         else -> emptyList()
     }
 
@@ -54,7 +55,9 @@ object MailboxBroadcastMapper {
                 buildSystemPoll(status, typeBytes, appStoreBytes)?.let(polls::add)
             }
 
-            unit[ZONES_KEY]?.let { zones ->
+            // Reg "03" is a nested zone-id → zone-state DTO map; reg "04" (zone
+            // limits) is deliberately skipped — not consumed by MyAir5.
+            unit[ZONE_STATE_REGISTER]?.let { zones ->
                 for (key in zones.keys()) {
                     val zoneId = key.toIntOrNull() ?: continue
                     val zoneJson = zones.optJSONObject(key) ?: continue
@@ -71,6 +74,7 @@ object MailboxBroadcastMapper {
         typeBytes: ByteArray,
         appStoreBytes: ByteArray?,
         cachedPayload: (String) -> ByteArray?,
+        logger: (String) -> Unit,
     ): List<MappedPoll> {
         val payload = event.payload ?: return emptyList()
         return when (event.register) {
@@ -85,8 +89,10 @@ object MailboxBroadcastMapper {
             }
 
             ZONE_STATE_REGISTER -> {
-                val zoneId = payload.optStringOrNull("zone_id")?.toIntOrNull()
-                    ?: return emptyList()
+                // The zone is part of the CAN address (message-level field), never
+                // the payload. Guard <= 0: optInt yields 0 for non-numeric garbage,
+                // and MyAir5 zones are 1-based — a zone-0 poll would be bogus.
+                val zoneId = event.zone?.takeIf { it > 0 } ?: return emptyList()
                 val tag = zoneTag(zoneId)
                 val cached = cachedPayload(tag)
                 val poll = if (cached != null) {
@@ -95,6 +101,11 @@ object MailboxBroadcastMapper {
                     buildZonePoll(zoneId, payload)
                 }
                 listOf(poll)
+            }
+
+            ZONE_LIMITS_REGISTER -> {
+                logger("ignoring zone_limits event for zone ${event.zone} (not consumed by MyAir5)")
+                emptyList()
             }
 
             else -> emptyList()
@@ -132,10 +143,11 @@ object MailboxBroadcastMapper {
     }
 
     /**
-     * Merges sparse `system_status` event fields onto the last cached (already-transformed)
-     * `getSystemData` payload. The transformer only ever touches `type`/`AppStore`/the
-     * `dhcp`…`gateway` range/`MyAppRev`, so the mapped HVAC tags below survive intact in
-     * cache and can be patched directly — no need to re-run the transformer here.
+     * Merges sparse register-`"05"` (system status) event fields onto the last cached
+     * (already-transformed) `getSystemData` payload. The transformer only ever touches
+     * `type`/`AppStore`/the `dhcp`…`gateway` range/`MyAppRev`, so the mapped HVAC tags
+     * below survive intact in cache and can be patched directly — no need to re-run the
+     * transformer here.
      */
     private fun mergeSystemFields(cached: ByteArray, status: JSONObject): MappedPoll {
         var current = cached

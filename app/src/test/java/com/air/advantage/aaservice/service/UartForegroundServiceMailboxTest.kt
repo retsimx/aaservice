@@ -162,7 +162,8 @@ class UartForegroundServiceMailboxTest {
             zoneBroadcasts.last().getByteArrayExtra("com.air.advantage.MESSAGE_FROM_CB")!!,
             Charsets.UTF_8
         )
-        // mailbox_event.json fixture: zone_id=1, open=true, damper_pct=80, measured_temp_c=23.4
+        // mailbox_event.json fixture: register "03", zone 1 at the message level (CAN address,
+        // not in the payload), open=true, damper_pct=80, measured_temp_c=23.4
         assertTrue("event field applied", latestXml.contains("<damper>80</damper>"))
         assertTrue("event field applied", latestXml.contains("<measuredTemp>23.4</measuredTemp>"))
         // sensor_type/target_temp_c are only in the original snapshot, not this sparse event —
