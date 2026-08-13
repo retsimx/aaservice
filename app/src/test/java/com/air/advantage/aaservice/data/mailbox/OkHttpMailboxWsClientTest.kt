@@ -154,11 +154,18 @@ class OkHttpMailboxWsClientTest {
     }
 
     @Test
-    fun `close 4009 becomes Rejected and does not reconnect`() = runBlocking {
+    fun `close 4009 falls back to generic Disconnected and reconnects`() = runBlocking {
         val serverSocket = AtomicReference<WebSocket>()
+        val secondOpen = CountDownLatch(1)
         installUpgradeDispatcher { webSocket, _ ->
-            serverSocket.set(webSocket)
-            webSocket.send(MailboxFixtures.snapshot())
+            val n = openCount.get()
+            if (n == 1) {
+                serverSocket.set(webSocket)
+                webSocket.send(MailboxFixtures.snapshot())
+            } else if (n >= 2) {
+                webSocket.send(MailboxFixtures.snapshot())
+                secondOpen.countDown()
+            }
         }
 
         createClient(
@@ -168,24 +175,17 @@ class OkHttpMailboxWsClientTest {
         client.connect()
         awaitState { it is MailboxConnectionState.Connected }
 
-        checkNotNull(serverSocket.get()).close(
-            OkHttpMailboxWsClient.CLOSE_SINGLE_CLIENT,
-            "Single client limit enforced",
-        )
+        checkNotNull(serverSocket.get()).close(4009, "Single client limit enforced")
 
-        val rejected = awaitState { it is MailboxConnectionState.Rejected }
-            as MailboxConnectionState.Rejected
-        assertEquals(OkHttpMailboxWsClient.CLOSE_SINGLE_CLIENT, rejected.code)
-        assertEquals("Single client limit enforced", rejected.reason)
-
-        val opensAfterReject = openCount.get()
-        Thread.sleep(250L)
         assertEquals(
-            "must not open a second connection after 4009",
-            opensAfterReject,
-            openCount.get(),
+            MailboxConnectionState.Disconnected,
+            awaitState { it is MailboxConnectionState.Disconnected },
         )
-        assertTrue(client.connectionState.value is MailboxConnectionState.Rejected)
+        assertTrue(
+            "expected reconnect open within timeout",
+            secondOpen.await(3, TimeUnit.SECONDS),
+        )
+        assertTrue(openCount.get() >= 2)
     }
 
     @Test

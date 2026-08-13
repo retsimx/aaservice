@@ -18,8 +18,6 @@ import org.json.JSONObject
  *   ([MailboxWsConfig.reconnectInitialDelayMs] → double →
  *   [MailboxWsConfig.reconnectMaxDelayMs]). Drops use Disconnected, not
  *   [MailboxConnectionState.Error] (see that type’s KDoc).
- * - Close code **4009** (single-client limit) → [MailboxConnectionState.Rejected];
- *   **no** auto-reconnect.
  * - Explicit [disconnect] → cancel reconnect, close socket →
  *   [MailboxConnectionState.Idle]; **no** auto-reconnect.
  * - **No automatic USB fallback** — this client never opens a USB accessory.

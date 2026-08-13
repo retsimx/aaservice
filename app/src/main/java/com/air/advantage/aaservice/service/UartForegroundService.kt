@@ -201,7 +201,7 @@ class UartForegroundService : Service() {
     /**
      * Attaches a [MailboxWsClient] and starts collecting [MailboxWsClient.incoming] for the
      * lifetime of this attachment (design `41-mailbox-to-message-from-cb.md` §6). Each inbound
-     * `mailbox_snapshot` / `mailbox_event` is mapped to poll-tag payloads via
+     * `snapshot` / `event` is mapped to poll-tag payloads via
      * [MailboxBroadcastMapper], cached, and broadcast the same way the USB [uartEventSink] does.
      *
      * Collected on [Dispatchers.Unconfined]: [MailboxWsClient.incoming] is a hot
@@ -374,7 +374,6 @@ class UartForegroundService : Service() {
             is MailboxConnectionState.Connecting -> ModeSwitchStatus.Connecting
             is MailboxConnectionState.Connected -> ModeSwitchStatus.Connected
             is MailboxConnectionState.Disconnected,
-            is MailboxConnectionState.Rejected,
             is MailboxConnectionState.Error -> ModeSwitchStatus.Error
         }
         TransportStatusStore.publish(mapped)
@@ -388,7 +387,6 @@ class UartForegroundService : Service() {
                 showNotification(true)
             }
             is MailboxConnectionState.Disconnected,
-            is MailboxConnectionState.Rejected,
             is MailboxConnectionState.Error -> {
                 if (!deviceOpen.get()) showNotification(false)
             }
@@ -754,23 +752,14 @@ class UartForegroundService : Service() {
     /** True when [TransportRouter] is in WebSocket mode. */
     fun isWsMode(): Boolean = ensureTransportRouter().activeMode == TransportMode.Ws
 
-    fun requestSinglePoll(tag: String) {
-        if (isWsMode()) {
-            Log.d(TAG, "WS mode direct poll dropped: $tag")
-            return
-        }
-        Log.d(TAG, "requestSinglePoll: '$tag'")
-        dispatchEngine.enqueueDirectMessage(tag)
-    }
-
     fun enqueueUartMessage(message: String) {
-        if (isWsMode()) {
-            Log.d(TAG, "enqueueUartMessage: WS mode mapping '$message'")
-            dispatchOutboundMailboxActions(MyAir5OutboundMailboxMapper.mapMessage(message))
-            return
-        }
         Log.d(TAG, "enqueueUartMessage: '$message'")
         dispatchEngine.enqueueDirectMessage(message)
+    }
+
+    fun enqueueMailboxMessage(message: String) {
+        Log.d(TAG, "enqueueMailboxMessage: mapping '$message'")
+        dispatchOutboundMailboxActions(MyAir5OutboundMailboxMapper.mapMessage(message))
     }
 
     /**

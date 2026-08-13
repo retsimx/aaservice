@@ -54,7 +54,7 @@ class GetAllDataReceiverTest {
         receiver.onReceive(context, Intent("com.air.advantage.GET_ALL_DATA"))
 
         verify(service, never()).broadcastData(anyString())
-        verify(service, never()).requestSinglePoll(anyString())
+        verify(service, never()).enqueueUartMessage(anyString())
         verify(service, never()).handleGetAllDataWs()
     }
 
@@ -68,7 +68,7 @@ class GetAllDataReceiverTest {
         verify(service).handleGetAllDataWs()
         // Cached rebroadcast is owned by handleGetAllDataWs (USB parity), not the receiver.
         verify(service, never()).broadcastData(anyString())
-        verify(service, never()).requestSinglePoll(anyString())
+        verify(service, never()).enqueueUartMessage(anyString())
     }
 
     @Test
@@ -90,8 +90,8 @@ class GetAllDataReceiverTest {
 
         receiver.onReceive(context, Intent("com.air.advantage.GET_ALL_DATA"))
 
-        scheduleTags.forEach { verify(service).requestSinglePoll(it) }
-        verify(service, times(scheduleTags.size)).requestSinglePoll(anyString())
+        scheduleTags.forEach { verify(service).enqueueUartMessage(it) }
+        verify(service, times(scheduleTags.size)).enqueueUartMessage(anyString())
     }
 
     @Test

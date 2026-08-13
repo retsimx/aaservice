@@ -17,9 +17,8 @@ package com.air.advantage.aaservice.data.mailbox
  * - Ping keepalive uses [pingIntervalMs] (default ~30s).
  * - Unexpected disconnect → auto-reconnect with exponential backoff
  *   ([reconnectInitialDelayMs] → ×2 → [reconnectMaxDelayMs]).
- * - **No** auto-reconnect on WebSocket close **4009** (single-client limit) or
- *   explicit [MailboxWsClient.disconnect].
- * - [MailboxConnectionState.Connected] only after the first `mailbox_snapshot`.
+ * - **No** auto-reconnect on explicit [MailboxWsClient.disconnect].
+ * - [MailboxConnectionState.Connected] only after the first `snapshot`.
  * - **No** automatic USB fallback.
  *
  * @property url Daemon mailbox WebSocket endpoint; default [DEFAULT_URL].
