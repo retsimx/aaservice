@@ -15,14 +15,14 @@
         "1": {
           "open": true,
           "damper_pct": 100,
-          "sensor_type": "temp",
+          "sensor_type": "rf",
           "target_temp_c": 22.5,
           "measured_temp_c": 23.1
         },
         "2": {
           "open": false,
           "damper_pct": 0,
-          "sensor_type": "temp",
+          "sensor_type": "wired",
           "target_temp_c": 21.0,
           "measured_temp_c": 24.4
         }

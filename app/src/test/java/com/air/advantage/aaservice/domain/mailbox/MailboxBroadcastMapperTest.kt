@@ -77,7 +77,7 @@ class MailboxBroadcastMapperTest {
         assertTrue(zone1.contains("<zone>1</zone>"))
         assertTrue("open=true maps to state on", zone1.contains("<state>on</state>"))
         assertTrue("damper_pct mapped", zone1.contains("<damper>100</damper>"))
-        assertTrue("sensor_type mapped", zone1.contains("<sensor>temp</sensor>"))
+        assertTrue("sensor_type mapped", zone1.contains("<sensor>rf</sensor>"))
         assertTrue("target_temp_c mapped", zone1.contains("<temp>22.5</temp>"))
         assertTrue("measured_temp_c mapped", zone1.contains("<measuredTemp>23.1</measuredTemp>"))
 
@@ -144,7 +144,7 @@ class MailboxBroadcastMapperTest {
         val xml = text(merged.payload)
         assertTrue("measured_temp_c patched from event", xml.contains("<measuredTemp>23.4</measuredTemp>"))
         // ...while fields the sparse event omitted survive from the cached snapshot payload.
-        assertTrue("sensor_type preserved from cache", xml.contains("<sensor>temp</sensor>"))
+        assertTrue("sensor_type preserved from cache", xml.contains("<sensor>rf</sensor>"))
         assertTrue("target_temp_c preserved from cache", xml.contains("<temp>22.5</temp>"))
     }
 
