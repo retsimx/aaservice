@@ -1,12 +1,6 @@
 package com.air.advantage.aaservice.data.mailbox
 
 import android.util.Log
-import java.util.UUID
-import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.TimeUnit
-import java.util.concurrent.atomic.AtomicBoolean
-import java.util.concurrent.atomic.AtomicLong
-import java.util.concurrent.atomic.AtomicReference
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -29,6 +23,12 @@ import okhttp3.WebSocket
 import okhttp3.WebSocketListener
 import org.json.JSONException
 import org.json.JSONObject
+import java.util.UUID
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.atomic.AtomicReference
 
 /**
  * OkHttp-backed [MailboxWsClient].
@@ -72,28 +72,30 @@ class OkHttpMailboxWsClient(
      */
     private val cancelScopeOnDisconnect: Boolean = false,
 ) : MailboxWsClient {
-
-    private val httpClient: OkHttpClient = client.newBuilder()
-        .pingInterval(config.pingIntervalMs, TimeUnit.MILLISECONDS)
-        .build()
+    private val httpClient: OkHttpClient =
+        client.newBuilder()
+            .pingInterval(config.pingIntervalMs, TimeUnit.MILLISECONDS)
+            .build()
 
     private val _connectionState =
         MutableStateFlow<MailboxConnectionState>(MailboxConnectionState.Idle)
     override val connectionState: StateFlow<MailboxConnectionState> =
         _connectionState.asStateFlow()
 
-    private val _incoming = MutableSharedFlow<MailboxInbound>(
-        // Replay last frame so UartForegroundService's collector, which attaches only
-        // after Connected (post-snapshot), still receives the snapshot for :2025.
-        extraBufferCapacity = 64,
-        replay = 1,
-    )
+    private val _incoming =
+        MutableSharedFlow<MailboxInbound>(
+            // Replay last frame so UartForegroundService's collector, which attaches only
+            // after Connected (post-snapshot), still receives the snapshot for :2025.
+            extraBufferCapacity = 64,
+            replay = 1,
+        )
     override val incoming: SharedFlow<MailboxInbound> = _incoming.asSharedFlow()
 
-    private val _daemonStatus = MutableSharedFlow<MailboxInbound.Status>(
-        replay = 1,
-        extraBufferCapacity = 4,
-    )
+    private val _daemonStatus =
+        MutableSharedFlow<MailboxInbound.Status>(
+            replay = 1,
+            extraBufferCapacity = 4,
+        )
     override val daemonStatus: SharedFlow<MailboxInbound.Status> =
         _daemonStatus.asSharedFlow()
 
@@ -149,22 +151,27 @@ class OkHttpMailboxWsClient(
         zone: Int?,
     ): MailboxInbound.Ack {
         val msgId = newMsgId()
-        val frame = MailboxOutbound.Write(
-            msgId = msgId,
-            register = register,
-            payload = payload,
-            zone = zone,
-        )
+        val frame =
+            MailboxOutbound.Write(
+                msgId = msgId,
+                register = register,
+                payload = payload,
+                zone = zone,
+            )
         return sendAndAwaitAck(msgId, frame.toJsonString())
     }
 
-    override suspend fun sendRead(register: String, zone: Int?): ReadOutcome {
+    override suspend fun sendRead(
+        register: String,
+        zone: Int?,
+    ): ReadOutcome {
         val msgId = newMsgId()
-        val frame = MailboxOutbound.Read(
-            msgId = msgId,
-            register = register,
-            zone = zone,
-        )
+        val frame =
+            MailboxOutbound.Read(
+                msgId = msgId,
+                register = register,
+                zone = zone,
+            )
         return sendAndAwait(msgId, frame.toJsonString(), pendingReads)
     }
 
@@ -179,8 +186,9 @@ class OkHttpMailboxWsClient(
         json: String,
         pending: ConcurrentHashMap<String, CompletableDeferred<T>>,
     ): T {
-        val socket = activeSocket.get()
-            ?: throw IllegalStateException("Mailbox WebSocket is not open")
+        val socket =
+            activeSocket.get()
+                ?: throw IllegalStateException("Mailbox WebSocket is not open")
         val deferred = CompletableDeferred<T>()
         pending[msgId] = deferred
         try {
@@ -198,8 +206,10 @@ class OkHttpMailboxWsClient(
         }
     }
 
-    private suspend fun sendAndAwaitAck(msgId: String, json: String): MailboxInbound.Ack =
-        sendAndAwait(msgId, json, pendingAcks)
+    private suspend fun sendAndAwaitAck(
+        msgId: String,
+        json: String,
+    ): MailboxInbound.Ack = sendAndAwait(msgId, json, pendingAcks)
 
     private fun openSocketLocked() {
         closeSocketLocked(code = 1000, reason = "reopen")
@@ -216,23 +226,37 @@ class OkHttpMailboxWsClient(
 
     private fun socketListener(generation: Long): WebSocketListener =
         object : WebSocketListener() {
-            override fun onOpen(webSocket: WebSocket, response: Response) {
+            override fun onOpen(
+                webSocket: WebSocket,
+                response: Response,
+            ) {
                 if (!isCurrentGeneration(generation)) return
                 Log.i(TAG, "onOpen: awaiting snapshot before Connected")
             }
 
-            override fun onMessage(webSocket: WebSocket, text: String) {
+            override fun onMessage(
+                webSocket: WebSocket,
+                text: String,
+            ) {
                 if (!isCurrentGeneration(generation)) return
                 handleTextMessage(text)
             }
 
-            override fun onClosing(webSocket: WebSocket, code: Int, reason: String) {
+            override fun onClosing(
+                webSocket: WebSocket,
+                code: Int,
+                reason: String,
+            ) {
                 if (!isCurrentGeneration(generation)) return
                 Log.d(TAG, "onClosing: code=$code reason=$reason")
                 webSocket.close(code, reason)
             }
 
-            override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
+            override fun onClosed(
+                webSocket: WebSocket,
+                code: Int,
+                reason: String,
+            ) {
                 if (!isCurrentGeneration(generation)) return
                 onSocketEnded(
                     webSocket = webSocket,
@@ -242,7 +266,11 @@ class OkHttpMailboxWsClient(
                 )
             }
 
-            override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
+            override fun onFailure(
+                webSocket: WebSocket,
+                t: Throwable,
+                response: Response?,
+            ) {
                 if (!isCurrentGeneration(generation)) return
                 Log.w(TAG, "onFailure: ${t.message}", t)
                 onSocketEnded(
@@ -255,12 +283,13 @@ class OkHttpMailboxWsClient(
         }
 
     private fun handleTextMessage(text: String) {
-        val inbound = try {
-            MailboxInbound.parse(text)
-        } catch (e: JSONException) {
-            Log.w(TAG, "Ignoring non-JSON mailbox frame", e)
-            return
-        }
+        val inbound =
+            try {
+                MailboxInbound.parse(text)
+            } catch (e: JSONException) {
+                Log.w(TAG, "Ignoring non-JSON mailbox frame", e)
+                return
+            }
 
         when (inbound) {
             is MailboxInbound.Unknown -> {
@@ -351,16 +380,20 @@ class OkHttpMailboxWsClient(
         val delayMs = reconnectDelayMs
         reconnectDelayMs = (reconnectDelayMs * 2).coerceAtMost(config.reconnectMaxDelayMs)
         Log.i(TAG, "scheduleReconnect: delayMs=$delayMs")
-        reconnectJob = scope.launch {
-            delay(delayMs)
-            connectMutex.withLock {
-                if (!sessionActive.get()) return@withLock
-                openSocketLocked()
+        reconnectJob =
+            scope.launch {
+                delay(delayMs)
+                connectMutex.withLock {
+                    if (!sessionActive.get()) return@withLock
+                    openSocketLocked()
+                }
             }
-        }
     }
 
-    private fun closeSocketLocked(code: Int, reason: String) {
+    private fun closeSocketLocked(
+        code: Int,
+        reason: String,
+    ) {
         // Invalidate in-flight listener callbacks before tearing down.
         socketGeneration.incrementAndGet()
         val socket = activeSocket.getAndSet(null) ?: return
@@ -377,11 +410,12 @@ class OkHttpMailboxWsClient(
                     msgId = msgId,
                     status = MailboxAckStatus.ERROR,
                     reason = reason,
-                    raw = JSONObject()
-                        .put("type", MailboxMessageType.ACK)
-                        .put("msg_id", msgId)
-                        .put("status", MailboxAckStatus.ERROR.toWire())
-                        .put("reason", reason),
+                    raw =
+                        JSONObject()
+                            .put("type", MailboxMessageType.ACK)
+                            .put("msg_id", msgId)
+                            .put("status", MailboxAckStatus.ERROR.toWire())
+                            .put("reason", reason),
                 ),
             )
         }
@@ -397,19 +431,19 @@ class OkHttpMailboxWsClient(
                         msgId = msgId,
                         status = MailboxAckStatus.ERROR,
                         reason = reason,
-                        raw = JSONObject()
-                            .put("type", MailboxMessageType.ACK)
-                            .put("msg_id", msgId)
-                            .put("status", MailboxAckStatus.ERROR.toWire())
-                            .put("reason", reason),
+                        raw =
+                            JSONObject()
+                                .put("type", MailboxMessageType.ACK)
+                                .put("msg_id", msgId)
+                                .put("status", MailboxAckStatus.ERROR.toWire())
+                                .put("reason", reason),
                     ),
                 ),
             )
         }
     }
 
-    private fun isCurrentGeneration(generation: Long): Boolean =
-        socketGeneration.get() == generation
+    private fun isCurrentGeneration(generation: Long): Boolean = socketGeneration.get() == generation
 
     private fun newMsgId(): String = UUID.randomUUID().toString()
 

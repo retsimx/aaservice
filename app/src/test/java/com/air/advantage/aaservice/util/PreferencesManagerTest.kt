@@ -3,7 +3,8 @@ package com.air.advantage.aaservice.util
 import android.content.Context
 import androidx.preference.PreferenceManager
 import androidx.test.core.app.ApplicationProvider
-import org.junit.Assert.*
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -13,7 +14,6 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [33], manifest = Config.NONE)
 class PreferencesManagerTest {
-
     private lateinit var context: Context
     private lateinit var preferencesManager: PreferencesManager
 
@@ -28,7 +28,10 @@ class PreferencesManagerTest {
     fun `uuid is initially empty`() {
         // AAServiceApp may have already generated a UUID, so check it's valid format
         val uuid = preferencesManager.uuid
-        assertTrue("UUID should be valid format", uuid.isEmpty() || uuid.matches(Regex("[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")))
+        assertTrue(
+            "UUID should be valid format",
+            uuid.isEmpty() || uuid.matches(Regex("[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}")),
+        )
     }
 
     @Test

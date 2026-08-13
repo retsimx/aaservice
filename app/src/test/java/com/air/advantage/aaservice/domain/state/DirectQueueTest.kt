@@ -15,7 +15,6 @@ import org.junit.Test
  * stay deterministic.
  */
 class DirectQueueTest {
-
     private val sink = RecordingSink()
     private val typeBytes = "17".toByteArray(Charsets.UTF_8)
     private val appStoreBytes = "MyAir5".toByteArray(Charsets.UTF_8)
@@ -23,8 +22,7 @@ class DirectQueueTest {
     private fun engine(pollTags: List<String> = listOf("getClock")): UartDispatchEngine =
         UartDispatchEngine(pollTags, typeBytes, appStoreBytes, sink)
 
-    private fun frameOf(content: String): String =
-        "<U>$content</U=${CrcCalculator.computeHex(content)}>"
+    private fun frameOf(content: String): String = "<U>$content</U=${CrcCalculator.computeHex(content)}>"
 
     @Test
     fun `direct queue delivers FIFO ahead of poll`() {
@@ -112,7 +110,10 @@ class DirectQueueTest {
         val pollData = mutableListOf<Pair<String, ByteArray>>()
         val rawCan = mutableListOf<ByteArray>()
 
-        override fun onPollData(tag: String, payload: ByteArray) {
+        override fun onPollData(
+            tag: String,
+            payload: ByteArray,
+        ) {
             pollData.add(tag to payload)
         }
 

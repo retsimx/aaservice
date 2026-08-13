@@ -17,5 +17,6 @@ import dagger.hilt.components.SingletonComponent
 @InstallIn(SingletonComponent::class)
 interface UartServiceEntryPoint {
     fun preferencesManager(): PreferencesManager
+
     fun mailboxWsClientFactory(): MailboxWsClientFactory
 }

@@ -7,7 +7,6 @@ import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class PollAdvanceTest {
-
     private val sink = RecordingSink()
     private val typeBytes = "17".toByteArray(Charsets.UTF_8)
     private val appStoreBytes = "MyAir5".toByteArray(Charsets.UTF_8)
@@ -17,19 +16,19 @@ class PollAdvanceTest {
     private fun engine(tags: List<String> = pollTags): UartDispatchEngine =
         UartDispatchEngine(tags, typeBytes, appStoreBytes, sink)
 
-    private fun frameOf(content: String): String =
-        "<U>$content</U=${CrcCalculator.computeHex(content)}>"
+    private fun frameOf(content: String): String = "<U>$content</U=${CrcCalculator.computeHex(content)}>"
 
     private fun systemDataPayload(): ByteArray =
-        ("<request>getSystemData</request><type>00</type><AppStore>x</AppStore>" +
-            "<dhcp>192.168.1.1</dhcp><subnet>255.255.255.0</subnet>" +
-            "<gateway>192.168.1.254</gateway><MyAppRev>14.148</MyAppRev>").toByteArray(Charsets.UTF_8)
+        (
+            "<request>getSystemData</request><type>00</type><AppStore>x</AppStore>" +
+                "<dhcp>192.168.1.1</dhcp><subnet>255.255.255.0</subnet>" +
+                "<gateway>192.168.1.254</gateway><MyAppRev>14.148</MyAppRev>"
+        ).toByteArray(Charsets.UTF_8)
 
     private fun clockPayload(): ByteArray =
         "<request>getClock</request><clock>12:00</clock>".toByteArray(Charsets.UTF_8)
 
-    private fun zonePayload(): ByteArray =
-        "<request>getZoneData</request><zone>1</zone>".toByteArray(Charsets.UTF_8)
+    private fun zonePayload(): ByteArray = "<request>getZoneData</request><zone>1</zone>".toByteArray(Charsets.UTF_8)
 
     // --- ping never advances ---
 
@@ -96,7 +95,7 @@ class PollAdvanceTest {
         assertEquals(
             "<request>getSystemData</request><type>17</type><AppStore>MyAir5</AppStore>" +
                 "<MyAppRev>14.150</MyAppRev>",
-            String(sink.pollData[0].second, Charsets.UTF_8)
+            String(sink.pollData[0].second, Charsets.UTF_8),
         )
     }
 
@@ -169,7 +168,10 @@ class PollAdvanceTest {
         val pollData = mutableListOf<Pair<String, ByteArray>>()
         val rawCan = mutableListOf<ByteArray>()
 
-        override fun onPollData(tag: String, payload: ByteArray) {
+        override fun onPollData(
+            tag: String,
+            payload: ByteArray,
+        ) {
             pollData.add(tag to payload)
         }
 

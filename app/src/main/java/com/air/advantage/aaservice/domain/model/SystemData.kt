@@ -6,5 +6,5 @@ data class SystemData(
     val myAppRev: String?,
     val dhcp: String?,
     val gateway: String?,
-    val raw: ByteArray
+    val raw: ByteArray,
 )

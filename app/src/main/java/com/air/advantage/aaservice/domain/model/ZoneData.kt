@@ -6,5 +6,5 @@ data class ZoneData(
     val setPoint: Int?,
     val mode: String?,
     val openPercent: Int?,
-    val raw: ByteArray
+    val raw: ByteArray,
 )

@@ -3,15 +3,19 @@ package com.air.advantage.aaservice.receiver
 import android.content.Context
 import android.content.Intent
 import com.air.advantage.aaservice.service.UartForegroundService
-import java.util.concurrent.atomic.AtomicBoolean
 import org.junit.After
 import org.junit.Before
 import org.junit.Test
-import org.mockito.Mockito.*
+import org.mockito.ArgumentMatchers.anyString
+import org.mockito.Mockito.mock
+import org.mockito.Mockito.never
+import org.mockito.Mockito.verify
+import org.mockito.Mockito.verifyNoInteractions
+import org.mockito.Mockito.`when`
 import org.mockito.kotlin.whenever
+import java.util.concurrent.atomic.AtomicBoolean
 
 class MessageToCbReceiverTest {
-
     private lateinit var receiver: MessageToCbReceiver
     private lateinit var context: Context
     private lateinit var service: UartForegroundService

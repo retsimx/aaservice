@@ -3,16 +3,18 @@ package com.air.advantage.aaservice.receiver
 import android.content.Context
 import android.content.Intent
 import com.air.advantage.aaservice.util.ServiceHelper
-import org.junit.Assert.*
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
-import org.mockito.Mockito.*
+import org.mockito.Mockito.mock
+import org.mockito.Mockito.mockStatic
+import org.mockito.Mockito.verify
 import org.mockito.kotlin.any
 import org.mockito.kotlin.never
 import org.mockito.kotlin.whenever
 
 class UsbPermissionReceiverTest {
-
     private lateinit var receiver: UsbPermissionReceiver
     private lateinit var context: Context
 
@@ -28,9 +30,9 @@ class UsbPermissionReceiverTest {
             val receiverIntent = mock(Intent::class.java)
             whenever(receiverIntent.action).thenReturn("com.air.advantage.USB_PERMISSION")
             whenever(receiverIntent.getBooleanExtra("permission", false)).thenReturn(true)
-            
+
             receiver.onReceive(context, receiverIntent)
-            
+
             mockedServiceHelper.verify {
                 ServiceHelper.scheduleServiceStart(context, "com.air.advantage.OPEN_DEVICE", 0)
             }
@@ -43,9 +45,9 @@ class UsbPermissionReceiverTest {
             val receiverIntent = mock(Intent::class.java)
             whenever(receiverIntent.action).thenReturn("com.air.advantage.USB_PERMISSION")
             whenever(receiverIntent.getBooleanExtra("permission", false)).thenReturn(false)
-            
+
             receiver.onReceive(context, receiverIntent)
-            
+
             mockedServiceHelper.verify {
                 ServiceHelper.scheduleServiceStart(context, "com.air.advantage.REQUEST_PERMISSION", 200)
             }
@@ -58,9 +60,9 @@ class UsbPermissionReceiverTest {
             val receiverIntent = mock(Intent::class.java)
             whenever(receiverIntent.action).thenReturn("com.air.advantage.USB_PERMISSION")
             whenever(receiverIntent.getBooleanExtra("permission", false)).thenReturn(false)
-            
+
             receiver.onReceive(context, receiverIntent)
-            
+
             mockedServiceHelper.verify {
                 ServiceHelper.scheduleServiceStart(context, "com.air.advantage.REQUEST_PERMISSION", 200)
             }
@@ -77,7 +79,7 @@ class UsbPermissionReceiverTest {
 
             mockedServiceHelper.verify(
                 { ServiceHelper.scheduleServiceStart(any(), any(), any()) },
-                never()
+                never(),
             )
         }
     }

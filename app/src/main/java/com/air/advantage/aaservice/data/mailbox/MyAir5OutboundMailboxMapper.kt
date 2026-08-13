@@ -9,11 +9,11 @@ sealed class OutboundMailboxAction {
      * [unitType]/[unitId] address a specific unit — CAN raw writes only.
      */
     data class Write(
-        val register: String,          // hex: "05", "03", or raw token reg ("0a", "12", ...)
-        val payload: MailboxPayload,   // Typed(JSONObject) | RawHex(hex)
-        val zone: Int? = null,         // zone-bearing regs 03/04
-        val unitType: String? = null,  // hex "07"/"08" — CAN raw writes only
-        val unitId: String? = null,    // 5-hex — CAN raw writes only
+        val register: String, // hex: "05", "03", or raw token reg ("0a", "12", ...)
+        val payload: MailboxPayload, // Typed(JSONObject) | RawHex(hex)
+        val zone: Int? = null, // zone-bearing regs 03/04
+        val unitType: String? = null, // hex "07"/"08" — CAN raw writes only
+        val unitId: String? = null, // 5-hex — CAN raw writes only
     ) : OutboundMailboxAction()
 
     /** One-shot raw register read; optional addressing fields. */
@@ -47,7 +47,6 @@ data class CanToken(
  * returns [OutboundMailboxAction.Ignore] with a reason.
  */
 object MyAir5OutboundMailboxMapper {
-
     /** Register 05 — system status (hex, daemon `RegId::from_hex`). */
     const val REG_SYSTEM_STATUS = "05"
 
@@ -66,10 +65,15 @@ object MyAir5OutboundMailboxMapper {
 
     private val ZONE_KEY = Regex("^z(\\d{1,2})$", RegexOption.IGNORE_CASE)
 
-    private val MODE_BY_ID = mapOf(
-        1 to MailboxEnum.Mode.COOL, 2 to MailboxEnum.Mode.HEAT, 3 to MailboxEnum.Mode.VENT,
-        4 to MailboxEnum.Mode.AUTO, 5 to MailboxEnum.Mode.DRY, 6 to MailboxEnum.Mode.MY_AUTO,
-    )
+    private val MODE_BY_ID =
+        mapOf(
+            1 to MailboxEnum.Mode.COOL,
+            2 to MailboxEnum.Mode.HEAT,
+            3 to MailboxEnum.Mode.VENT,
+            4 to MailboxEnum.Mode.AUTO,
+            5 to MailboxEnum.Mode.DRY,
+            6 to MailboxEnum.Mode.MY_AUTO,
+        )
 
     /**
      * Maps a `MESSAGE_TO_CB` string (`command?query`) to zero or more actions.
@@ -145,8 +149,7 @@ object MyAir5OutboundMailboxMapper {
     }
 
     /** Explicit full-refresh path (e.g. GET_ALL_DATA in WS mode). */
-    fun mapGetAllData(): OutboundMailboxAction =
-        OutboundMailboxAction.Command(MailboxCommandAction.RESYNC)
+    fun mapGetAllData(): OutboundMailboxAction = OutboundMailboxAction.Command(MailboxCommandAction.RESYNC)
 
     /**
      * Parses a 25-char lowercase hex CAN token into its wire fields:
@@ -167,13 +170,20 @@ object MyAir5OutboundMailboxMapper {
     }
 
     private fun mapSetAircon(query: String): List<OutboundMailboxAction> {
-        val jsonParam = extractJsonParam(query) ?: return listOf(OutboundMailboxAction.Ignore("malformed setAircon json"))
-        val root = try {
-            JSONObject(jsonParam)
-        } catch (_: Exception) {
-            return listOf(OutboundMailboxAction.Ignore("malformed setAircon json"))
-        }
-        val aircons = root.optJSONObject("aircons") ?: return listOf(OutboundMailboxAction.Ignore("malformed setAircon json"))
+        val jsonParam =
+            extractJsonParam(
+                query,
+            ) ?: return listOf(OutboundMailboxAction.Ignore("malformed setAircon json"))
+        val root =
+            try {
+                JSONObject(jsonParam)
+            } catch (_: Exception) {
+                return listOf(OutboundMailboxAction.Ignore("malformed setAircon json"))
+            }
+        val aircons =
+            root.optJSONObject(
+                "aircons",
+            ) ?: return listOf(OutboundMailboxAction.Ignore("malformed setAircon json"))
 
         val systemActions = mutableListOf<OutboundMailboxAction>()
         val zoneActions = mutableListOf<OutboundMailboxAction>()
@@ -251,11 +261,12 @@ object MyAir5OutboundMailboxMapper {
                 payload.put("target_temp_c", zone.optDouble("setTemp"))
             }
             if (payload.length() > 0) {
-                zoneActions += OutboundMailboxAction.Write(
-                    register = REG_ZONE_STATE,
-                    payload = MailboxPayload.Typed(payload),
-                    zone = zoneId,
-                )
+                zoneActions +=
+                    OutboundMailboxAction.Write(
+                        register = REG_ZONE_STATE,
+                        payload = MailboxPayload.Typed(payload),
+                        zone = zoneId,
+                    )
             }
         }
         return zoneActions
@@ -264,8 +275,9 @@ object MyAir5OutboundMailboxMapper {
     private fun mapSetSystemData(params: Map<String, String>): List<OutboundMailboxAction> {
         val mode = params["mode"]?.toIntOrNull()
         if (mode != null) {
-            val enumValue = MODE_BY_ID[mode]
-                ?: return listOf(OutboundMailboxAction.Ignore("no register representation"))
+            val enumValue =
+                MODE_BY_ID[mode]
+                    ?: return listOf(OutboundMailboxAction.Ignore("no register representation"))
             return listOf(
                 OutboundMailboxAction.Write(
                     register = REG_SYSTEM_STATUS,
@@ -275,11 +287,12 @@ object MyAir5OutboundMailboxMapper {
         }
         val onOff = params["airconOnOff"]
         if (onOff != null) {
-            val power = when (onOff) {
-                "1" -> MailboxEnum.Power.ON
-                "0" -> MailboxEnum.Power.OFF
-                else -> return listOf(OutboundMailboxAction.Ignore("no register representation"))
-            }
+            val power =
+                when (onOff) {
+                    "1" -> MailboxEnum.Power.ON
+                    "0" -> MailboxEnum.Power.OFF
+                    else -> return listOf(OutboundMailboxAction.Ignore("no register representation"))
+                }
             return listOf(
                 OutboundMailboxAction.Write(
                     register = REG_SYSTEM_STATUS,
@@ -291,14 +304,18 @@ object MyAir5OutboundMailboxMapper {
     }
 
     private fun mapSetZoneData(params: Map<String, String>): List<OutboundMailboxAction> {
-        val zone = params["zone"]?.toIntOrNull() ?: return listOf(OutboundMailboxAction.Ignore("no register representation"))
+        val zone =
+            params["zone"]?.toIntOrNull() ?: return listOf(
+                OutboundMailboxAction.Ignore("no register representation"),
+            )
         if (zone !in 1..10) return listOf(OutboundMailboxAction.Ignore("no register representation"))
         val setting = params["zoneSetting"] ?: return listOf(OutboundMailboxAction.Ignore("no register representation"))
-        val open = when (setting) {
-            "1" -> true
-            "0" -> false
-            else -> return listOf(OutboundMailboxAction.Ignore("no register representation"))
-        }
+        val open =
+            when (setting) {
+                "1" -> true
+                "0" -> false
+                else -> return listOf(OutboundMailboxAction.Ignore("no register representation"))
+            }
         return listOf(
             OutboundMailboxAction.Write(
                 register = REG_ZONE_STATE,

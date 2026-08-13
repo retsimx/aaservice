@@ -7,7 +7,6 @@ import org.junit.Before
 import org.junit.Test
 
 class SuDaemonLifecycleTest {
-
     private lateinit var recordedCommands: MutableList<List<String>>
     private var nextExit: Int? = 0
     private var throwMissing: Boolean = false
@@ -18,10 +17,11 @@ class SuDaemonLifecycleTest {
         recordedCommands = mutableListOf()
         nextExit = 0
         throwMissing = false
-        val runner = ProcessRunner { command ->
-            recordedCommands += command
-            if (throwMissing) null else nextExit
-        }
+        val runner =
+            ProcessRunner { command ->
+                recordedCommands += command
+                if (throwMissing) null else nextExit
+            }
         lifecycle = SuDaemonLifecycle(processRunner = runner)
     }
 

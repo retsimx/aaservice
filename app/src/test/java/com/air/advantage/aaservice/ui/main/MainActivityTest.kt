@@ -4,7 +4,6 @@ import android.app.Activity
 import android.app.admin.DevicePolicyManager
 import android.content.ComponentName
 import android.content.Context
-import android.content.Intent
 import android.view.View
 import android.widget.EditText
 import android.widget.RadioButton
@@ -20,7 +19,11 @@ import com.air.advantage.aaservice.util.PreferencesManager
 import com.air.advantage.aaservice.util.ServiceHelper
 import com.air.advantage.aaservice.util.TransportMode
 import org.junit.After
-import org.junit.Assert.*
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -32,7 +35,6 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [33], manifest = Config.NONE)
 class MainActivityTest {
-
     private lateinit var context: Context
     private lateinit var preferencesManager: PreferencesManager
 
@@ -51,6 +53,7 @@ class MainActivityTest {
         MainActivity.isVisible.set(false)
         PreferenceManager.getDefaultSharedPreferences(context).edit().clear().commit()
     }
+
     @Test
     fun `onResume with admin active shows correct UI`() {
         val context = ApplicationProvider.getApplicationContext<Context>()
@@ -63,7 +66,10 @@ class MainActivityTest {
 
         assertEquals(View.GONE, activity.findViewById<View>(R.id.enable_device_admin).visibility)
         assertEquals(View.VISIBLE, activity.findViewById<View>(R.id.disable_device_admin).visibility)
-        assertEquals(activity.getString(R.string.setup_correctly), activity.findViewById<TextView>(R.id.status_text).text.toString())
+        assertEquals(
+            activity.getString(R.string.setup_correctly),
+            activity.findViewById<TextView>(R.id.status_text).text.toString(),
+        )
     }
 
     @Test
@@ -78,7 +84,10 @@ class MainActivityTest {
 
         assertEquals(View.VISIBLE, activity.findViewById<View>(R.id.enable_device_admin).visibility)
         assertEquals(View.GONE, activity.findViewById<View>(R.id.disable_device_admin).visibility)
-        assertEquals(activity.getString(R.string.setup_incorrectly), activity.findViewById<TextView>(R.id.status_text).text.toString())
+        assertEquals(
+            activity.getString(R.string.setup_incorrectly),
+            activity.findViewById<TextView>(R.id.status_text).text.toString(),
+        )
     }
 
     @Test

@@ -7,7 +7,6 @@ import javax.crypto.spec.IvParameterSpec
 import javax.crypto.spec.SecretKeySpec
 
 object CryptoHelper {
-
     private const val KEY_BASE64 = "+07UDwu4yLmTkTpOYxe9Vc4K/2slMFRWrcvN2tuFxvc="
 
     private val key: ByteArray by lazy {

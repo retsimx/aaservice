@@ -16,30 +16,32 @@ enum class TransportConnectionStatus {
     Error,
 }
 
-fun ModeSwitchStatus.toTransportConnectionStatus(): TransportConnectionStatus = when (this) {
-    ModeSwitchStatus.Idle -> TransportConnectionStatus.Idle
-    ModeSwitchStatus.Connecting -> TransportConnectionStatus.Connecting
-    ModeSwitchStatus.Connected -> TransportConnectionStatus.Connected
-    ModeSwitchStatus.Error -> TransportConnectionStatus.Error
-}
+fun ModeSwitchStatus.toTransportConnectionStatus(): TransportConnectionStatus =
+    when (this) {
+        ModeSwitchStatus.Idle -> TransportConnectionStatus.Idle
+        ModeSwitchStatus.Connecting -> TransportConnectionStatus.Connecting
+        ModeSwitchStatus.Connected -> TransportConnectionStatus.Connected
+        ModeSwitchStatus.Error -> TransportConnectionStatus.Error
+    }
 
 @HiltViewModel
-class MainViewModel @Inject constructor() : ViewModel() {
+class MainViewModel
+    @Inject
+    constructor() : ViewModel() {
+        private val _connectionState = MutableStateFlow<Boolean?>(null)
+        val connectionState: StateFlow<Boolean?> = _connectionState.asStateFlow()
 
-    private val _connectionState = MutableStateFlow<Boolean?>(null)
-    val connectionState: StateFlow<Boolean?> = _connectionState.asStateFlow()
+        private val _transportConnectionStatus =
+            MutableStateFlow(TransportConnectionStatus.Idle)
+        val transportConnectionStatus: StateFlow<TransportConnectionStatus> =
+            _transportConnectionStatus.asStateFlow()
 
-    private val _transportConnectionStatus =
-        MutableStateFlow(TransportConnectionStatus.Idle)
-    val transportConnectionStatus: StateFlow<TransportConnectionStatus> =
-        _transportConnectionStatus.asStateFlow()
+        fun setConnectionState(connected: Boolean) {
+            _connectionState.value = connected
+        }
 
-    fun setConnectionState(connected: Boolean) {
-        _connectionState.value = connected
+        /** Updates from [com.air.advantage.aaservice.service.TransportStatusStore] / tests. */
+        fun setTransportConnectionStatus(status: TransportConnectionStatus) {
+            _transportConnectionStatus.value = status
+        }
     }
-
-    /** Updates from [com.air.advantage.aaservice.service.TransportStatusStore] / tests. */
-    fun setTransportConnectionStatus(status: TransportConnectionStatus) {
-        _transportConnectionStatus.value = status
-    }
-}

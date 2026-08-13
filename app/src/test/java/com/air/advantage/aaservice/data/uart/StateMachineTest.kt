@@ -21,15 +21,17 @@ import java.io.OutputStream
 import java.util.concurrent.LinkedBlockingQueue
 
 class StateMachineTest {
-
     private val testScope = CoroutineScope(Dispatchers.IO + SupervisorJob())
 
     /**
      * Launches the now-suspend [UsbAccessoryDataSource.connectWithStreams] in a background
      * coroutine; it blocks for the lifetime of the read loop.
      */
-    private fun connect(dataSource: UsbAccessoryDataSource, input: InputStream, output: OutputStream): Job =
-        testScope.launch { dataSource.connectWithStreams(input, output) }
+    private fun connect(
+        dataSource: UsbAccessoryDataSource,
+        input: InputStream,
+        output: OutputStream,
+    ): Job = testScope.launch { dataSource.connectWithStreams(input, output) }
 
     @Test
     fun `config packet is the first write and nothing else is written yet`() {
@@ -50,20 +52,26 @@ class StateMachineTest {
 
     @Test
     fun `config write failure aborts connect`() {
-        val failingOutput = object : OutputStream() {
-            override fun write(b: Int) {
-                throw IOException("boom")
-            }
+        val failingOutput =
+            object : OutputStream() {
+                override fun write(b: Int) {
+                    throw IOException("boom")
+                }
 
-            override fun write(b: ByteArray, off: Int, len: Int) {
-                throw IOException("boom")
+                override fun write(
+                    b: ByteArray,
+                    off: Int,
+                    len: Int,
+                ) {
+                    throw IOException("boom")
+                }
             }
-        }
         val dataSource = UsbAccessoryDataSource()
         try {
-            val result = testScope.async {
-                dataSource.connectWithStreams(BlockingInputStream(), failingOutput)
-            }
+            val result =
+                testScope.async {
+                    dataSource.connectWithStreams(BlockingInputStream(), failingOutput)
+                }
             assertFalse(kotlinx.coroutines.runBlocking { result.await() })
             assertFalse(dataSource.isConnected)
         } finally {
@@ -85,7 +93,7 @@ class StateMachineTest {
             dataSource.disconnect()
             assertTrue(
                 "connect must return once the read loop terminates",
-                kotlinx.coroutines.runBlocking { connectResult.await() }
+                kotlinx.coroutines.runBlocking { connectResult.await() },
             )
         } finally {
             input.finish()
@@ -124,10 +132,11 @@ class StateMachineTest {
         val input = BlockingInputStream()
         val output = ByteArrayOutputStream()
         var pingCount = 0
-        val dataSource = UsbAccessoryDataSource(
-            engine = engine(sink),
-            onPingObserved = { pingCount++ }
-        )
+        val dataSource =
+            UsbAccessoryDataSource(
+                engine = engine(sink),
+                onPingObserved = { pingCount++ },
+            )
         val connectJob = connect(dataSource, input, output)
         try {
             await { dataSource.isConnected }
@@ -293,7 +302,7 @@ class StateMachineTest {
             pollTags = listOf("getClock"),
             typeBytes = "17".toByteArray(Charsets.UTF_8),
             appStoreBytes = "MyAir5".toByteArray(Charsets.UTF_8),
-            sink = sink
+            sink = sink,
         )
 
     private fun frame(content: String): ByteArray =
@@ -308,15 +317,19 @@ class StateMachineTest {
     }
 
     private fun remainingFrames(output: ByteArray): List<String> {
-        val body = if (output.size > CONFIG_BYTES.size) {
-            output.copyOfRange(CONFIG_BYTES.size, output.size)
-        } else {
-            ByteArray(0)
-        }
+        val body =
+            if (output.size > CONFIG_BYTES.size) {
+                output.copyOfRange(CONFIG_BYTES.size, output.size)
+            } else {
+                ByteArray(0)
+            }
         return String(body, Charsets.UTF_8).split("<U>").drop(1).filter { it.contains("</U=") }
     }
 
-    private fun await(timeoutMs: Long = 5000, condition: () -> Boolean) {
+    private fun await(
+        timeoutMs: Long = 5000,
+        condition: () -> Boolean,
+    ) {
         val deadline = System.currentTimeMillis() + timeoutMs
         while (System.currentTimeMillis() < deadline) {
             if (condition()) return
@@ -341,7 +354,11 @@ class StateMachineTest {
 
         override fun read(): Int = -1
 
-        override fun read(b: ByteArray, off: Int, len: Int): Int {
+        override fun read(
+            b: ByteArray,
+            off: Int,
+            len: Int,
+        ): Int {
             val data = nextChunk() ?: return -1
             val n = minOf(data.size - pos, len)
             System.arraycopy(data, pos, b, off, n)
@@ -371,7 +388,10 @@ class StateMachineTest {
         val pollData = mutableListOf<Pair<String, ByteArray>>()
         val rawCan = mutableListOf<ByteArray>()
 
-        override fun onPollData(tag: String, payload: ByteArray) {
+        override fun onPollData(
+            tag: String,
+            payload: ByteArray,
+        ) {
             pollData.add(tag to payload)
         }
 

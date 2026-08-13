@@ -4,13 +4,14 @@ import android.content.Context
 import android.content.Intent
 import com.air.advantage.aaservice.service.UartForegroundService
 import org.junit.After
-import org.junit.Assert.*
 import org.junit.Before
 import org.junit.Test
-import org.mockito.Mockito.*
+import org.mockito.Mockito.mock
+import org.mockito.Mockito.verify
+import org.mockito.Mockito.verifyNoInteractions
+import org.mockito.Mockito.`when`
 
 class CanToCbReceiverTest {
-
     private lateinit var receiver: CanToCbReceiver
     private lateinit var context: Context
     private lateinit var service: UartForegroundService

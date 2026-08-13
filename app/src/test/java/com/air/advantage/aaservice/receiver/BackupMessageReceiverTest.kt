@@ -5,15 +5,17 @@ import android.content.Intent
 import com.air.advantage.aaservice.service.UartForegroundService
 import com.air.advantage.aaservice.util.FujitsuDetector
 import org.junit.After
-import org.junit.Assert.*
+import org.junit.Assert.assertEquals
 import org.junit.Before
 import org.junit.Test
-import org.mockito.Mockito.*
+import org.mockito.Mockito.mock
+import org.mockito.Mockito.mockConstruction
+import org.mockito.Mockito.mockStatic
+import org.mockito.Mockito.verify
 import org.mockito.kotlin.any
 import org.mockito.kotlin.whenever
 
 class BackupMessageReceiverTest {
-
     private lateinit var receiver: BackupMessageReceiver
     private lateinit var context: Context
 
@@ -33,7 +35,7 @@ class BackupMessageReceiverTest {
         val intent = Intent("com.air.advantage.BACKUP_MESSAGE")
         mockStatic(FujitsuDetector::class.java).use { fujitsu ->
             fujitsu.`when`<Boolean> { FujitsuDetector.isFujitsuVariant(context) }.thenReturn(false)
-            
+
             mockConstruction(Intent::class.java) { mockIntent, _ ->
                 whenever(mockIntent.putExtra(any<String>(), any<String>())).thenReturn(mockIntent)
             }.use { mockedIntent ->
@@ -41,7 +43,7 @@ class BackupMessageReceiverTest {
 
                 val constructed = mockedIntent.constructed()
                 assertEquals(1, constructed.size)
-                
+
                 verify(context).sendBroadcast(constructed[0], "com.air.android.secure_comms")
                 verify(constructed[0]).putExtra("com.air.advantage.GET_DATA_REQUEST", "backupMessage")
                 verify(constructed[0]).putExtra("com.air.advantage.MESSAGE_FROM_CB_SECURE", "")
@@ -54,7 +56,7 @@ class BackupMessageReceiverTest {
         val intent = Intent("com.air.advantage.BACKUP_MESSAGE")
         mockStatic(FujitsuDetector::class.java).use { fujitsu ->
             fujitsu.`when`<Boolean> { FujitsuDetector.isFujitsuVariant(context) }.thenReturn(true)
-            
+
             mockConstruction(Intent::class.java) { mockIntent, _ ->
                 whenever(mockIntent.putExtra(any<String>(), any<String>())).thenReturn(mockIntent)
             }.use { mockedIntent ->
@@ -62,7 +64,7 @@ class BackupMessageReceiverTest {
 
                 val constructed = mockedIntent.constructed()
                 assertEquals(1, constructed.size)
-                
+
                 verify(context).sendBroadcast(constructed[0], "com.air.android.secure_comms_fujitsu")
                 verify(constructed[0]).putExtra("com.air.advantage.GET_DATA_REQUEST", "backupMessage")
                 verify(constructed[0]).putExtra("com.air.advantage.MESSAGE_FROM_CB_SECURE_FUJITSU", "")

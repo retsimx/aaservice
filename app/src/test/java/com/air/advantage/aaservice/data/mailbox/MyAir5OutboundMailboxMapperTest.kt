@@ -18,15 +18,13 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [28])
 class MyAir5OutboundMailboxMapperTest {
-
     private fun asWrite(action: OutboundMailboxAction): OutboundMailboxAction.Write =
         action as OutboundMailboxAction.Write
 
     private fun typed(write: OutboundMailboxAction.Write): org.json.JSONObject =
         (write.payload as MailboxPayload.Typed).payload
 
-    private fun rawHex(write: OutboundMailboxAction.Write): String =
-        (write.payload as MailboxPayload.RawHex).hex
+    private fun rawHex(write: OutboundMailboxAction.Write): String = (write.payload as MailboxPayload.RawHex).hex
 
     private fun assertIgnore(actions: List<OutboundMailboxAction>) {
         assertEquals(1, actions.size)
@@ -190,14 +188,20 @@ class MyAir5OutboundMailboxMapperTest {
 
     @Test
     fun `setSystemData mode maps to mode enum`() {
-        val expected = mapOf(
-            "1" to "cool", "2" to "heat", "3" to "vent",
-            "4" to "auto", "5" to "dry", "6" to "myauto",
-        )
-        for ((mode, name) in expected) {
-            val write = asWrite(
-                MyAir5OutboundMailboxMapper.mapMessage("setSystemData?mode=$mode").single(),
+        val expected =
+            mapOf(
+                "1" to "cool",
+                "2" to "heat",
+                "3" to "vent",
+                "4" to "auto",
+                "5" to "dry",
+                "6" to "myauto",
             )
+        for ((mode, name) in expected) {
+            val write =
+                asWrite(
+                    MyAir5OutboundMailboxMapper.mapMessage("setSystemData?mode=$mode").single(),
+                )
             assertEquals(MyAir5OutboundMailboxMapper.REG_SYSTEM_STATUS, write.register)
             assertEquals(name, typed(write).getString("mode"))
             assertNull(write.zone)
@@ -211,18 +215,20 @@ class MyAir5OutboundMailboxMapperTest {
 
     @Test
     fun `setSystemData airconOnOff 1 maps power on`() {
-        val write = asWrite(
-            MyAir5OutboundMailboxMapper.mapMessage("setSystemData?airconOnOff=1").single(),
-        )
+        val write =
+            asWrite(
+                MyAir5OutboundMailboxMapper.mapMessage("setSystemData?airconOnOff=1").single(),
+            )
         assertEquals(MyAir5OutboundMailboxMapper.REG_SYSTEM_STATUS, write.register)
         assertEquals("on", typed(write).getString("power"))
     }
 
     @Test
     fun `setSystemData airconOnOff 0 maps power off`() {
-        val write = asWrite(
-            MyAir5OutboundMailboxMapper.mapMessage("setSystemData?airconOnOff=0").single(),
-        )
+        val write =
+            asWrite(
+                MyAir5OutboundMailboxMapper.mapMessage("setSystemData?airconOnOff=0").single(),
+            )
         assertEquals(MyAir5OutboundMailboxMapper.REG_SYSTEM_STATUS, write.register)
         assertEquals("off", typed(write).getString("power"))
     }
@@ -238,9 +244,10 @@ class MyAir5OutboundMailboxMapperTest {
 
     @Test
     fun `setZoneData zoneSetting 1 maps open true with zone address`() {
-        val write = asWrite(
-            MyAir5OutboundMailboxMapper.mapMessage("setZoneData?zone=1&zoneSetting=1").single(),
-        )
+        val write =
+            asWrite(
+                MyAir5OutboundMailboxMapper.mapMessage("setZoneData?zone=1&zoneSetting=1").single(),
+            )
         assertEquals(MyAir5OutboundMailboxMapper.REG_ZONE_STATE, write.register)
         assertEquals(1, write.zone)
         assertTrue(typed(write).getBoolean("open"))
@@ -249,9 +256,10 @@ class MyAir5OutboundMailboxMapperTest {
 
     @Test
     fun `setZoneData zoneSetting 0 maps open false`() {
-        val write = asWrite(
-            MyAir5OutboundMailboxMapper.mapMessage("setZoneData?zone=3&zoneSetting=0").single(),
-        )
+        val write =
+            asWrite(
+                MyAir5OutboundMailboxMapper.mapMessage("setZoneData?zone=3&zoneSetting=0").single(),
+            )
         assertEquals(3, write.zone)
         assertFalse(typed(write).getBoolean("open"))
     }
@@ -298,33 +306,37 @@ class MyAir5OutboundMailboxMapperTest {
 
     @Test
     fun `reg06 flush token maps to resync command`() {
-        val actions = MyAir5OutboundMailboxMapper.mapCanTokens(
-            MyAir5OutboundMailboxMapper.REG06_FLUSH_TOKEN,
-        )
+        val actions =
+            MyAir5OutboundMailboxMapper.mapCanTokens(
+                MyAir5OutboundMailboxMapper.REG06_FLUSH_TOKEN,
+            )
         val command = actions.single() as OutboundMailboxAction.Command
         assertEquals(MailboxCommandAction.RESYNC, command.action)
     }
 
     @Test
     fun `mixed batch containing reg06 token maps to resync only`() {
-        val actions = MyAir5OutboundMailboxMapper.mapCanTokens(
-            "0701181f3120052a601000000 0801000000600000000000000",
-        )
+        val actions =
+            MyAir5OutboundMailboxMapper.mapCanTokens(
+                "0701181f3120052a601000000 0801000000600000000000000",
+            )
         val command = actions.single() as OutboundMailboxAction.Command
         assertEquals(MailboxCommandAction.RESYNC, command.action)
 
-        val withLights = MyAir5OutboundMailboxMapper.mapCanTokens(
-            "0201000000000360000000000 0701000000600000000000000",
-        )
+        val withLights =
+            MyAir5OutboundMailboxMapper.mapCanTokens(
+                "0201000000000360000000000 0701000000600000000000000",
+            )
         val command2 = withLights.single() as OutboundMailboxAction.Command
         assertEquals(MailboxCommandAction.RESYNC, command2.action)
     }
 
     @Test
     fun `aircon can tokens map to raw writes with addressing`() {
-        val actions = MyAir5OutboundMailboxMapper.mapCanTokens(
-            "0701181f3120052a601000000 08010000005a0000000000000",
-        )
+        val actions =
+            MyAir5OutboundMailboxMapper.mapCanTokens(
+                "0701181f3120052a601000000 08010000005a0000000000000",
+            )
         assertEquals(2, actions.size)
 
         val first = asWrite(actions[0])
@@ -345,27 +357,30 @@ class MyAir5OutboundMailboxMapperTest {
 
     @Test
     fun `lights can tokens dropped and double spaces collapsed`() {
-        val actions = MyAir5OutboundMailboxMapper.mapCanTokens(
-            "0201000000000360000000000  0201000000236000000000000",
-        )
+        val actions =
+            MyAir5OutboundMailboxMapper.mapCanTokens(
+                "0201000000000360000000000  0201000000236000000000000",
+            )
         assertTrue(actions.isEmpty())
     }
 
     @Test
     fun `reg07 jz18 tokens dropped as daemon-internal`() {
-        val actions = MyAir5OutboundMailboxMapper.mapCanTokens(
-            "0701181f30700000000000000 0701181f3120052a601000000",
-        )
+        val actions =
+            MyAir5OutboundMailboxMapper.mapCanTokens(
+                "0701181f30700000000000000 0701181f3120052a601000000",
+            )
         val write = actions.single() as OutboundMailboxAction.Write
         assertEquals("12", write.register)
     }
 
     @Test
     fun `read-only register tokens dropped (02 08 0a)`() {
-        val actions = MyAir5OutboundMailboxMapper.mapCanTokens(
-            "0801000000236000000000000 0701181f30a60000000000000 " +
-                "0701181f30800000000000000",
-        )
+        val actions =
+            MyAir5OutboundMailboxMapper.mapCanTokens(
+                "0801000000236000000000000 0701181f30a60000000000000 " +
+                    "0701181f30800000000000000",
+            )
         assertTrue(actions.isEmpty())
     }
 
@@ -379,9 +394,10 @@ class MyAir5OutboundMailboxMapperTest {
 
     @Test
     fun `parseCanToken slices a valid 25 char token`() {
-        val token = MyAir5OutboundMailboxMapper.parseCanToken(
-            "0701000000600000000000000",
-        )!!
+        val token =
+            MyAir5OutboundMailboxMapper.parseCanToken(
+                "0701000000600000000000000",
+            )!!
         assertEquals("07", token.type)
         assertEquals("01", token.dest)
         assertEquals("00000", token.uid)

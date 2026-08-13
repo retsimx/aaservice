@@ -2,11 +2,24 @@ package com.air.advantage.aaservice.service
 
 import android.content.Intent
 import org.junit.After
-import org.junit.Assert.*
+import org.junit.Assert.assertArrayEquals
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
-import org.mockito.kotlin.*
+import org.mockito.kotlin.any
+import org.mockito.kotlin.anyOrNull
+import org.mockito.kotlin.argThat
+import org.mockito.kotlin.argumentCaptor
+import org.mockito.kotlin.capture
+import org.mockito.kotlin.doNothing
+import org.mockito.kotlin.doReturn
+import org.mockito.kotlin.never
+import org.mockito.kotlin.spy
+import org.mockito.kotlin.verify
+import org.mockito.kotlin.whenever
 import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
@@ -14,7 +27,6 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [33], manifest = Config.NONE)
 class BroadcastDataTest {
-
     private lateinit var service: UartForegroundService
 
     private val tag = "getClock"
@@ -71,8 +83,16 @@ class BroadcastDataTest {
 
         service.broadcastData(tag)
 
-        verify(service, never()).sendBroadcast(argThat { action == "com.air.advantage.MESSAGE_FROM_CB_SECURE" }, anyOrNull())
-        verify(service, never()).sendBroadcast(argThat { action == "com.air.advantage.MESSAGE_FROM_CB_SECURE_FUJITSU" }, anyOrNull())
+        verify(
+            service,
+            never(),
+        ).sendBroadcast(argThat { action == "com.air.advantage.MESSAGE_FROM_CB_SECURE" }, anyOrNull())
+        verify(service, never()).sendBroadcast(
+            argThat {
+                action == "com.air.advantage.MESSAGE_FROM_CB_SECURE_FUJITSU"
+            },
+            anyOrNull(),
+        )
     }
 
     @Test

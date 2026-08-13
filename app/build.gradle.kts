@@ -3,6 +3,11 @@ plugins {
     id("org.jetbrains.kotlin.android")
     id("com.google.dagger.hilt.android")
     kotlin("kapt")
+    id("org.jlleitschuh.gradle.ktlint")
+}
+
+ktlint {
+    version = "1.2.1"
 }
 
 android {
@@ -53,6 +58,10 @@ android {
 
 tasks.withType<Test> {
     maxParallelForks = 1
+}
+
+tasks.named("check") {
+    dependsOn("ktlintCheck")
 }
 
 dependencies {

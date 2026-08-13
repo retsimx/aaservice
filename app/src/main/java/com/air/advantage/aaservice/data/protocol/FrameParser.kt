@@ -3,7 +3,6 @@ package com.air.advantage.aaservice.data.protocol
 import java.util.Arrays
 
 class FrameParser {
-
     private val ack0: ByteArray = "<ack>0</ack>".toByteArray(Charsets.UTF_8)
     private val ack1: ByteArray = "<ack>1</ack>".toByteArray(Charsets.UTF_8)
     private val endOne: ByteArray = "</U=".toByteArray(Charsets.UTF_8)
@@ -17,12 +16,18 @@ class FrameParser {
         return indexOf(0, data, startU)
     }
 
-    fun findEndMarker(offset: Int, data: ByteArray): Int {
+    fun findEndMarker(
+        offset: Int,
+        data: ByteArray,
+    ): Int {
         val pos = indexOf(offset, data, ping)
         return if (pos >= 0) pos + ping.size else -1
     }
 
-    fun findFrameEnd(offset: Int, data: ByteArray): Int {
+    fun findFrameEnd(
+        offset: Int,
+        data: ByteArray,
+    ): Int {
         if (data.size <= offset + 7) return -1
         val endPos = indexOf(offset, data, endOne)
         if (endPos <= 0) return -1
@@ -47,12 +52,19 @@ class FrameParser {
         return indexOf(0, data, unknown)
     }
 
-    fun extractTag(data: ByteArray, tag: ByteArray): String {
+    fun extractTag(
+        data: ByteArray,
+        tag: ByteArray,
+    ): String {
         val content = extractTagContent(data, tag)
         return String(content)
     }
 
-    fun replaceTagContent(data: ByteArray, tag: ByteArray, content: ByteArray): ByteArray {
+    fun replaceTagContent(
+        data: ByteArray,
+        tag: ByteArray,
+        content: ByteArray,
+    ): ByteArray {
         val openTag = openTag(tag)
         val closeTag = closeTag(tag)
         val openPos = indexOf(0, data, openTag)
@@ -67,15 +79,27 @@ class FrameParser {
         return result
     }
 
-    fun removeRange(data: ByteArray, startTag: String, endTag: String): ByteArray {
+    fun removeRange(
+        data: ByteArray,
+        startTag: String,
+        endTag: String,
+    ): ByteArray {
         return removeRange(data, startTag.toByteArray(Charsets.UTF_8), endTag.toByteArray(Charsets.UTF_8))
     }
 
-    fun removeRange(data: ByteArray, startTag: ByteArray, endTag: ByteArray): ByteArray {
+    fun removeRange(
+        data: ByteArray,
+        startTag: ByteArray,
+        endTag: ByteArray,
+    ): ByteArray {
         return removeTag(data, startTag, endTag)
     }
 
-    fun removeTag(data: ByteArray, tag: ByteArray, replacement: ByteArray): ByteArray {
+    fun removeTag(
+        data: ByteArray,
+        tag: ByteArray,
+        replacement: ByteArray,
+    ): ByteArray {
         val openTag = openTag(tag)
         val openPos = indexOf(0, data, openTag)
         if (openPos <= 0) return data
@@ -92,14 +116,21 @@ class FrameParser {
         return data
     }
 
-    fun parseHexByte(position: Int, data: ByteArray): Int {
+    fun parseHexByte(
+        position: Int,
+        data: ByteArray,
+    ): Int {
         val high = hexDigit(data[position - 3])
         val low = hexDigit(data[position - 2])
         if (high < 0 || low < 0) return -1
         return (high * 16) + low
     }
 
-    fun extractPayload(data: ByteArray, start: Int, end: Int): ByteArray? {
+    fun extractPayload(
+        data: ByteArray,
+        start: Int,
+        end: Int,
+    ): ByteArray? {
         val length = end - start
         if (data.size - start < length) return null
         val result = ByteArray(length)
@@ -107,11 +138,17 @@ class FrameParser {
         return result
     }
 
-    fun isEqual(a: ByteArray?, b: ByteArray?): Boolean {
+    fun isEqual(
+        a: ByteArray?,
+        b: ByteArray?,
+    ): Boolean {
         return if (a == null || b == null) false else Arrays.equals(a, b)
     }
 
-    fun shiftBuffer(position: Int, data: ByteArray) {
+    fun shiftBuffer(
+        position: Int,
+        data: ByteArray,
+    ) {
         var i = 0
         var pos = position
         while (pos < data.size && data[pos] != 0.toByte()) {
@@ -125,7 +162,11 @@ class FrameParser {
         }
     }
 
-    fun indexOf(start: Int, data: ByteArray?, pattern: ByteArray?): Int {
+    fun indexOf(
+        start: Int,
+        data: ByteArray?,
+        pattern: ByteArray?,
+    ): Int {
         if (data == null || pattern == null) return -1
         if (data.size < pattern.size) return -1
         if (start >= data.size) return -1
@@ -164,7 +205,10 @@ class FrameParser {
         return result
     }
 
-    fun extractTagContent(data: ByteArray, tag: ByteArray): ByteArray {
+    fun extractTagContent(
+        data: ByteArray,
+        tag: ByteArray,
+    ): ByteArray {
         val openTag = openTag(tag)
         val openPos = indexOf(0, data, openTag)
         if (openPos < 0) throw IllegalArgumentException("XML tag not found")

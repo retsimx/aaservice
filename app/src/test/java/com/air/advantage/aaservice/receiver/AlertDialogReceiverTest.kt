@@ -9,7 +9,11 @@ import androidx.localbroadcastmanager.content.LocalBroadcastManager
 import androidx.test.core.app.ApplicationProvider
 import com.air.advantage.aaservice.ui.alert.AlertActivity
 import org.junit.After
-import org.junit.Assert.*
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -21,7 +25,6 @@ import org.robolectric.shadows.ShadowLooper
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [33], manifest = Config.NONE)
 class AlertDialogReceiverTest {
-
     private lateinit var context: Context
     private lateinit var receiver: AlertDialogReceiver
     private var localReceiver: BroadcastReceiver? = null
@@ -44,11 +47,15 @@ class AlertDialogReceiverTest {
 
     private fun registerLocalReceiver() {
         val filter = IntentFilter("com.air.advantage.HIDE_WARNING")
-        val broadcastReceiver = object : BroadcastReceiver() {
-            override fun onReceive(context: Context, intent: Intent) {
-                localReceivedIntents.add(intent)
+        val broadcastReceiver =
+            object : BroadcastReceiver() {
+                override fun onReceive(
+                    context: Context,
+                    intent: Intent,
+                ) {
+                    localReceivedIntents.add(intent)
+                }
             }
-        }
         LocalBroadcastManager.getInstance(context).registerReceiver(broadcastReceiver, filter)
         localReceiver = broadcastReceiver
     }

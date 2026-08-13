@@ -1,6 +1,5 @@
 package com.air.advantage.aaservice.service
 
-import android.app.NotificationManager
 import android.content.BroadcastReceiver
 import android.content.Context
 import android.content.ContextWrapper
@@ -16,11 +15,26 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import org.junit.After
-import org.junit.Assert.*
+import org.junit.Assert.assertArrayEquals
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
-import org.mockito.kotlin.*
+import org.mockito.kotlin.any
+import org.mockito.kotlin.anyOrNull
+import org.mockito.kotlin.argThat
+import org.mockito.kotlin.atLeastOnce
+import org.mockito.kotlin.doReturn
+import org.mockito.kotlin.mock
+import org.mockito.kotlin.never
+import org.mockito.kotlin.spy
+import org.mockito.kotlin.times
+import org.mockito.kotlin.verify
+import org.mockito.kotlin.whenever
 import org.robolectric.Robolectric
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
@@ -31,7 +45,6 @@ import org.robolectric.shadows.ShadowLooper
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [33], manifest = Config.NONE)
 class UartForegroundServiceTest {
-
     private lateinit var service: UartForegroundService
     private lateinit var controller: org.robolectric.android.controller.ServiceController<UartForegroundService>
     private var localReceiver: BroadcastReceiver? = null
@@ -61,11 +74,15 @@ class UartForegroundServiceTest {
 
     private fun registerLocalReceiver() {
         val filter = IntentFilter("com.air.advantage.HIDE_WARNING")
-        val broadcastReceiver = object : BroadcastReceiver() {
-            override fun onReceive(context: Context, intent: Intent) {
-                localReceivedIntents.add(intent)
+        val broadcastReceiver =
+            object : BroadcastReceiver() {
+                override fun onReceive(
+                    context: Context,
+                    intent: Intent,
+                ) {
+                    localReceivedIntents.add(intent)
+                }
             }
-        }
         LocalBroadcastManager.getInstance(RuntimeEnvironment.getApplication())
             .registerReceiver(broadcastReceiver, filter)
         localReceiver = broadcastReceiver
@@ -186,10 +203,12 @@ class UartForegroundServiceTest {
         service.deviceOpen.set(true)
         service.uartEventSink.onPollData("getClock", "12:00".toByteArray())
         val sent = sentBroadcasts()
-        assertTrue(sent.any {
-            it.action == "com.air.advantage.MESSAGE_FROM_CB" &&
-                it.getStringExtra("com.air.advantage.GET_DATA_REQUEST") == "getClock"
-        })
+        assertTrue(
+            sent.any {
+                it.action == "com.air.advantage.MESSAGE_FROM_CB" &&
+                    it.getStringExtra("com.air.advantage.GET_DATA_REQUEST") == "getClock"
+            },
+        )
     }
 
     // ── uartEventSink: onRawCan (reference handleGetCan path) ────
@@ -200,11 +219,13 @@ class UartForegroundServiceTest {
         service.uartEventSink.onRawCan(payload)
 
         val sent = sentBroadcasts()
-        assertTrue(sent.any {
-            it.action == "com.air.advantage.MESSAGE_FROM_CB_SECURE" &&
-                it.getStringExtra("com.air.advantage.GET_DATA_REQUEST") == "rawCan" &&
-                it.getStringExtra("com.air.advantage.MESSAGE_FROM_CB_SECURE") == "getCAN 1026"
-        })
+        assertTrue(
+            sent.any {
+                it.action == "com.air.advantage.MESSAGE_FROM_CB_SECURE" &&
+                    it.getStringExtra("com.air.advantage.GET_DATA_REQUEST") == "rawCan" &&
+                    it.getStringExtra("com.air.advantage.MESSAGE_FROM_CB_SECURE") == "getCAN 1026"
+            },
+        )
         assertTrue(sent.any { it.action == "com.air.advantage.MESSAGE_TO_CB_NO_PERMISSION_BROADCAST" })
     }
 
@@ -243,12 +264,17 @@ class UartForegroundServiceTest {
 
         service.handleGetCan("getCAN 1026")
 
-        verify(service, times(1)).sendBroadcast(argThat<Intent> {
-            action == "com.air.advantage.MESSAGE_FROM_CB_SECURE_FUJITSU"
-        }, anyOrNull())
-        verify(service, times(1)).sendBroadcast(argThat<Intent> {
-            action == "com.air.advantage.MESSAGE_TO_CB_NO_PERMISSION_BROADCAST"
-        })
+        verify(service, times(1)).sendBroadcast(
+            argThat<Intent> {
+                action == "com.air.advantage.MESSAGE_FROM_CB_SECURE_FUJITSU"
+            },
+            anyOrNull(),
+        )
+        verify(service, times(1)).sendBroadcast(
+            argThat<Intent> {
+                action == "com.air.advantage.MESSAGE_TO_CB_NO_PERMISSION_BROADCAST"
+            },
+        )
     }
 
     // ── onCreate ─────────────────────────────────────────────────
@@ -370,17 +396,21 @@ class UartForegroundServiceTest {
         val accessory = mock<UsbAccessory>()
         doReturn(manager).whenever(service).getSystemService(Context.USB_SERVICE)
 
-        val prefs = service.getSharedPreferences(
-            service.packageName + "_preferences", Context.MODE_PRIVATE
-        )
+        val prefs =
+            service.getSharedPreferences(
+                service.packageName + "_preferences",
+                Context.MODE_PRIVATE,
+            )
         prefs.edit().putInt("crash_count", 6).apply()
 
         val result = service.openAccessory(accessory)
 
         assertFalse(result)
-        verify(service).sendBroadcast(argThat<Intent> {
-            action == ServiceHelper.ACTION_REBOOT_DEVICE
-        })
+        verify(service).sendBroadcast(
+            argThat<Intent> {
+                action == ServiceHelper.ACTION_REBOOT_DEVICE
+            },
+        )
     }
 
     @Test
@@ -407,7 +437,7 @@ class UartForegroundServiceTest {
         assertNotNull(notification)
         assertEquals(
             "Connected to your system",
-            notification?.extras?.getString("android.title")
+            notification?.extras?.getString("android.title"),
         )
 
         realService.onDestroy()
@@ -425,7 +455,7 @@ class UartForegroundServiceTest {
         assertNotNull(notification)
         assertEquals(
             "Not connected to your system",
-            notification?.extras?.getString("android.title")
+            notification?.extras?.getString("android.title"),
         )
 
         realService.onDestroy()
@@ -445,7 +475,7 @@ class UartForegroundServiceTest {
             assertNotNull(notification)
             assertEquals(
                 "Reboot required",
-                notification?.extras?.getString("android.title")
+                notification?.extras?.getString("android.title"),
             )
 
             realService.onDestroy()
@@ -464,17 +494,18 @@ class UartForegroundServiceTest {
         service.showNotification(connected = true)
         ShadowLooper.idleMainLooper()
 
-        val hideWarnings = localReceivedIntents.count {
-            it.action == "com.air.advantage.HIDE_WARNING"
-        }
+        val hideWarnings =
+            localReceivedIntents.count {
+                it.action == "com.air.advantage.HIDE_WARNING"
+            }
         assertEquals(
             "second call should not repeat side effects",
             1,
-            hideWarnings
+            hideWarnings,
         )
         assertFalse(
             "HIDE_WARNING must be a local broadcast, not a system broadcast",
-            shadowOf(app).broadcastIntents.any { it.action == "com.air.advantage.HIDE_WARNING" }
+            shadowOf(app).broadcastIntents.any { it.action == "com.air.advantage.HIDE_WARNING" },
         )
     }
 
@@ -490,7 +521,7 @@ class UartForegroundServiceTest {
         assertNotNull(notification)
         assertEquals(
             "Not connected to your system",
-            notification?.extras?.getString("android.title")
+            notification?.extras?.getString("android.title"),
         )
 
         realService.onDestroy()
@@ -538,10 +569,13 @@ class UartForegroundServiceTest {
 
         service.broadcastData(tag)
 
-        verify(service, never()).sendBroadcast(argThat<Intent> {
-            action == "com.air.advantage.MESSAGE_FROM_CB_SECURE" ||
-            action == "com.air.advantage.MESSAGE_FROM_CB_SECURE_FUJITSU"
-        }, anyOrNull())
+        verify(service, never()).sendBroadcast(
+            argThat<Intent> {
+                action == "com.air.advantage.MESSAGE_FROM_CB_SECURE" ||
+                    action == "com.air.advantage.MESSAGE_FROM_CB_SECURE_FUJITSU"
+            },
+            anyOrNull(),
+        )
     }
 
     @Test
@@ -553,9 +587,12 @@ class UartForegroundServiceTest {
 
         service.broadcastData(tag)
 
-        verify(service, never()).sendBroadcast(argThat<Intent> {
-            action == "com.air.advantage.MESSAGE_FROM_CB_SECURE"
-        }, anyOrNull())
+        verify(service, never()).sendBroadcast(
+            argThat<Intent> {
+                action == "com.air.advantage.MESSAGE_FROM_CB_SECURE"
+            },
+            anyOrNull(),
+        )
     }
 
     @Test
@@ -567,11 +604,13 @@ class UartForegroundServiceTest {
 
         service.broadcastData(tag)
 
-        verify(service).sendBroadcast(argThat<Intent> {
-            action == "com.air.advantage.MESSAGE_FROM_CB" &&
-            getStringExtra("com.air.advantage.GET_DATA_REQUEST") == tag &&
-            getByteArrayExtra("com.air.advantage.MESSAGE_FROM_CB")?.contentEquals(data) == true
-        })
+        verify(service).sendBroadcast(
+            argThat<Intent> {
+                action == "com.air.advantage.MESSAGE_FROM_CB" &&
+                    getStringExtra("com.air.advantage.GET_DATA_REQUEST") == tag &&
+                    getByteArrayExtra("com.air.advantage.MESSAGE_FROM_CB")?.contentEquals(data) == true
+            },
+        )
     }
 
     @Test
@@ -583,92 +622,122 @@ class UartForegroundServiceTest {
 
         service.broadcastData(tag)
 
-        verify(service, never()).sendBroadcast(argThat<Intent> {
-            action == "com.air.advantage.MESSAGE_FROM_CB_SECURE" ||
-                action == "com.air.advantage.MESSAGE_FROM_CB_SECURE_FUJITSU"
-        }, anyOrNull())
+        verify(service, never()).sendBroadcast(
+            argThat<Intent> {
+                action == "com.air.advantage.MESSAGE_FROM_CB_SECURE" ||
+                    action == "com.air.advantage.MESSAGE_FROM_CB_SECURE_FUJITSU"
+            },
+            anyOrNull(),
+        )
     }
 
     // ── periodicInfoBroadcast ──────────────────────────────────
 
     @Test
-    fun `periodicInfoBroadcast sends broadcast after 5 second delay`() = runBlocking {
-        val job = launch {
-            service.periodicInfoBroadcast()
-        }
-        delay(5500)
-        job.cancel()
+    fun `periodicInfoBroadcast sends broadcast after 5 second delay`() =
+        runBlocking {
+            val job =
+                launch {
+                    service.periodicInfoBroadcast()
+                }
+            delay(5500)
+            job.cancel()
 
-        verify(service, atLeastOnce()).sendBroadcast(any<Intent>(), anyOrNull())
-    }
+            verify(service, atLeastOnce()).sendBroadcast(any<Intent>(), anyOrNull())
+        }
 
     @Test
-    fun `periodicInfoBroadcast sends correct GET_DATA_REQUEST extra`() = runBlocking {
-        val job = launch {
-            service.periodicInfoBroadcast()
-        }
-        delay(5500)
-        job.cancel()
+    fun `periodicInfoBroadcast sends correct GET_DATA_REQUEST extra`() =
+        runBlocking {
+            val job =
+                launch {
+                    service.periodicInfoBroadcast()
+                }
+            delay(5500)
+            job.cancel()
 
-        verify(service).sendBroadcast(argThat<Intent> {
-            getStringExtra("com.air.advantage.GET_DATA_REQUEST") == "aaServiceInfo"
-        }, anyOrNull())
-    }
+            verify(service).sendBroadcast(
+                argThat<Intent> {
+                    getStringExtra("com.air.advantage.GET_DATA_REQUEST") == "aaServiceInfo"
+                },
+                anyOrNull(),
+            )
+        }
 
     @Test
-    fun `periodicInfoBroadcast includes version in JSON`() = runBlocking {
-        val job = launch {
-            service.periodicInfoBroadcast()
-        }
-        delay(5500)
-        job.cancel()
+    fun `periodicInfoBroadcast includes version in JSON`() =
+        runBlocking {
+            val job =
+                launch {
+                    service.periodicInfoBroadcast()
+                }
+            delay(5500)
+            job.cancel()
 
-        verify(service).sendBroadcast(argThat<Intent> {
-            val json = getStringExtra("com.air.advantage.MESSAGE_FROM_CB_SECURE")
-            json?.contains("\"version\"") == true
-        }, anyOrNull())
-    }
+            verify(service).sendBroadcast(
+                argThat<Intent> {
+                    val json = getStringExtra("com.air.advantage.MESSAGE_FROM_CB_SECURE")
+                    json?.contains("\"version\"") == true
+                },
+                anyOrNull(),
+            )
+        }
 
     @Test
-    fun `periodicInfoBroadcast reports version as an integer string`() = runBlocking {
-        val job = launch {
-            service.periodicInfoBroadcast()
-        }
-        delay(5500)
-        job.cancel()
+    fun `periodicInfoBroadcast reports version as an integer string`() =
+        runBlocking {
+            val job =
+                launch {
+                    service.periodicInfoBroadcast()
+                }
+            delay(5500)
+            job.cancel()
 
-        verify(service).sendBroadcast(argThat<Intent> {
-            val json = getStringExtra("com.air.advantage.MESSAGE_FROM_CB_SECURE")
-            val match = Regex("\"version\":\"(\\d+)\"").find(json ?: "")
-                ?: return@argThat false
-            match.groupValues[1].toLongOrNull()?.let { it in 0..Int.MAX_VALUE.toLong() } == true
-        }, anyOrNull())
-    }
+            verify(service).sendBroadcast(
+                argThat<Intent> {
+                    val json = getStringExtra("com.air.advantage.MESSAGE_FROM_CB_SECURE")
+                    val match =
+                        Regex("\"version\":\"(\\d+)\"").find(json ?: "")
+                            ?: return@argThat false
+                    match.groupValues[1].toLongOrNull()?.let { it in 0..Int.MAX_VALUE.toLong() } == true
+                },
+                anyOrNull(),
+            )
+        }
 
     @Test
-    fun `periodicInfoBroadcast includes enabled field in JSON`() = runBlocking {
-        val job = launch {
-            service.periodicInfoBroadcast()
-        }
-        delay(5500)
-        job.cancel()
+    fun `periodicInfoBroadcast includes enabled field in JSON`() =
+        runBlocking {
+            val job =
+                launch {
+                    service.periodicInfoBroadcast()
+                }
+            delay(5500)
+            job.cancel()
 
-        verify(service).sendBroadcast(argThat<Intent> {
-            val json = getStringExtra("com.air.advantage.MESSAGE_FROM_CB_SECURE")
-            json?.contains("\"enabled\"") == true
-        }, anyOrNull())
-    }
+            verify(service).sendBroadcast(
+                argThat<Intent> {
+                    val json = getStringExtra("com.air.advantage.MESSAGE_FROM_CB_SECURE")
+                    json?.contains("\"enabled\"") == true
+                },
+                anyOrNull(),
+            )
+        }
 
     @Test
-    fun `periodicInfoBroadcast sends encrypted no-permission broadcast`() = runBlocking {
-        val job = launch {
-            service.periodicInfoBroadcast()
-        }
-        delay(5500)
-        job.cancel()
+    fun `periodicInfoBroadcast sends encrypted no-permission broadcast`() =
+        runBlocking {
+            val job =
+                launch {
+                    service.periodicInfoBroadcast()
+                }
+            delay(5500)
+            job.cancel()
 
-        verify(service).sendBroadcast(argThat<Intent> {
-            action == "com.air.advantage.MESSAGE_TO_CB_NO_PERMISSION_BROADCAST"
-        })
-    }
+            verify(service).sendBroadcast(
+                argThat<Intent> {
+                    action == "com.air.advantage.MESSAGE_TO_CB_NO_PERMISSION_BROADCAST"
+                },
+            )
+        }
 }

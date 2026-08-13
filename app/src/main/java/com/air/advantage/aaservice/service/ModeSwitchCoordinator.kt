@@ -166,25 +166,29 @@ class ModeSwitchCoordinator(
     }
 
     /** Returns `true` when Connected; on failure disconnects and returns `false` (caller retries). */
-    private suspend fun awaitMailboxConnected(client: MailboxWsClient, attempt: Int): Boolean {
-        val ready = try {
-            withTimeout(snapshotTimeoutMs) {
-                client.connectionState.first { state ->
-                    state is MailboxConnectionState.Connected ||
-                        state is MailboxConnectionState.Disconnected ||
-                        state is MailboxConnectionState.Error
+    private suspend fun awaitMailboxConnected(
+        client: MailboxWsClient,
+        attempt: Int,
+    ): Boolean {
+        val ready =
+            try {
+                withTimeout(snapshotTimeoutMs) {
+                    client.connectionState.first { state ->
+                        state is MailboxConnectionState.Connected ||
+                            state is MailboxConnectionState.Disconnected ||
+                            state is MailboxConnectionState.Error
+                    }
                 }
+            } catch (_: TimeoutCancellationException) {
+                Log.e(
+                    TAG,
+                    "Timed out waiting for snapshot (Connected) after ${snapshotTimeoutMs}ms " +
+                        "(attempt $attempt/$WS_CONNECT_ATTEMPTS); disconnecting WS, no USB activate. " +
+                        "Retry: ${SuDaemonLifecycle.AM_RETRY_TRANSPORT_MODE}",
+                )
+                transportRouter.disconnectWs()
+                return false
             }
-        } catch (_: TimeoutCancellationException) {
-            Log.e(
-                TAG,
-                "Timed out waiting for snapshot (Connected) after ${snapshotTimeoutMs}ms " +
-                    "(attempt $attempt/$WS_CONNECT_ATTEMPTS); disconnecting WS, no USB activate. " +
-                    "Retry: ${SuDaemonLifecycle.AM_RETRY_TRANSPORT_MODE}",
-            )
-            transportRouter.disconnectWs()
-            return false
-        }
 
         if (ready !is MailboxConnectionState.Connected) {
             Log.e(

@@ -6,11 +6,10 @@ import java.util.concurrent.atomic.AtomicInteger
 
 data class PollEntry(
     val tag: String,
-    val frameTag: String
+    val frameTag: String,
 )
 
 class PollQueueRepository {
-
     private val pollQueue: MutableList<PollEntry> = mutableListOf()
     private val currentIndex = AtomicInteger(0)
     private val isPollActive = AtomicBoolean(true)
@@ -18,28 +17,30 @@ class PollQueueRepository {
 
     fun initialize(isMyAir5: Boolean) {
         pollQueue.clear()
-        val baseTags = listOf(
-            "getSystemData",
-            "getClock",
-            "getZoneData?zone=1",
-            "getZoneData?zone=2",
-            "getZoneData?zone=3",
-            "getZoneData?zone=4",
-            "getZoneData?zone=5",
-            "getZoneData?zone=6",
-            "getZoneData?zone=7",
-            "getZoneData?zone=8",
-            "getZoneData?zone=9",
-            "getZoneData?zone=10"
-        )
-        val scheduleTags = listOf(
-            "getZoneTimer",
-            "getScheduleData?schedule=1",
-            "getScheduleData?schedule=2",
-            "getScheduleData?schedule=3",
-            "getScheduleData?schedule=4",
-            "getScheduleData?schedule=5"
-        )
+        val baseTags =
+            listOf(
+                "getSystemData",
+                "getClock",
+                "getZoneData?zone=1",
+                "getZoneData?zone=2",
+                "getZoneData?zone=3",
+                "getZoneData?zone=4",
+                "getZoneData?zone=5",
+                "getZoneData?zone=6",
+                "getZoneData?zone=7",
+                "getZoneData?zone=8",
+                "getZoneData?zone=9",
+                "getZoneData?zone=10",
+            )
+        val scheduleTags =
+            listOf(
+                "getZoneTimer",
+                "getScheduleData?schedule=1",
+                "getScheduleData?schedule=2",
+                "getScheduleData?schedule=3",
+                "getScheduleData?schedule=4",
+                "getScheduleData?schedule=5",
+            )
         val tags = if (isMyAir5) baseTags else baseTags + scheduleTags
         tags.forEach { tag ->
             val crc = CrcCalculator.computeHex(tag)

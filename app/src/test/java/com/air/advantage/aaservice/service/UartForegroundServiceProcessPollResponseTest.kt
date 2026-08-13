@@ -3,7 +3,12 @@ package com.air.advantage.aaservice.service
 import android.content.ContextWrapper
 import android.content.Intent
 import org.junit.After
-import org.junit.Assert.*
+import org.junit.Assert.assertArrayEquals
+import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -16,7 +21,6 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [33], manifest = Config.NONE)
 class UartForegroundServiceProcessPollResponseTest {
-
     private lateinit var service: UartForegroundService
 
     @Before
@@ -41,8 +45,12 @@ class UartForegroundServiceProcessPollResponseTest {
         for (i in 0 until targetIndex) {
             val currentTag = POLL_TAGS[i]
             val base = currentTag.substringBefore("?")
-            val payload = if (currentTag == "getSystemData") SYSTEM_DATA
-            else "<request>$base</request><dummy>1</dummy>".toByteArray()
+            val payload =
+                if (currentTag == "getSystemData") {
+                    SYSTEM_DATA
+                } else {
+                    "<request>$base</request><dummy>1</dummy>".toByteArray()
+                }
             service.dispatchEngine.onFrame(payload)
         }
         assertEquals(targetIndex, service.dispatchEngine.currentPollIndex())
@@ -70,13 +78,15 @@ class UartForegroundServiceProcessPollResponseTest {
         service.dispatchEngine.onFrame(SYSTEM_DATA)
 
         val sent = sentBroadcasts()
-        assertTrue(sent.any {
-            it.action == "com.air.advantage.MESSAGE_FROM_CB" &&
-                it.getStringExtra("com.air.advantage.GET_DATA_REQUEST") == "getSystemData" &&
-                it.getByteArrayExtra("com.air.advantage.MESSAGE_FROM_CB")?.let { bytes ->
-                    String(bytes, Charsets.UTF_8).contains("<MyAppRev>14.150</MyAppRev>")
-                } == true
-        })
+        assertTrue(
+            sent.any {
+                it.action == "com.air.advantage.MESSAGE_FROM_CB" &&
+                    it.getStringExtra("com.air.advantage.GET_DATA_REQUEST") == "getSystemData" &&
+                    it.getByteArrayExtra("com.air.advantage.MESSAGE_FROM_CB")?.let { bytes ->
+                        String(bytes, Charsets.UTF_8).contains("<MyAppRev>14.150</MyAppRev>")
+                    } == true
+            },
+        )
     }
 
     @Test
@@ -87,8 +97,11 @@ class UartForegroundServiceProcessPollResponseTest {
 
     @Test
     fun `onFrame getSystemData missing MyAppRev is dropped without broadcast`() {
-        val payload = ("<request>getSystemData</request><type>00</type><AppStore>x</AppStore>" +
-            "<dhcp>192.168.1.1</dhcp><gateway>192.168.1.254</gateway>").toByteArray()
+        val payload =
+            (
+                "<request>getSystemData</request><type>00</type><AppStore>x</AppStore>" +
+                    "<dhcp>192.168.1.1</dhcp><gateway>192.168.1.254</gateway>"
+            ).toByteArray()
         service.dispatchEngine.onFrame(payload)
 
         assertNull(service.dataCache.get("getSystemData"))
@@ -108,8 +121,11 @@ class UartForegroundServiceProcessPollResponseTest {
     @Test
     fun `onFrame getZoneData passes through unchanged`() {
         advanceTo("getZoneData?zone=1")
-        val payload = ("<request>getZoneData</request><zone>1</zone><state>off</state>" +
-            "<temp>21.0</temp><fan>auto</fan>").toByteArray()
+        val payload =
+            (
+                "<request>getZoneData</request><zone>1</zone><state>off</state>" +
+                    "<temp>21.0</temp><fan>auto</fan>"
+            ).toByteArray()
         service.dispatchEngine.onFrame(payload)
         assertArrayEquals(payload, service.dataCache.get("getZoneData?zone=1"))
     }
@@ -127,7 +143,7 @@ class UartForegroundServiceProcessPollResponseTest {
             sent.count {
                 it.action == "com.air.advantage.MESSAGE_FROM_CB" &&
                     it.getStringExtra("com.air.advantage.GET_DATA_REQUEST") == "getClock"
-            }
+            },
         )
     }
 
@@ -151,7 +167,10 @@ class UartForegroundServiceProcessPollResponseTest {
 
         val next = service.dispatchEngine.onPing()
         assertNotNull(next)
-        assertFalse("popped direct message should not be re-sent", String(next!!, Charsets.UTF_8).contains("Temperature"))
+        assertFalse(
+            "popped direct message should not be re-sent",
+            String(next!!, Charsets.UTF_8).contains("Temperature"),
+        )
     }
 
     // ── getCAN raw-CAN handling ──────────────────────────────────
@@ -162,10 +181,12 @@ class UartForegroundServiceProcessPollResponseTest {
         service.dispatchEngine.onFrame(payload)
 
         val sent = sentBroadcasts()
-        assertTrue(sent.any {
-            it.action == "com.air.advantage.MESSAGE_FROM_CB_SECURE" &&
-                it.getStringExtra("com.air.advantage.GET_DATA_REQUEST") == "rawCan"
-        })
+        assertTrue(
+            sent.any {
+                it.action == "com.air.advantage.MESSAGE_FROM_CB_SECURE" &&
+                    it.getStringExtra("com.air.advantage.GET_DATA_REQUEST") == "rawCan"
+            },
+        )
 
         val ack = service.dispatchEngine.onPing()
         assertNotNull(ack)
@@ -183,24 +204,29 @@ class UartForegroundServiceProcessPollResponseTest {
     }
 
     private companion object {
-        val POLL_TAGS = listOf(
-            "getSystemData",
-            "getClock",
-            "getZoneData?zone=1",
-            "getZoneData?zone=2",
-            "getZoneData?zone=3",
-            "getZoneData?zone=4",
-            "getZoneData?zone=5",
-            "getZoneData?zone=6",
-            "getZoneData?zone=7",
-            "getZoneData?zone=8",
-            "getZoneData?zone=9",
-            "getZoneData?zone=10"
-        )
-        val SYSTEM_DATA = ("<request>getSystemData</request><type>00</type><AppStore>x</AppStore>" +
-            "<dhcp>192.168.1.1</dhcp><subnet>255.255.255.0</subnet><gateway>192.168.1.254</gateway>" +
-            "<MyAppRev>14.148</MyAppRev>").toByteArray(Charsets.UTF_8)
-        val CLOCK_PAYLOAD = "<request>getClock</request><time>2026-08-02 12:00:00</time>"
-            .toByteArray(Charsets.UTF_8)
+        val POLL_TAGS =
+            listOf(
+                "getSystemData",
+                "getClock",
+                "getZoneData?zone=1",
+                "getZoneData?zone=2",
+                "getZoneData?zone=3",
+                "getZoneData?zone=4",
+                "getZoneData?zone=5",
+                "getZoneData?zone=6",
+                "getZoneData?zone=7",
+                "getZoneData?zone=8",
+                "getZoneData?zone=9",
+                "getZoneData?zone=10",
+            )
+        val SYSTEM_DATA =
+            (
+                "<request>getSystemData</request><type>00</type><AppStore>x</AppStore>" +
+                    "<dhcp>192.168.1.1</dhcp><subnet>255.255.255.0</subnet><gateway>192.168.1.254</gateway>" +
+                    "<MyAppRev>14.148</MyAppRev>"
+            ).toByteArray(Charsets.UTF_8)
+        val CLOCK_PAYLOAD =
+            "<request>getClock</request><time>2026-08-02 12:00:00</time>"
+                .toByteArray(Charsets.UTF_8)
     }
 }

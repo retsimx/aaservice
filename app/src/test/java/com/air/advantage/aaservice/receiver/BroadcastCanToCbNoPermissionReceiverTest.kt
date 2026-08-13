@@ -5,15 +5,16 @@ import android.content.Intent
 import com.air.advantage.aaservice.service.UartForegroundService
 import com.air.advantage.aaservice.util.CryptoHelper
 import org.junit.After
-import org.junit.Assert.*
 import org.junit.Before
 import org.junit.Test
-import org.mockito.Mockito.*
+import org.mockito.Mockito.mock
+import org.mockito.Mockito.mockStatic
+import org.mockito.Mockito.verify
+import org.mockito.Mockito.verifyNoInteractions
 import org.mockito.kotlin.any
 import org.mockito.kotlin.whenever
 
 class BroadcastCanToCbNoPermissionReceiverTest {
-
     private lateinit var receiver: BroadcastCanToCbNoPermissionReceiver
     private lateinit var context: Context
     private lateinit var service: UartForegroundService
@@ -39,7 +40,9 @@ class BroadcastCanToCbNoPermissionReceiverTest {
             crypto.`when`<ByteArray?> { CryptoHelper.decrypt(any()) }.thenReturn(decrypted)
 
             val intent = mock(Intent::class.java)
-            whenever(intent.getByteArrayExtra("com.air.advantage.BROADCAST_CAN_TO_CB_NO_PERMISSION")).thenReturn(encrypted)
+            whenever(
+                intent.getByteArrayExtra("com.air.advantage.BROADCAST_CAN_TO_CB_NO_PERMISSION"),
+            ).thenReturn(encrypted)
 
             receiver.onReceive(context, intent)
             verify(service).enqueueBroadcastCanIds("10 20 30")
@@ -64,7 +67,9 @@ class BroadcastCanToCbNoPermissionReceiverTest {
             crypto.`when`<ByteArray?> { CryptoHelper.decrypt(any()) }.thenReturn(null)
 
             val intent = mock(Intent::class.java)
-            whenever(intent.getByteArrayExtra("com.air.advantage.BROADCAST_CAN_TO_CB_NO_PERMISSION")).thenReturn(encrypted)
+            whenever(
+                intent.getByteArrayExtra("com.air.advantage.BROADCAST_CAN_TO_CB_NO_PERMISSION"),
+            ).thenReturn(encrypted)
 
             receiver.onReceive(context, intent)
             verifyNoInteractions(service)
@@ -80,7 +85,9 @@ class BroadcastCanToCbNoPermissionReceiverTest {
             crypto.`when`<ByteArray?> { CryptoHelper.decrypt(any()) }.thenReturn(decrypted)
 
             val intent = mock(Intent::class.java)
-            whenever(intent.getByteArrayExtra("com.air.advantage.BROADCAST_CAN_TO_CB_NO_PERMISSION")).thenReturn(encrypted)
+            whenever(
+                intent.getByteArrayExtra("com.air.advantage.BROADCAST_CAN_TO_CB_NO_PERMISSION"),
+            ).thenReturn(encrypted)
 
             receiver.onReceive(context, intent)
         }

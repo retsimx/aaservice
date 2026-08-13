@@ -5,20 +5,22 @@ import org.junit.Assert.assertEquals
 import org.junit.Test
 
 class CanFrameCapTest {
+    private val sink =
+        object : UartEventSink {
+            override fun onPollData(
+                tag: String,
+                payload: ByteArray,
+            ) {}
 
-    private val sink = object : UartEventSink {
-        override fun onPollData(tag: String, payload: ByteArray) {}
-        override fun onRawCan(payload: ByteArray) {}
-    }
+            override fun onRawCan(payload: ByteArray) {}
+        }
 
     private val typeBytes = "17".toByteArray(Charsets.UTF_8)
     private val appStoreBytes = "MyAir5".toByteArray(Charsets.UTF_8)
 
-    private fun engine(): UartDispatchEngine =
-        UartDispatchEngine(listOf("getClock"), typeBytes, appStoreBytes, sink)
+    private fun engine(): UartDispatchEngine = UartDispatchEngine(listOf("getClock"), typeBytes, appStoreBytes, sink)
 
-    private fun frameOf(content: String): String =
-        "<U>$content</U=${CrcCalculator.computeHex(content)}>"
+    private fun frameOf(content: String): String = "<U>$content</U=${CrcCalculator.computeHex(content)}>"
 
     private fun firstSetCan(e: UartDispatchEngine): String =
         generateSequence { e.onPing() }
