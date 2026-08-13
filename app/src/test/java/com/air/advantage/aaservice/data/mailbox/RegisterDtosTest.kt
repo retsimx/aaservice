@@ -132,7 +132,7 @@ class RegisterDtosTest {
             .put("fan", "auto")
             .put("target_temp_c", 22.5)
             .put("myzone_id", 1)
-            .put("fresh_air", true)
+            .put("fresh_air", "off")
             .put("rf_sys_id", 3)
         val expected = SystemStatusDto(
             power = "on",
@@ -140,7 +140,7 @@ class RegisterDtosTest {
             fan = "auto",
             targetTempC = 22.5,
             myzoneId = 1,
-            freshAir = true,
+            freshAir = "off",
             rfSysId = 3,
         )
         assertRoundTrip(json, SystemStatusDto::fromJson, SystemStatusDto::toJson, expected)
@@ -148,6 +148,21 @@ class RegisterDtosTest {
             expected.toJson(),
             "power", "mode", "fan", "target_temp_c", "myzone_id", "fresh_air", "rf_sys_id",
         )
+    }
+
+    @Test
+    fun `SystemStatusDto tolerates legacy boolean fresh_air`() {
+        val json = JSONObject()
+            .put("power", "on")
+            .put("mode", "cool")
+            .put("fan", "auto")
+            .put("target_temp_c", 22.5)
+            .put("myzone_id", 1)
+            .put("fresh_air", true)
+            .put("rf_sys_id", 3)
+        val dto = SystemStatusDto.fromJson(json)
+        assertEquals("on", dto.freshAir)
+        assertEquals("on", dto.toJson().getString("fresh_air"))
     }
 
     // ── register 06 ──────────────────────────────────────────────

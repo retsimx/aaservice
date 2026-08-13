@@ -8,7 +8,7 @@
         "fan": "auto",
         "target_temp_c": 22.5,
         "myzone_id": 1,
-        "fresh_air": false,
+        "fresh_air": "off",
         "rf_sys_id": 0
       },
       "03": {
