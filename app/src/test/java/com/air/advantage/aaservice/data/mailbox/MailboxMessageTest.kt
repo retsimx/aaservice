@@ -76,6 +76,30 @@ class MailboxMessageTest {
         assertTrue(snapshot.units.isEmpty())
     }
 
+    @Test
+    fun `snapshot keeps raw hex string register in rawUnits and typed map unchanged`() {
+        val snapshot = MailboxInbound.parse(
+            """
+            {
+              "type": "snapshot",
+              "units": {
+                "07:181f3": {
+                  "05": {
+                    "power": "on",
+                    "mode": "cool"
+                  },
+                  "0f": "aabbccddeeff00"
+                }
+              }
+            }
+            """.trimIndent(),
+        ) as MailboxInbound.Snapshot
+        assertEquals("aabbccddeeff00", snapshot.rawUnits["07:181f3"]!!["0f"])
+        assertEquals(1, snapshot.units["07:181f3"]!!.size)
+        assertEquals("on", snapshot.units["07:181f3"]!!["05"]!!.getString("power"))
+        assertFalse(snapshot.units["07:181f3"]!!.containsKey("0f"))
+    }
+
     // ── inbound: event ───────────────────────────────────────────
 
     @Test

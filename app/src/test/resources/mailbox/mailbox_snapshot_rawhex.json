@@ -1,0 +1,26 @@
+{
+  "type": "snapshot",
+  "units": {
+    "07:181f3": {
+      "05": {
+        "power": "on",
+        "mode": "cool",
+        "fan": "auto",
+        "target_temp_c": 22.5,
+        "myzone_id": 1,
+        "fresh_air": false,
+        "rf_sys_id": 0
+      },
+      "03": {
+        "1": {
+          "open": true,
+          "damper_pct": 100,
+          "sensor_type": "temp",
+          "target_temp_c": 22.5,
+          "measured_temp_c": 23.1
+        }
+      },
+      "0f": "aabbccddeeff00"
+    }
+  }
+}

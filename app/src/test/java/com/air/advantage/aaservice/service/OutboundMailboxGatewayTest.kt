@@ -9,6 +9,9 @@ import com.air.advantage.aaservice.data.mailbox.MailboxInbound
 import com.air.advantage.aaservice.data.mailbox.MailboxMessageType
 import com.air.advantage.aaservice.data.mailbox.MailboxWsClientFactory
 import com.air.advantage.aaservice.data.mailbox.MyAir5OutboundMailboxMapper
+import com.air.advantage.aaservice.data.mailbox.OutboundMailboxAction
+import com.air.advantage.aaservice.data.mailbox.ReadOutcome
+import com.air.advantage.aaservice.receiver.AlertDialogReceiver
 import com.air.advantage.aaservice.receiver.GetAllDataReceiver
 import com.air.advantage.aaservice.receiver.MessageToCbReceiver
 import com.air.advantage.aaservice.util.PreferencesManager
@@ -43,6 +46,7 @@ class OutboundMailboxGatewayTest {
         controller = Robolectric.buildService(UartForegroundService::class.java)
         service = controller.create().get()
         UartForegroundService.instance = service
+        AlertDialogReceiver.alertActive.set(false)
         PreferenceManager.getDefaultSharedPreferences(service).edit().clear().apply()
     }
 
@@ -50,6 +54,7 @@ class OutboundMailboxGatewayTest {
     fun tearDown() {
         service.onDestroy()
         UartForegroundService.instance = null
+        AlertDialogReceiver.alertActive.set(false)
     }
 
     private fun injectWsConnected() {
@@ -128,6 +133,44 @@ class OutboundMailboxGatewayTest {
         awaitOutbound()
         // Send still attempted (recorded); status is error — gateway must not throw/crash.
         assertEquals(1, fakeWs.sentWrites.size)
+    }
+
+    @Test
+    fun `WS outbound Read action calls sendRead with register and zone`() {
+        injectWsConnected()
+
+        service.dispatchOutboundMailboxActions(
+            listOf(OutboundMailboxAction.Read(register = "03", zone = 3)),
+        )
+        awaitOutbound()
+
+        assertEquals(1, fakeWs.sentReads.size)
+        assertEquals("03" to 3, fakeWs.sentReads[0])
+        assertTrue(fakeWs.sentWrites.isEmpty())
+    }
+
+    @Test
+    fun `WS read error outcome logs and arms transient alert`() {
+        injectWsConnected()
+        fakeWs.nextReadOutcome = ReadOutcome.Error(
+            MailboxInbound.Ack(
+                msgId = "err-read",
+                status = MailboxAckStatus.ERROR,
+                reason = "register 03 has no value",
+                raw = JSONObject()
+                    .put("type", MailboxMessageType.ACK)
+                    .put("msg_id", "err-read")
+                    .put("status", "error"),
+            ),
+        )
+
+        service.dispatchOutboundMailboxActions(
+            listOf(OutboundMailboxAction.Read(register = "03", zone = 1)),
+        )
+        awaitOutbound()
+
+        assertEquals(1, fakeWs.sentReads.size)
+        assertTrue("read error outcome must arm the transient alert", AlertDialogReceiver.alertActive.get())
     }
 
     @Test

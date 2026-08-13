@@ -1,5 +1,6 @@
 package com.air.advantage.aaservice.domain.mailbox
 
+import com.air.advantage.aaservice.data.mailbox.MailboxFixtures
 import com.air.advantage.aaservice.data.mailbox.MailboxInbound
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
@@ -183,6 +184,75 @@ class MailboxRawCanEncoderTest {
     }
 
     @Test
+    fun `encodeGetCan emits passthrough record for unknown register raw hex`() {
+        val snapshot = snapshot(MailboxFixtures.snapshotRawHex())
+        val can = MailboxRawCanEncoder.encodeGetCan(snapshot)
+        val tokens = can!!.split(' ')
+        assertEquals("getCAN", tokens[0])
+        assertEquals("1", tokens[1])
+        assertEquals(
+            listOf(
+                "0703181f30301e4022d170100",
+                "0703181f3050101042d010100",
+                "0703181f30faabbccddeeff00",
+            ),
+            tokens.drop(2),
+        )
+    }
+
+    @Test
+    fun `encodeGetCan keeps typed record when rawUnits also present for same register`() {
+        val snapshot = MailboxInbound.Snapshot(
+            units = mapOf(
+                "07:181f3" to mapOf(
+                    "05" to JSONObject(
+                        """{ "power": "on", "mode": "cool", "fan": "auto", "target_temp_c": 22.0, "myzone_id": 1, "fresh_air": false, "rf_sys_id": 0 }""",
+                    ),
+                ),
+            ),
+            rawUnits = mapOf(
+                "07:181f3" to mapOf("05" to "deadbeefdeadbe"),
+            ),
+            raw = JSONObject(),
+        )
+        assertEquals(
+            "getCAN 1 0703181f3050101042c010100",
+            MailboxRawCanEncoder.encodeGetCan(snapshot),
+        )
+    }
+
+    @Test
+    fun `encodeGetCan falls back to raw hex when typed encode returns null`() {
+        val snapshot = MailboxInbound.Snapshot(
+            units = mapOf(
+                "07:181f3" to mapOf(
+                    "09" to JSONObject("""{ "action": "bogus", "unlock_code": "A1B2" }"""),
+                ),
+            ),
+            rawUnits = mapOf(
+                "07:181f3" to mapOf("09" to "aabbccddeeff00"),
+            ),
+            raw = JSONObject(),
+        )
+        assertEquals(
+            "getCAN 1 0703181f309aabbccddeeff00",
+            MailboxRawCanEncoder.encodeGetCan(snapshot),
+        )
+    }
+
+    @Test
+    fun `encodeGetCan ignores raw hex on zone bearing register`() {
+        val snapshot = MailboxInbound.Snapshot(
+            units = emptyMap(),
+            rawUnits = mapOf(
+                "07:181f3" to mapOf("03" to "aabbccddeeff00"),
+            ),
+            raw = JSONObject(),
+        )
+        assertNull(MailboxRawCanEncoder.encodeGetCan(snapshot))
+    }
+
+    @Test
     fun `event without unit id returns null`() {
         val event = event("05", """{ "power": "on" }""", unitId = null)
         assertNull(MailboxRawCanEncoder.encodeEventToCan(event))
@@ -192,6 +262,27 @@ class MailboxRawCanEncoderTest {
     fun `event with null payload and no usable raw hex returns null`() {
         val event = event("16", "\"not-hex\"")
         assertNull(MailboxRawCanEncoder.encodeEventToCan(event))
+    }
+
+    @Test
+    fun `read result encodes typed payload as single getCAN record`() {
+        val result = readResult(
+            "05",
+            """{ "power": "on", "mode": "cool", "fan": "auto", "target_temp_c": 22.0, "myzone_id": 1, "fresh_air": false, "rf_sys_id": 0 }""",
+        )
+        assertEquals("getCAN 1 0703181f3050101042c010100", MailboxRawCanEncoder.encodeReadResultToCan(result))
+    }
+
+    @Test
+    fun `read result passes raw hex payload through verbatim`() {
+        val result = readResult("16", "\"aabbccddeeff00\"")
+        assertEquals("getCAN 1 0703181f316aabbccddeeff00", MailboxRawCanEncoder.encodeReadResultToCan(result))
+    }
+
+    @Test
+    fun `read result without unit id returns null`() {
+        val result = readResult("05", """{ "power": "on" }""", unitId = null)
+        assertNull(MailboxRawCanEncoder.encodeReadResultToCan(result))
     }
 
     private fun event(
@@ -217,4 +308,24 @@ class MailboxRawCanEncoderTest {
 
     private fun snapshot(json: String): MailboxInbound.Snapshot =
         MailboxInbound.parse(JSONObject(json)) as MailboxInbound.Snapshot
+
+    private fun readResult(
+        register: String,
+        payload: String,
+        unitId: String? = "181f3",
+    ): MailboxInbound.ReadResult {
+        val json = JSONObject().apply {
+            put("type", "read_result")
+            put("msg_id", "r1")
+            put("unit_type", "07")
+            unitId?.let { put("unit_id", it) }
+            put("register", register)
+            if (payload.startsWith('{')) {
+                put("payload", JSONObject(payload))
+            } else {
+                put("payload", payload.trim('"'))
+            }
+        }
+        return MailboxInbound.parse(json) as MailboxInbound.ReadResult
+    }
 }

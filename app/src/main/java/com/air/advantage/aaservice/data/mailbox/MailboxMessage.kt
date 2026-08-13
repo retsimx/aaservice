@@ -63,9 +63,15 @@ sealed class MailboxInbound {
     /**
      * Full register bank on connect / after resync, keyed
      * `"{unit_type}:{unit_id}"` → register → payload.
+     *
+     * [units] holds the typed object payloads (registered JSON objects);
+     * [rawUnits] holds the raw-hex string payloads (14 lowercase hex chars,
+     * keyed unit → register → hex) so passthrough registers survive parse
+     * without reinterpretation — see the encoder's raw-hex merge.
      */
     data class Snapshot(
         val units: Map<String, Map<String, JSONObject>>,
+        val rawUnits: Map<String, Map<String, String>>,
         override val raw: JSONObject,
     ) : MailboxInbound() {
         override val type: String get() = MailboxMessageType.SNAPSHOT
@@ -138,10 +144,14 @@ sealed class MailboxInbound {
         fun parse(json: JSONObject): MailboxInbound {
             val type = json.optString("type", "")
             return when (type) {
-                MailboxMessageType.SNAPSHOT -> Snapshot(
-                    units = parseUnits(json.optJSONObject("units")),
-                    raw = json,
-                )
+                MailboxMessageType.SNAPSHOT -> {
+                    val (units, rawUnits) = parseUnits(json.optJSONObject("units"))
+                    Snapshot(
+                        units = units,
+                        rawUnits = rawUnits,
+                        raw = json,
+                    )
+                }
                 MailboxMessageType.EVENT -> Event(
                     unitType = json.optStringOrNull("unit_type"),
                     unitId = json.optStringOrNull("unit_id"),
@@ -269,16 +279,28 @@ private fun JSONObject.optIntOrNull(key: String): Int? {
     return optInt(key)
 }
 
-private fun parseUnits(units: JSONObject?): Map<String, Map<String, JSONObject>> {
-    if (units == null) return emptyMap()
-    val result = mutableMapOf<String, Map<String, JSONObject>>()
+private fun parseUnits(
+    units: JSONObject?,
+): Pair<Map<String, Map<String, JSONObject>>, Map<String, Map<String, String>>> {
+    if (units == null) {
+        return emptyMap<String, Map<String, JSONObject>>() to
+            emptyMap<String, Map<String, String>>()
+    }
+    val typed = mutableMapOf<String, Map<String, JSONObject>>()
+    val raw = mutableMapOf<String, Map<String, String>>()
     for (unitKey in units.keys()) {
         val registers = units.optJSONObject(unitKey) ?: continue
         val registerMap = mutableMapOf<String, JSONObject>()
+        val rawRegisterMap = mutableMapOf<String, String>()
         for (register in registers.keys()) {
-            registers.optJSONObject(register)?.let { registerMap[register] = it }
+            // JSON type split, no reinterpretation: objects → typed, strings → raw.
+            when (val value = registers.opt(register)) {
+                is JSONObject -> registerMap[register] = value
+                is String -> rawRegisterMap[register] = value
+            }
         }
-        result[unitKey] = registerMap
+        typed[unitKey] = registerMap
+        if (rawRegisterMap.isNotEmpty()) raw[unitKey] = rawRegisterMap
     }
-    return result
+    return typed to raw
 }
