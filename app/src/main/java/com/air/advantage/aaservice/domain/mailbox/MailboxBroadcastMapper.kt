@@ -8,7 +8,7 @@ import java.nio.charset.StandardCharsets
 import org.json.JSONObject
 
 /**
- * Maps mailbox `mailbox_snapshot` / `mailbox_event` frames onto the same MyAir5 poll-tag
+ * Maps mailbox `snapshot` / `event` frames onto the same MyAir5 poll-tag
  * `MESSAGE_FROM_CB` shape the USB path produces ([UartDispatchEngine][com.air.advantage.aaservice.domain.state.UartDispatchEngine]),
  * so the existing `broadcastData` / `DataCacheRepository` / `GetSystemDataTransformer`
  * pipeline can stay unchanged (design doc `41-mailbox-to-message-from-cb.md`).
@@ -48,15 +48,18 @@ object MailboxBroadcastMapper {
     ): List<MappedPoll> {
         val polls = mutableListOf<MappedPoll>()
 
-        snapshot.raw.optJSONObject(SYSTEM_STATUS_REGISTER)?.let { status ->
-            buildSystemPoll(status, typeBytes, appStoreBytes)?.let(polls::add)
-        }
+        // Snapshot units are keyed "{unit_type}:{unit_id}" → register → payload.
+        for (unit in snapshot.units.values) {
+            unit[SYSTEM_STATUS_REGISTER]?.let { status ->
+                buildSystemPoll(status, typeBytes, appStoreBytes)?.let(polls::add)
+            }
 
-        snapshot.raw.optJSONObject(ZONES_KEY)?.let { zones ->
-            for (key in zones.keys()) {
-                val zoneId = key.toIntOrNull() ?: continue
-                val zoneJson = zones.optJSONObject(key) ?: continue
-                polls.add(buildZonePoll(zoneId, zoneJson))
+            unit[ZONES_KEY]?.let { zones ->
+                for (key in zones.keys()) {
+                    val zoneId = key.toIntOrNull() ?: continue
+                    val zoneJson = zones.optJSONObject(key) ?: continue
+                    polls.add(buildZonePoll(zoneId, zoneJson))
+                }
             }
         }
 

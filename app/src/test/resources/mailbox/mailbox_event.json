@@ -1,6 +1,9 @@
 {
-  "type": "mailbox_event",
+  "type": "event",
+  "unit_type": "aircon",
+  "unit_id": "1",
   "register": "zone_state",
+  "zone": 1,
   "payload": {
     "zone_id": "1",
     "open": true,
