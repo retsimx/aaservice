@@ -1,9 +1,12 @@
+import org.gradle.testing.jacoco.tasks.JacocoReport
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
     id("com.google.dagger.hilt.android")
     kotlin("kapt")
     id("org.jlleitschuh.gradle.ktlint")
+    id("jacoco")
 }
 
 ktlint {
@@ -30,6 +33,9 @@ android {
     }
 
     buildTypes {
+        debug {
+            enableUnitTestCoverage = true
+        }
         release {
             isMinifyEnabled = false
         }
@@ -62,6 +68,50 @@ tasks.withType<Test> {
 
 tasks.named("check") {
     dependsOn("ktlintCheck")
+}
+
+tasks.register<JacocoReport>("jacocoTestReport") {
+    description = "Generates a Jacoco code coverage report from unit tests."
+    group = "verification"
+    dependsOn("testDebugUnitTest")
+    reports {
+        xml.required.set(true)
+        html.required.set(true)
+        csv.required.set(true)
+    }
+    val excludedClasses =
+        listOf(
+            "**/R.class",
+            "**/R\$*.class",
+            "**/BuildConfig.*",
+            "**/Manifest*.*",
+            "**/BR.*",
+            "**/Hilt_*.*",
+            "**/*_Hilt*.*",
+            "**/*_GeneratedInjector*.*",
+            "**/Dagger*.*",
+            "**/hilt_aggregated_deps/**/*.*",
+            "**/databinding/**/*.*",
+        )
+    val debugKotlinClasses =
+        fileTree(layout.buildDirectory.dir("tmp/kotlin-classes/debug")) {
+            exclude(excludedClasses)
+        }
+    val debugJavaClasses =
+        fileTree(layout.buildDirectory.dir("intermediates/javac/debug/classes")) {
+            exclude(excludedClasses)
+        }
+    classDirectories.setFrom(files(debugKotlinClasses, debugJavaClasses))
+    val sourceDirs = mutableListOf(file("src/main/java"))
+    if (file("src/main/kotlin").isDirectory) {
+        sourceDirs.add(file("src/main/kotlin"))
+    }
+    sourceDirectories.setFrom(files(sourceDirs))
+    executionData.setFrom(
+        fileTree(layout.buildDirectory.dir("outputs/unit_test_code_coverage")) {
+            include("**/*.exec")
+        },
+    )
 }
 
 dependencies {
