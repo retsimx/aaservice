@@ -1,9 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android" xmlns:app="http://schemas.android.com/apk/res-auto"
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android" xmlns:app="http://schemas.android.com/apk/res-auto" xmlns:tools="http://schemas.android.com/tools"
     android:orientation="vertical"
     android:background="@color/background"
     android:layout_width="match_parent"
-    android:layout_height="match_parent">
+    android:layout_height="match_parent"
+    tools:ignore="Overdraw">
     <TextView
         android:textSize="54sp"
         android:gravity="center"
@@ -11,7 +12,7 @@
         android:id="@+id/title_text"
         android:layout_width="match_parent"
         android:layout_height="75dp"
-        android:text="Reboot Touch Screen"
+        android:text="@string/reboot_touch_screen"
         style="@style/ButtonSmallText"/>
     <androidx.cardview.widget.CardView
         android:layout_gravity="center"
@@ -37,7 +38,7 @@
         </LinearLayout>
     </androidx.cardview.widget.CardView>
     <androidx.cardview.widget.CardView
-        android:layout_gravity="left"
+        android:layout_gravity="start"
         android:id="@+id/version_number_card"
         android:padding="8dp"
         android:layout_width="match_parent"
