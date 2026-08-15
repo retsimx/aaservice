@@ -24,6 +24,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.mockito.ArgumentMatchers.anyInt
 import org.mockito.kotlin.any
 import org.mockito.kotlin.anyOrNull
 import org.mockito.kotlin.argThat
@@ -290,8 +291,7 @@ class UartForegroundServiceTest {
     fun `onCreate registers all 10 receivers`() {
         service.onCreate()
         assertEquals(10, service.registeredReceivers.size)
-        verify(service, times(7)).registerReceiver(any(), any())
-        verify(service, times(3)).registerReceiver(any(), any(), anyOrNull(), anyOrNull())
+        verify(service, times(10)).registerReceiver(any(), any(), anyOrNull(), anyOrNull(), anyInt())
     }
 
     @Test

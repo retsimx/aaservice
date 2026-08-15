@@ -1,7 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- Allow cleartext ws:// to any daemon host (loopback Magisk/bring-up, LAN Pi,
-     etc.). The daemon speaks plain ws:// on port 2026 and may live on any host,
-     so cleartext is permitted globally rather than per-domain. -->
-<network-security-config>
+<!--
+    Cleartext ws:// is required by design: the app talks to the local daemon
+    mailbox over plaintext WebSocket (default ws://127.0.0.1:2026/v1/mailbox-stream,
+    see MailboxWsConfig.DEFAULT_URL) and the daemon host is operator-configurable
+    (loopback Magisk bring-up, LAN Pi, etc.), so it may live on any host.
+    With targetSdk >= 28 cleartext is blocked by default, so global permission
+    is required to keep runtime connectivity; domain-scoping is impossible
+    because the host is arbitrary. Traffic is LAN-local HVAC frames only.
+    InsecureBaseConfiguration intentionally suppressed after review (issue #96).
+-->
+<network-security-config xmlns:tools="http://schemas.android.com/tools"
+    tools:ignore="InsecureBaseConfiguration">
     <base-config cleartextTrafficPermitted="true" />
 </network-security-config>

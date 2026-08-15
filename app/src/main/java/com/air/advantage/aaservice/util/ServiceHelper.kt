@@ -137,6 +137,6 @@ object ServiceHelper {
                 "0.0.0"
             }
         val variant = Build.BRAND + " " + Build.MODEL
-        textView.text = "Version $version : $variant"
+        textView.text = activity.getString(R.string.version_number, variant, version)
     }
 }
