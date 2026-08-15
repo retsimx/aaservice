@@ -1,0 +1,24 @@
+name: Gradle setup
+description: JDK 17 (Temurin), Gradle wrapper + cache, and Robolectric cache.
+
+branding:
+  icon: shield
+  color: blue
+
+runs:
+  using: composite
+  steps:
+    - name: Set up JDK 17
+      uses: actions/setup-java@v4
+      with:
+        distribution: temurin
+        java-version: '17'
+
+    - name: Set up Gradle
+      uses: gradle/actions/setup-gradle@v4
+
+    - name: Cache Robolectric
+      uses: actions/cache@v4
+      with:
+        path: ~/.robolectric
+        key: robolectric-${{ runner.os }}-v1
