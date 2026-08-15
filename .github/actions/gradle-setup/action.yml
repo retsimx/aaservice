@@ -1,5 +1,5 @@
 name: Gradle setup
-description: Checkout, JDK 17 (Temurin), Gradle wrapper + cache, and Robolectric cache.
+description: JDK 17 (Temurin), Gradle wrapper + cache, and Robolectric cache.
 
 branding:
   icon: shield
@@ -8,9 +8,6 @@ branding:
 runs:
   using: composite
   steps:
-    - name: Checkout
-      uses: actions/checkout@v4
-
     - name: Set up JDK 17
       uses: actions/setup-java@v4
       with:

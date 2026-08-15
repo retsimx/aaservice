@@ -11,6 +11,7 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
       - uses: ./.github/actions/gradle-setup
       - name: Build debug APK
         run: ./gradlew assembleDebug
@@ -18,6 +19,7 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
       - uses: ./.github/actions/gradle-setup
       - name: Run unit tests
         run: ./gradlew test
@@ -25,6 +27,7 @@ jobs:
   ktlint:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
       - uses: ./.github/actions/gradle-setup
       - name: Run ktlint
         run: ./gradlew ktlintCheck
@@ -32,6 +35,7 @@ jobs:
   lint:
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
       - uses: ./.github/actions/gradle-setup
       - name: Run Android lint
         run: ./gradlew lintDebug
@@ -41,6 +45,7 @@ jobs:
     permissions:
       pull-requests: write
     steps:
+      - uses: actions/checkout@v4
       - uses: ./.github/actions/gradle-setup
       - name: Generate coverage report
         run: ./gradlew jacocoTestReport
@@ -62,6 +67,7 @@ jobs:
     runs-on: ubuntu-latest
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
     steps:
+      - uses: actions/checkout@v4
       - uses: ./.github/actions/gradle-setup
       - name: Build debug APK
         run: ./gradlew assembleDebug
