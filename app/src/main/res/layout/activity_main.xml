@@ -1,7 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <LinearLayout xmlns:android="http://schemas.android.com/apk/res/android" xmlns:app="http://schemas.android.com/apk/res-auto"
     android:orientation="vertical"
-    android:background="@color/background"
     android:paddingTop="16dp"
     android:paddingBottom="16dp"
     android:layout_width="match_parent"
@@ -17,7 +16,7 @@
         android:layout_height="75dp"
         android:layout_margin="8dp"
         android:layout_marginTop="8dp"
-        android:layout_marginRight="9dp"
+        android:layout_marginEnd="9dp"
         android:layout_marginBottom="8dp"
         android:text="@string/back_to_myplace"
         style="@style/ButtonSmallText"/>
@@ -25,6 +24,7 @@
         android:layout_width="match_parent"
         android:layout_height="45dp"
         android:layout_margin="16dp"
+        android:contentDescription="@null"
         android:src="@drawable/adair_logo"
         android:scaleType="fitCenter"/>
     <androidx.cardview.widget.CardView
@@ -100,7 +100,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_margin="8dp"
-                android:text="Activate"
+                android:text="@string/activate"
                 style="@style/ButtonSmallText"/>
             <Button
                 android:textColor="@android:color/white"
@@ -110,7 +110,7 @@
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
                 android:layout_margin="8dp"
-                android:text="Disable"
+                android:text="@string/disable"
                 style="@style/ButtonSmallText"/>
         </LinearLayout>
     </androidx.cardview.widget.CardView>
@@ -196,7 +196,7 @@
         </LinearLayout>
     </androidx.cardview.widget.CardView>
     <androidx.cardview.widget.CardView
-        android:layout_gravity="right"
+        android:layout_gravity="end"
         android:id="@+id/version_number_card"
         android:padding="16dp"
         android:layout_width="wrap_content"

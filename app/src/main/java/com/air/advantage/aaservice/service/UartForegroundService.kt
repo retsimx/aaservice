@@ -25,6 +25,7 @@ import android.os.IBinder
 import android.os.ParcelFileDescriptor
 import android.os.SystemClock
 import android.util.Log
+import androidx.core.content.ContextCompat
 import com.air.advantage.aaservice.R
 import com.air.advantage.aaservice.data.mailbox.MailboxAckStatus
 import com.air.advantage.aaservice.data.mailbox.MailboxAckTimeoutException
@@ -404,18 +405,35 @@ class UartForegroundService : Service() {
         instance = this
 
         // USB permission + accessory detach
-        registerReceiver(
+        ContextCompat.registerReceiver(
+            this,
             usbPermissionReceiver,
             IntentFilter("com.air.advantage.USB_PERMISSION").apply {
                 addAction("android.hardware.usb.action.USB_ACCESSORY_DETACHED")
             },
+            ContextCompat.RECEIVER_EXPORTED,
         )
         registeredReceivers.add(usbPermissionReceiver)
 
         // Data request receivers
-        registerReceiver(getDataReceiver, IntentFilter("com.air.advantage.GET_DATA"))
-        registerReceiver(getAllDataReceiver, IntentFilter("com.air.advantage.GET_ALL_DATA"))
-        registerReceiver(messageToCbReceiver, IntentFilter("com.air.advantage.MESSAGE_TO_CB"))
+        ContextCompat.registerReceiver(
+            this,
+            getDataReceiver,
+            IntentFilter("com.air.advantage.GET_DATA"),
+            ContextCompat.RECEIVER_EXPORTED,
+        )
+        ContextCompat.registerReceiver(
+            this,
+            getAllDataReceiver,
+            IntentFilter("com.air.advantage.GET_ALL_DATA"),
+            ContextCompat.RECEIVER_EXPORTED,
+        )
+        ContextCompat.registerReceiver(
+            this,
+            messageToCbReceiver,
+            IntentFilter("com.air.advantage.MESSAGE_TO_CB"),
+            ContextCompat.RECEIVER_EXPORTED,
+        )
         registeredReceivers.add(getDataReceiver)
         registeredReceivers.add(getAllDataReceiver)
         registeredReceivers.add(messageToCbReceiver)
@@ -428,32 +446,52 @@ class UartForegroundService : Service() {
             } else {
                 "com.air.android.secure_comms"
             }
-        registerReceiver(canToCbReceiver, IntentFilter("com.air.advantage.CAN_TO_CB"), securePermission, null)
-        registerReceiver(
+        ContextCompat.registerReceiver(
+            this,
+            canToCbReceiver,
+            IntentFilter("com.air.advantage.CAN_TO_CB"),
+            securePermission,
+            null,
+            ContextCompat.RECEIVER_EXPORTED,
+        )
+        ContextCompat.registerReceiver(
+            this,
             broadcastCanToCbReceiver,
             IntentFilter("com.air.advantage.BROADCAST_CAN_TO_CB"),
             securePermission,
             null,
+            ContextCompat.RECEIVER_EXPORTED,
         )
-        registerReceiver(
+        ContextCompat.registerReceiver(
+            this,
             backupMessageReceiver,
             IntentFilter("com.air.advantage.BACKUP_MESSAGE"),
             securePermission,
             null,
+            ContextCompat.RECEIVER_EXPORTED,
         )
         registeredReceivers.add(canToCbReceiver)
         registeredReceivers.add(broadcastCanToCbReceiver)
         registeredReceivers.add(backupMessageReceiver)
 
         // No-permission broadcast receivers
-        registerReceiver(canToCbNoPermissionReceiver, IntentFilter("com.air.advantage.CAN_TO_CB_NO_PERMISSION"))
-        registerReceiver(
+        ContextCompat.registerReceiver(
+            this,
+            canToCbNoPermissionReceiver,
+            IntentFilter("com.air.advantage.CAN_TO_CB_NO_PERMISSION"),
+            ContextCompat.RECEIVER_EXPORTED,
+        )
+        ContextCompat.registerReceiver(
+            this,
             broadcastCanToCbNoPermissionReceiver,
             IntentFilter("com.air.advantage.BROADCAST_CAN_TO_CB_NO_PERMISSION"),
+            ContextCompat.RECEIVER_EXPORTED,
         )
-        registerReceiver(
+        ContextCompat.registerReceiver(
+            this,
             backupMessageNoPermissionReceiver,
             IntentFilter("com.air.advantage.BACKUP_MESSAGE_NO_PERMISSION"),
+            ContextCompat.RECEIVER_EXPORTED,
         )
         registeredReceivers.add(canToCbNoPermissionReceiver)
         registeredReceivers.add(broadcastCanToCbNoPermissionReceiver)
