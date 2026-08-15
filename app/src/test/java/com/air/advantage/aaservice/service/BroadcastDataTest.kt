@@ -9,6 +9,7 @@ import org.junit.Assert.assertNull
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.mockito.ArgumentMatchers.anyInt
 import org.mockito.kotlin.any
 import org.mockito.kotlin.anyOrNull
 import org.mockito.kotlin.argThat
@@ -38,8 +39,8 @@ class BroadcastDataTest {
         service = spy(controller.get())
 
         doReturn("com.air.advantage.aaservice2").whenever(service).packageName
-        whenever(service.registerReceiver(any(), any())).thenReturn(null)
-        whenever(service.registerReceiver(any(), any(), anyOrNull(), anyOrNull())).thenReturn(null)
+        whenever(service.registerReceiver(any(), any(), anyInt())).thenReturn(null)
+        whenever(service.registerReceiver(any(), any(), anyOrNull(), anyOrNull(), anyInt())).thenReturn(null)
         doNothing().whenever(service).unregisterReceiver(any())
         doNothing().whenever(service).sendBroadcast(any<Intent>())
         doNothing().whenever(service).sendBroadcast(any<Intent>(), anyOrNull())
