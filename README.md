@@ -11,13 +11,13 @@ Android app for controlling Advantage Air MyAir5 HVAC systems. Runs on the wall 
 
 - **Dual transport with mode switch** — USB accessory UART or WebSocket mailbox, selectable in-app with a settings card; exclusive (only one active path at a time)
 - **Magisk daemon lifecycle** — on WebSocket mode, starts/stops the root-held `cb-daemon` via `su`/`control.sh` (loopback hosts only; remote daemon hosts skip Magisk)
-- **USB UART bridge** — Android USB Accessory mode, FTDI accessory filter, chunked writes (63 B, 1 ms gap), ping-driven dispatch engine
+- **USB UART bridge** — Android USB Accessory mode, FTDI accessory filter, chunked writes, ping-driven dispatch engine
 - **WebSocket mailbox client** — OkHttp client with ping keepalive (30 s), exponential reconnect backoff, ack tracking (10 s timeout), session snapshot/event consumption
 - **Mailbox register mapping** — full CB register bank (zone config, unit activation, zone state/limits, system status, flush, aircon error, sensor pairing) to/from daemon JSON wire shapes
 - **CAN message queue** — up to 25 concurrent IDs, thread-safe, retry with ack/nack handling, priority dispatch, content-identical frame dedup
 - **Foreground service** — persistent UART lifecycle, device-open guards, crash-count/PFD lifecycle contract, periodic broadcast contract
 - **Secure inter-app broadcasts** — signature permission (`com.air.android.secure_comms`) plus AES-CBC encryption path for non-signature receivers
-- **State cache & polling** — system data cache, poll queue (getSystemData, getClock, per-zone queries), raw CAN → typed transform
+- **State cache & polling** — system data cache, poll queue, raw CAN → typed transform
 - **Admin device policy & reboot notification** — device-admin keep-alive, OTA package-replaced reboot flow
 - **Alert/intent bridge** — system broadcasts surface as alert dialogs in the UI
 
@@ -129,11 +129,8 @@ The debug APK is written to `app/build/outputs/apk/debug/app-debug.apk`.
 
 ### USB (default)
 
-The stock-tablet path: the app is a USB accessory client that connects to the control box through an FTDI bridge.
+The stock-tablet path: the app is a USB accessory client that connects to the control box through an FTDI bridge (accessory filter `FTDI / FTDIUARTDemo` and `Android Accessory FT312D`, version omitted to match both stock and live CB filters). The `<U>payload</U=crc>` frame format, CRC-8, poll cycle, and init sequence are the reverse-engineered CB↔tablet protocol documented in [`aa_interop`](https://github.com/gundy/aa_interop) — see the frame-format and register references there.
 
-- **Accessory filter:** `FTDI / FTDIUARTDemo` and `Android Accessory FT312D` (version omitted to match both stock and live CB filters)
-- **Init sequence:** sends an 8-byte config packet `[0x00, 0xE1, 0x00, 0x00, 0x08, 0x01, 0x00, 0x00]` on connect
-- **Poll cycle:** `getSystemData` (injects `type=17`, `AppStore=MyAir5`, `MyAppRev=14.150`) → `getClock` → `getZoneData?zone=1..10`; schedule polling skipped for MyAir5
 - **Dispatch engine:** ping-driven, thread-safe CAN queue with ack/nack retry, direct-request and broadcast paths
 
 ### WebSocket (cb-daemon)
@@ -147,27 +144,6 @@ The replacement-tablet path: the app connects to [`cb-daemon`](https://github.co
 - **Magisk integration:** loopback hosts start/stop the root daemon via `SuDaemonLifecycle` (`su` + `control.sh`); remote hosts (e.g. a LAN Pi) skip it
 - **Cleartext:** `ws://` is required by design (LAN-local HVAC frames, arbitrary daemon host) — enforced in `network_security_config.xml` with the `InsecureBaseConfiguration` lint suppression reviewed in issue #96
 
-## USB Protocol
-
-### Frame Format
-
-```
-<U>payload</U=crc>
-```
-
-- Frames are wrapped in `<U>` and `</U=crc>` tags
-- `crc` is a CRC-8 over the payload, computed via a 256-entry lookup table
-- Maximum write chunk: 63 bytes, with 1 ms sleep between chunks
-
-### Control Markers
-
-| Marker | Meaning |
-|--------|---------|
-| `<ack>1</ack>` | Acknowledgment |
-| `<ack>0</ack>` | Negative acknowledgment |
-| `<request>Unknown</request>` | Request marker |
-| `getCAN` | CAN message fetch |
-
 ## State Machine
 
 ```
@@ -175,7 +151,7 @@ Connecting → ConfigSent → Polling ↔ AwaitingResponse
 ```
 
 - `Connecting` — USB accessory attached, initializing UART stream
-- `ConfigSent` — 8-byte config packet sent, waiting for ack
+- `ConfigSent` — init config packet sent, waiting for ack
 - `Polling` — Idle state, ready to send next request
 - `AwaitingResponse` — Request sent, waiting for response frame
 
@@ -183,7 +159,7 @@ Transitions are managed via a sealed class `UartState` with coroutine-based conc
 
 ## Testing
 
-62 unit test files (JUnit + Robolectric + Mockito-Kotlin) covering the protocol layer, state machine, dispatch engine, repositories, mailbox client/mappers, receivers, services, and daemon lifecycle. Coverage reported via JaCoCo. Instrumented tests are not required for this device-bound app.
+Unit tests (JUnit + Robolectric + Mockito-Kotlin) cover the protocol layer, state machine, dispatch engine, repositories, mailbox client/mappers, receivers, services, and daemon lifecycle. Coverage reported via JaCoCo. Instrumented tests are not required for this device-bound app.
 
 ## License
 
